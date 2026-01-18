@@ -28,6 +28,10 @@ parking_lot = "0.12"
 dirs = "5"
 chrono = { version = "0.4", features = ["serde"] }
 window-vibrancy = "0.6"
+sysinfo = "0.32"
+
+[target."cfg(unix)".dependencies]
+libc = "0.2"
 
 [target."cfg(target_os = \"macos\")".dependencies]
 cocoa = "0.26"
