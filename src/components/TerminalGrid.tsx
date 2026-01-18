@@ -1,26 +1,32 @@
-import { useEffect, useCallback } from 'react';
-import { useAppStore } from '../store';
-import { Terminal } from './Terminal';
+import { useEffect, useCallback } from "react";
+import { useAppStore } from "../store";
+import { Terminal } from "./Terminal";
+import { useTheme } from "../hooks/useTheme";
+import { TerminalAnimation } from "./TerminalAnimation";
 
 export function TerminalGrid() {
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
   const terminals = useAppStore((state) => state.currentTerminals);
-  const activeTerminalId = useAppStore((state) => state.currentActiveTerminalId);
+  const activeTerminalId = useAppStore(
+    (state) => state.currentActiveTerminalId
+  );
   const terminalsByWorktree = useAppStore((state) => state.terminalsByWorktree);
   const setActiveTerminal = useAppStore((state) => state.setActiveTerminal);
   const addTerminal = useAppStore((state) => state.addTerminal);
   const removeTerminal = useAppStore((state) => state.removeTerminal);
 
+  const theme = useTheme();
+
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       const isMeta = e.metaKey || e.ctrlKey;
-      
-      if (isMeta && e.key === 'd' && !e.shiftKey) {
+
+      if (isMeta && e.key === "d" && !e.shiftKey) {
         e.preventDefault();
         addTerminal();
       }
 
-      if (isMeta && e.key === 'w') {
+      if (isMeta && e.key === "w") {
         e.preventDefault();
         if (activeTerminalId) {
           removeTerminal(activeTerminalId);
@@ -31,28 +37,55 @@ export function TerminalGrid() {
   );
 
   useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
 
   const allWorktreePaths = Object.keys(terminalsByWorktree);
 
   if (!selectedWorktree && allWorktreePaths.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-transparent">
-        <div className="text-center">
-          <h1 className="text-6xl font-bold text-zinc-600/50 tracking-wider mb-4 font-mono">
-            AUTOPILOT
+      <div className="flex-1 flex items-center justify-center bg-transparent overflow-hidden">
+        <div className="text-center max-w-full px-4">
+          <div className="mb-6 hidden md:block">
+            <TerminalAnimation color={theme.text.muted} />
+          </div>
+          <h1
+            className="mb-6 select-none text-2xl font-bold tracking-tight md:hidden"
+            style={{ color: theme.text.muted }}
+          >
+            autopilot
           </h1>
-          <p className="text-zinc-600 text-sm">
+          <p className="text-sm" style={{ color: theme.text.secondary }}>
             Select a workspace from the sidebar to start
           </p>
-          <div className="mt-8 text-zinc-600 text-xs space-y-1">
+          <div
+            className="mt-8 text-xs space-y-1"
+            style={{ color: theme.text.tertiary }}
+          >
             <p>
-              <kbd className="px-2 py-1 bg-zinc-800/50 rounded text-zinc-400">⌘D</kbd> New terminal
+              <kbd
+                className="px-2 py-1 rounded"
+                style={{
+                  background: theme.bg.tertiary,
+                  color: theme.text.secondary,
+                }}
+              >
+                ⌘D
+              </kbd>{" "}
+              New terminal
             </p>
             <p>
-              <kbd className="px-2 py-1 bg-zinc-800/50 rounded text-zinc-400">⌘W</kbd> Close terminal
+              <kbd
+                className="px-2 py-1 rounded"
+                style={{
+                  background: theme.bg.tertiary,
+                  color: theme.text.secondary,
+                }}
+              >
+                ⌘W
+              </kbd>{" "}
+              Close terminal
             </p>
           </div>
         </div>
@@ -67,29 +100,37 @@ export function TerminalGrid() {
         const isCurrentWorktree = selectedWorktree?.path === worktreePath;
         const worktreeTerminals = worktreeData.terminals;
 
-
         if (worktreeTerminals.length === 0) return null;
 
         const terminalCount = worktreeTerminals.length;
-        const cols = Math.ceil(Math.sqrt(terminalCount));
-        const rows = Math.ceil(terminalCount / cols);
+        // Always show terminals side-by-side (N columns).
+        const cols = terminalCount;
+        const rows = 1;
 
         return (
           <div
             key={worktreePath}
-            className="absolute inset-0 grid gap-[1px] bg-transparent p-[1px]"
+            className="absolute inset-0 grid gap-[1px]"
             style={{
               gridTemplateColumns: `repeat(${cols}, 1fr)`,
               gridTemplateRows: `repeat(${rows}, 1fr)`,
-              visibility: isCurrentWorktree ? 'visible' : 'hidden',
+              visibility: isCurrentWorktree ? "visible" : "hidden",
               zIndex: isCurrentWorktree ? 1 : 0,
             }}
           >
-            {worktreeTerminals.map((terminal) => (
-              <div key={terminal.id} className="min-w-0 min-h-0 bg-transparent overflow-hidden">
+            {worktreeTerminals.map((terminal, index) => (
+              <div
+                key={terminal.id}
+                className="min-w-0 min-h-0 bg-transparent overflow-hidden"
+                style={{
+                  borderLeft: index > 0 ? `1px solid ${theme.border.default}` : undefined,
+                }}
+              >
                 <Terminal
                   terminalId={terminal.id}
-                  isActive={isCurrentWorktree && activeTerminalId === terminal.id}
+                  isActive={
+                    isCurrentWorktree && activeTerminalId === terminal.id
+                  }
                   isVisible={isCurrentWorktree}
                   onFocus={() => setActiveTerminal(terminal.id)}
                 />
@@ -100,12 +141,18 @@ export function TerminalGrid() {
       })}
 
       {(!selectedWorktree || terminals.length === 0) && (
-        <div className="absolute inset-0 flex items-center justify-center bg-transparent z-10">
-          <div className="text-center">
-            <h1 className="text-6xl font-bold text-zinc-600/50 tracking-wider mb-4 font-mono">
-              AUTOPILOT
+        <div className="absolute inset-0 flex items-center justify-center bg-transparent z-10 overflow-hidden">
+          <div className="text-center max-w-full px-4">
+            <div className="mb-6 hidden md:block">
+              <TerminalAnimation color={theme.text.muted} />
+            </div>
+            <h1
+              className="mb-6 select-none text-2xl font-bold tracking-tight md:hidden"
+              style={{ color: theme.text.muted }}
+            >
+              autopilot
             </h1>
-            <p className="text-zinc-600 text-sm">
+            <p className="text-sm" style={{ color: theme.text.secondary }}>
               Select a workspace from the sidebar to start
             </p>
           </div>

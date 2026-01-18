@@ -4,6 +4,8 @@ import { FitAddon } from "@xterm/addon-fit";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import "@xterm/xterm/css/xterm.css";
+import { useTheme } from "../hooks/useTheme";
+import { getTheme, subscribeTheme } from "../theme";
 
 interface Props {
   terminalId: string;
@@ -18,6 +20,7 @@ export function Terminal({ terminalId, isActive, isVisible, onFocus }: Props) {
   const fitAddonRef = useRef<FitAddon | null>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const prevVisibleRef = useRef(isVisible);
+  const theme = useTheme();
 
   const fit = useCallback(() => {
     if (fitAddonRef.current && containerRef.current) {
@@ -43,30 +46,30 @@ export function Terminal({ terminalId, isActive, isVisible, onFocus }: Props) {
     const term = new XTerm({
       cursorBlink: true,
       fontSize: 13,
-      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
+      fontFamily: '"SF Mono", ui-monospace, Menlo, Monaco, "Courier New", monospace',
       allowTransparency: true,
       theme: {
-        background: "rgba(0, 0, 0, 0)",
-        foreground: "#e4e4e7",
-        cursor: "#e4e4e7",
-        cursorAccent: "#18181b",
-        selectionBackground: "rgba(63, 63, 70, 0.7)",
-        black: "#18181b",
-        red: "#ef4444",
-        green: "#22c55e",
-        yellow: "#eab308",
-        blue: "#3b82f6",
-        magenta: "#a855f7",
-        cyan: "#06b6d4",
-        white: "#e4e4e7",
-        brightBlack: "#52525b",
-        brightRed: "#f87171",
-        brightGreen: "#4ade80",
-        brightYellow: "#facc15",
-        brightBlue: "#60a5fa",
-        brightMagenta: "#c084fc",
-        brightCyan: "#22d3ee",
-        brightWhite: "#fafafa",
+        background: theme.terminal.background,
+        foreground: theme.terminal.foreground,
+        cursor: theme.terminal.cursor,
+        cursorAccent: theme.terminal.cursorAccent,
+        selectionBackground: theme.terminal.selectionBackground,
+        black: theme.terminal.black,
+        red: theme.terminal.red,
+        green: theme.terminal.green,
+        yellow: theme.terminal.yellow,
+        blue: theme.terminal.blue,
+        magenta: theme.terminal.magenta,
+        cyan: theme.terminal.cyan,
+        white: theme.terminal.white,
+        brightBlack: theme.terminal.brightBlack,
+        brightRed: theme.terminal.brightRed,
+        brightGreen: theme.terminal.brightGreen,
+        brightYellow: theme.terminal.brightYellow,
+        brightBlue: theme.terminal.brightBlue,
+        brightMagenta: theme.terminal.brightMagenta,
+        brightCyan: theme.terminal.brightCyan,
+        brightWhite: theme.terminal.brightWhite,
       },
     });
 
@@ -135,14 +138,53 @@ export function Terminal({ terminalId, isActive, isVisible, onFocus }: Props) {
     }
   }, [isActive, isVisible]);
 
+  useEffect(() => {
+    const updateTerminalTheme = () => {
+      if (!terminalRef.current) return;
+      const t = getTheme();
+      terminalRef.current.options.theme = {
+        background: t.terminal.background,
+        foreground: t.terminal.foreground,
+        cursor: t.terminal.cursor,
+        cursorAccent: t.terminal.cursorAccent,
+        selectionBackground: t.terminal.selectionBackground,
+        black: t.terminal.black,
+        red: t.terminal.red,
+        green: t.terminal.green,
+        yellow: t.terminal.yellow,
+        blue: t.terminal.blue,
+        magenta: t.terminal.magenta,
+        cyan: t.terminal.cyan,
+        white: t.terminal.white,
+        brightBlack: t.terminal.brightBlack,
+        brightRed: t.terminal.brightRed,
+        brightGreen: t.terminal.brightGreen,
+        brightYellow: t.terminal.brightYellow,
+        brightBlue: t.terminal.brightBlue,
+        brightMagenta: t.terminal.brightMagenta,
+        brightCyan: t.terminal.brightCyan,
+        brightWhite: t.terminal.brightWhite,
+      };
+    };
+    return subscribeTheme(updateTerminalTheme);
+  }, []);
+
   return (
     <div
       ref={containerRef}
       onClick={onFocus}
-      className={`w-full h-full bg-transparent ${
-        isActive && isVisible ? "ring-1 ring-zinc-500/50" : ""
-      }`}
+      className="w-full h-full bg-transparent relative"
       style={{ padding: "4px" }}
-    />
+    >
+      {isActive && isVisible && (
+        <div
+          className="absolute top-0 left-0 w-0 h-0"
+          style={{
+            borderRight: "17px solid transparent",
+            borderTop: "17px solid #3B82F6",
+          }}
+        />
+      )}
+    </div>
   );
 }

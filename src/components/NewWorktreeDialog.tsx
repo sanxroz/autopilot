@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../store';
 import type { BranchInfo } from '../types';
+import { useTheme } from '../hooks/useTheme';
 
 interface Props {
   repoPath: string;
@@ -15,6 +16,7 @@ export function NewWorktreeDialog({ repoPath, onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { refreshWorktrees } = useAppStore();
+  const theme = useTheme();
 
   useEffect(() => {
     invoke<BranchInfo[]>('list_branches', { repoPath })
@@ -55,20 +57,33 @@ export function NewWorktreeDialog({ repoPath, onClose }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-96 shadow-xl"
+        className="border rounded-lg p-6 w-96 shadow-xl"
+        style={{
+          background: theme.bg.secondary,
+          borderColor: theme.border.default,
+        }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 className="text-lg font-semibold text-zinc-100 mb-4">New Workspace</h2>
+        <h2 className="text-lg font-semibold mb-4" style={{ color: theme.text.primary }}>
+          New Workspace
+        </h2>
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-zinc-400 mb-1">Branch</label>
+            <label className="block text-sm mb-1" style={{ color: theme.text.secondary }}>
+              Branch
+            </label>
             <select
               value={selectedBranch}
               onChange={(e) => handleBranchSelect(e.target.value)}
-              className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-zinc-100 text-sm focus:outline-none focus:border-zinc-500"
+              className="w-full border rounded px-3 py-2 text-sm focus:outline-none"
+              style={{
+                background: theme.bg.tertiary,
+                borderColor: theme.border.subtle,
+                color: theme.text.primary,
+              }}
             >
               <option value="">Select a branch...</option>
               {branches
@@ -82,18 +97,32 @@ export function NewWorktreeDialog({ repoPath, onClose }: Props) {
           </div>
 
           <div>
-            <label className="block text-sm text-zinc-400 mb-1">Workspace name</label>
+            <label className="block text-sm mb-1" style={{ color: theme.text.secondary }}>
+              Workspace name
+            </label>
             <input
               type="text"
               value={worktreeName}
               onChange={(e) => setWorktreeName(e.target.value)}
               placeholder="e.g., feature-branch"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-zinc-100 text-sm focus:outline-none focus:border-zinc-500"
+              className="w-full border rounded px-3 py-2 text-sm focus:outline-none"
+              style={{
+                background: theme.bg.tertiary,
+                borderColor: theme.border.subtle,
+                color: theme.text.primary,
+              }}
             />
           </div>
 
           {error && (
-            <div className="text-red-400 text-sm bg-red-900/20 border border-red-800 rounded p-2">
+            <div
+              className="text-sm rounded p-2 border"
+              style={{
+                color: theme.semantic.error,
+                background: theme.semantic.errorMuted,
+                borderColor: theme.semantic.error,
+              }}
+            >
               {error}
             </div>
           )}
@@ -102,14 +131,19 @@ export function NewWorktreeDialog({ repoPath, onClose }: Props) {
         <div className="flex justify-end gap-2 mt-6">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 transition-colors"
+            className="px-4 py-2 text-sm transition-colors"
+            style={{ color: theme.text.secondary }}
           >
             Cancel
           </button>
           <button
             onClick={handleCreate}
             disabled={!selectedBranch || !worktreeName || loading}
-            className="px-4 py-2 text-sm bg-zinc-100 text-zinc-900 rounded hover:bg-zinc-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 text-sm rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{
+              background: theme.accent.primary,
+              color: theme.bg.primary,
+            }}
           >
             {loading ? 'Creating...' : 'Create'}
           </button>

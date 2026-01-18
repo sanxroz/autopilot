@@ -1,36 +1,89 @@
-import { useState } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
+import {
+  Plus,
+  PackagePlus,
+  Sun,
+  Moon,
+  MoreHorizontal,
+  ChevronDown,
+  ChevronRight,
+  Settings,
+  User,
+} from "lucide-react";
 import { useAppStore } from "../store";
 import type { WorktreeInfo } from "../types";
 import { NewWorktreeDialog } from "./NewWorktreeDialog";
+import { WorktreeItem } from "./WorktreeItem";
+import { useTheme, useThemeMode } from "../hooks/useTheme";
 
-function formatTimeAgo(dateString: string | null): string {
-  if (!dateString) return "";
+const MIN_WIDTH = 200;
+const MAX_WIDTH = 480;
+const DEFAULT_WIDTH = 288;
 
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffHours < 1) return "just now";
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
+function basename(path: string): string {
+  const cleaned = path.replace(/\/+$/g, "");
+  const parts = cleaned.split(/[\\/]/).filter(Boolean);
+  return parts[parts.length - 1] || cleaned;
 }
 
 export function Sidebar() {
   const {
     repositories,
     addRepository,
-    toggleRepoExpanded,
+    removeRepository,
     selectWorktree,
     selectedWorktree,
+    createWorktreeAuto,
+    deleteWorktree,
+    collapsedRepos,
+    toggleRepoCollapsed,
+    setThemeMode,
+    toggleSettings,
+    githubSettings,
   } = useAppStore();
+  const theme = useTheme();
+  const themeMode = useThemeMode();
   const [showWorktreeDialog, setShowWorktreeDialog] = useState<string | null>(
     null
   );
   const [error, setError] = useState<string | null>(null);
+  const [width, setWidth] = useState(DEFAULT_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, e.clientX));
+      setWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizing]);
+
+  const repoGroups = useMemo(() => {
+    return repositories.map((repo) => ({
+      repoName: repo.info.name || basename(repo.info.path),
+      repoPath: repo.info.path,
+      worktrees: repo.worktrees.filter((wt) => wt.name !== "main"),
+    }));
+  }, [repositories]);
 
   const handleAddRepository = async () => {
     setError(null);
@@ -40,8 +93,6 @@ export function Sidebar() {
         multiple: false,
         title: "Select Repository",
       });
-
-      console.log("Selected path:", selected);
 
       if (selected) {
         await addRepository(selected as string);
@@ -56,87 +107,281 @@ export function Sidebar() {
     await selectWorktree(worktree);
   };
 
+  const handleCreateWorktree = async (repoPath: string) => {
+    setError(null);
+    try {
+      const created = await createWorktreeAuto(repoPath);
+      if (created) {
+        await selectWorktree(created);
+      }
+    } catch (e) {
+      console.error("Failed to create worktree:", e);
+      setError(String(e));
+    }
+  };
+
+  const handleDeleteWorktree = async (
+    e: React.MouseEvent,
+    repoPath: string,
+    worktreeName: string
+  ) => {
+    e.stopPropagation();
+    setError(null);
+    try {
+      await deleteWorktree(repoPath, worktreeName);
+    } catch (e) {
+      console.error("Failed to delete worktree:", e);
+      setError(String(e));
+    }
+  };
+
+  const handleRemoveRepository = (e: React.MouseEvent, repoPath: string) => {
+    e.stopPropagation();
+    removeRepository(repoPath);
+  };
+
+  const handleToggleTheme = () => {
+    setThemeMode(themeMode === "dark" ? "light" : "dark");
+  };
+
   return (
-    <div className="w-64 bg-transparent border-r border-zinc-700/50 flex flex-col h-full pt-8">
-      <div className="flex-1 overflow-y-auto py-2">
-        {repositories.map((repo) => (
-          <div key={repo.info.path} className="mb-2">
-            <button
-              onClick={() => toggleRepoExpanded(repo.info.path)}
-              className="flex items-center gap-2 px-3 py-2 w-full text-left hover:bg-zinc-800/50 transition-colors"
-            >
-              <svg
-                className={`w-3 h-3 text-zinc-500 transition-transform ${
-                  repo.isExpanded ? "rotate-90" : ""
-                }`}
-                fill="currentColor"
-                viewBox="0 0 20 20"
-              >
-                <path d="M6 6L14 10L6 14V6Z" />
-              </svg>
-              <span className="text-zinc-100 font-medium text-sm">
-                {repo.info.name}
-              </span>
-            </button>
+    <div
+      className="relative flex flex-col h-full pt-8 select-none"
+      style={{
+        width: `${width}px`,
+        minWidth: `${MIN_WIDTH}px`,
+        maxWidth: `${MAX_WIDTH}px`,
+        background: theme.bg.secondary,
+        borderRight: `1px solid ${theme.border.default}`,
+      }}
+    >
+      <div
+        onMouseDown={handleMouseDown}
+        className="absolute top-0 right-0 w-1 h-full cursor-col-resize z-10 transition-colors"
+        style={{
+          backgroundColor: isResizing ? theme.border.strong : "transparent",
+        }}
+      />
 
-            {repo.isExpanded && (
-              <div className="ml-4">
-                <button
-                  onClick={() => setShowWorktreeDialog(repo.info.path)}
-                  className="flex items-center gap-2 px-3 py-1.5 w-full text-left text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/30 transition-colors text-sm"
+      <div
+        className="flex-1 overflow-y-auto scrollbar-hide px-2 pb-4"
+        style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+      >
+        <div className="flex flex-col gap-1">
+          {repoGroups.map((group, groupIndex) => {
+            const isCollapsed = collapsedRepos.has(group.repoPath);
+
+            return (
+              <div key={group.repoPath} className="w-full min-w-0">
+                {groupIndex > 0 && (
+                  <div
+                    className="h-px -mx-2 w-[calc(100%+1rem)] mt-1.5 mb-1"
+                    style={{ background: theme.border.subtle }}
+                  />
+                )}
+
+                <div
+                  className="flex items-center justify-between px-3 py-1.5 mt-0.5 mb-1 group w-full min-w-0 rounded-md cursor-pointer"
+                  onClick={() => toggleRepoCollapsed(group.repoPath)}
+                  style={{ background: "transparent" }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = theme.bg.hover;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "transparent";
+                  }}
                 >
-                  <svg
-                    className="w-3 h-3"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M12 4v16m8-8H4"
-                    />
-                  </svg>
-                  <span>New workspace</span>
-                </button>
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span
+                      className="font-departure font-medium truncate min-w-0"
+                      style={{ color: theme.text.primary }}
+                    >
+                      {group.repoName}
+                    </span>
+                    <span className="opacity-0 group-hover:opacity-100 transition-opacity">
+                      {isCollapsed ? (
+                        <ChevronRight
+                          className="h-3 w-3"
+                          style={{ color: theme.text.tertiary }}
+                        />
+                      ) : (
+                        <ChevronDown
+                          className="h-3 w-3"
+                          style={{ color: theme.text.tertiary }}
+                        />
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => handleRemoveRepository(e, group.repoPath)}
+                      className="p-1 -m-1 rounded-sm transition-colors"
+                      style={{ color: theme.text.tertiary }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.color = theme.text.primary;
+                        e.currentTarget.style.background = theme.bg.hover;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.color = theme.text.tertiary;
+                        e.currentTarget.style.background = "transparent";
+                      }}
+                      title="Repository settings"
+                    >
+                      <Settings className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
 
-                {repo.worktrees.map((wt) => (
-                  <button
-                    key={wt.path}
-                    onClick={() => handleWorktreeClick(wt)}
-                    className={`block w-full text-left px-3 py-1.5 transition-colors ${
-                      selectedWorktree?.path === wt.path
-                        ? "bg-zinc-700/50 text-zinc-100"
-                        : "text-zinc-300 hover:bg-zinc-800/30 hover:text-zinc-100"
-                    }`}
-                  >
-                    <div className="text-sm font-medium truncate">
-                      {wt.branch || wt.name}
-                    </div>
-                    <div className="text-xs text-zinc-500">
-                      {formatTimeAgo(wt.last_modified)}
-                    </div>
-                  </button>
-                ))}
+                {!isCollapsed && (
+                  <div className="w-full min-w-0 space-y-1">
+                    <button
+                      onClick={() => handleCreateWorktree(group.repoPath)}
+                      className="w-full h-8 py-3 text-sm gap-2 rounded-md flex items-center justify-start px-3 transition-colors group/button"
+                      style={{
+                        color: theme.text.secondary,
+                        background: "transparent",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = theme.bg.hover;
+                        e.currentTarget.style.color = theme.text.primary;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "transparent";
+                        e.currentTarget.style.color = theme.text.secondary;
+                      }}
+                    >
+                      <div className="flex items-center justify-between w-full">
+                        <div className="flex items-center gap-2">
+                          <Plus className="h-3 w-3 flex-shrink-0" />
+                          <span className="truncate text-sm">
+                            New workspace
+                          </span>
+                        </div>
+                        <div
+                          className="flex-shrink-0 p-1 -m-1 pr-1.5 rounded-sm opacity-0 group-hover/button:opacity-100 transition-opacity"
+                          style={{ color: theme.text.tertiary }}
+                        >
+                          <MoreHorizontal className="h-3 w-3" />
+                        </div>
+                      </div>
+                    </button>
+
+                    {group.worktrees.map((wt) => (
+                      <WorktreeItem
+                        key={wt.path}
+                        worktree={wt}
+                        repoPath={group.repoPath}
+                        isActive={selectedWorktree?.path === wt.path}
+                        onSelect={() => handleWorktreeClick(wt)}
+                        onDelete={(e) => handleDeleteWorktree(e, group.repoPath, wt.name)}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        ))}
+            );
+          })}
+
+          {repositories.length === 0 && (
+            <div
+              className="px-4 py-8 text-center text-sm"
+              style={{ color: theme.text.secondary }}
+            >
+              No repositories added yet
+            </div>
+          )}
+        </div>
       </div>
 
       {error && (
-        <div className="mx-3 mb-2 p-2 text-xs text-red-400 bg-red-900/20 border border-red-800 rounded">
+        <div
+          className="mx-3 mb-2 p-2 text-xs rounded border"
+          style={{
+            color: theme.semantic.error,
+            background: theme.semantic.errorMuted,
+            borderColor: theme.semantic.error,
+          }}
+        >
           {error}
         </div>
       )}
 
-      <button
-        onClick={handleAddRepository}
-        className="m-3 px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50 rounded transition-colors border border-zinc-700/50 hover:border-zinc-600"
-      >
-        Add repository
-      </button>
+      <div className="px-3 pb-3">
+        <div className="flex items-center gap-0.5 mb-3">
+          <button
+            onClick={toggleSettings}
+            className="p-0.5 rounded-full transition-colors"
+            style={{ background: "transparent" }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = theme.bg.hover;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+            }}
+            title={githubSettings.ghAuthUser ? `Signed in as ${githubSettings.ghAuthUser}` : "GitHub Setup"}
+          >
+            {githubSettings.ghAuthUser ? (
+              <img
+                src={`https://github.com/${githubSettings.ghAuthUser}.png?size=64`}
+                alt={githubSettings.ghAuthUser}
+                className="w-5 h-5 rounded-full"
+              />
+            ) : (
+              <div
+                className="w-5 h-5 rounded-full flex items-center justify-center"
+                style={{ background: theme.bg.tertiary }}
+              >
+                <User className="w-3 h-3" style={{ color: theme.text.tertiary }} />
+              </div>
+            )}
+          </button>
+
+        <div className="flex items-center gap-1">
+          <button
+            onClick={handleToggleTheme}
+            className="p-2 transition-colors rounded-md"
+            style={{
+              background: "transparent",
+              color: theme.text.tertiary,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = theme.bg.hover;
+              e.currentTarget.style.color = theme.text.primary;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.color = theme.text.tertiary;
+            }}
+          >
+            {themeMode === "dark" ? (
+              <Sun className="w-4 h-4" strokeWidth={1.5} />
+            ) : (
+              <Moon className="w-4 h-4" strokeWidth={1.5} />
+            )}
+          </button>
+        </div>
+
+        </div>
+        <button
+          onClick={handleAddRepository}
+          className="px-2 py-1.5 text-sm transition-colors flex items-center gap-2 rounded-md"
+          style={{
+            background: "transparent",
+            color: theme.text.secondary,
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = theme.bg.hover;
+            e.currentTarget.style.color = theme.text.primary;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+            e.currentTarget.style.color = theme.text.secondary;
+          }}
+        >
+          <PackagePlus className="w-4 h-4" strokeWidth={2} />
+          <span className='font-medium'>Add repository</span>
+        </button>
+      </div>
 
       {showWorktreeDialog && (
         <NewWorktreeDialog
