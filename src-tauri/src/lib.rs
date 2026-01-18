@@ -1,6 +1,6 @@
 mod commands;
 
-use commands::{git, terminal};
+use commands::{git, github, process, terminal};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -29,14 +29,27 @@ pub fn run() {
         })
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
-            // Git commands
             git::discover_repository,
             git::list_worktrees,
             git::create_worktree,
             git::delete_worktree,
             git::list_branches,
             git::get_worktree_info,
-            // Terminal commands
+            git::get_changed_files,
+            git::get_file_diff,
+            git::get_file_content,
+            github::check_gh_cli,
+            github::check_gh_auth,
+            github::get_pr_for_branch,
+            github::get_all_prs_for_repos,
+            github::get_pr_status,
+            github::get_repo_from_remote,
+            github::get_pr_checks,
+            github::get_pr_details,
+            github::create_pr,
+            github::run_cubic_review,
+            process::get_worktree_process_status,
+            process::get_all_worktrees_process_status,
             terminal::spawn_terminal,
             terminal::write_to_terminal,
             terminal::resize_terminal,
