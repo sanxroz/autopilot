@@ -10,8 +10,11 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@git-diff-view/react": "^0.0.36",
+    "@git-diff-view/shiki": "^0.0.36",
     "@pierre/diffs": "^1.0.5",
     "@radix-ui/react-dialog": "^1.1.15",
+    "@tanstack/react-virtual": "^3.13.18",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.5.0",
     "@tauri-apps/plugin-opener": "^2",
@@ -25,6 +28,7 @@
     "lucide-react": "^0.562.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "shiki": "^3.21.0",
     "tailwind-merge": "^3.4.0",
     "tailwind-variants": "^3.2.2",
     "three": "^0.182.0",

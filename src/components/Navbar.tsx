@@ -1,9 +1,11 @@
-import { GitBranch, PanelRight } from "lucide-react";
+import { GitBranch, GitCompareArrows, PanelRight } from "lucide-react";
 import { useAppStore } from "../store";
 import { useTheme } from "../hooks/useTheme";
 
 export function Navbar() {
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
+  const diffOverlayOpen = useAppStore((state) => state.diffOverlayOpen);
+  const toggleDiffOverlay = useAppStore((state) => state.toggleDiffOverlay);
   const codeReviewOpen = useAppStore((state) => state.codeReviewOpen);
   const toggleCodeReview = useAppStore((state) => state.toggleCodeReview);
   const theme = useTheme();
@@ -47,7 +49,30 @@ export function Navbar() {
         )}
       </div>
 
-      <div className="flex items-center gap-1 w-24 justify-end">
+      <div className="flex items-center gap-1 justify-end">
+        <button
+          onClick={toggleDiffOverlay}
+          className="py-1.5 px-2 transition-colors rounded-md"
+          style={{
+            background: "transparent",
+            color: diffOverlayOpen ? theme.accent.primary : theme.text.tertiary,
+          }}
+          onMouseEnter={(e) => {
+            if (!diffOverlayOpen) {
+              e.currentTarget.style.background = theme.bg.hover;
+              e.currentTarget.style.color = theme.text.primary;
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+            if (!diffOverlayOpen) {
+              e.currentTarget.style.color = theme.text.tertiary;
+            }
+          }}
+          title="Diff"
+        >
+          <GitCompareArrows className="w-4 h-4" strokeWidth={1.5} />
+        </button>
         <button
           onClick={toggleCodeReview}
           className="py-1.5 px-2 transition-colors rounded-md"
@@ -67,7 +92,7 @@ export function Navbar() {
               e.currentTarget.style.color = theme.text.tertiary;
             }
           }}
-          title="Code Review"
+          title="Checks & Review"
         >
           <PanelRight className="w-4 h-4" strokeWidth={1.5} />
         </button>

@@ -8,6 +8,7 @@ export interface WorktreeInfo {
   path: string;
   branch: string | null;
   last_modified: string | null;
+  diff_stats?: DiffStats;
 }
 
 export interface BranchInfo {
@@ -28,8 +29,29 @@ export interface TerminalPane {
   activeTerminalId: string | null;
 }
 
+export interface DiffStats {
+  additions: number;
+  deletions: number;
+}
+
 export interface Repository {
   info: RepoInfo;
   worktrees: WorktreeInfo[];
   isExpanded: boolean;
+}
+
+export type ProcessStatus = 'dev_server' | 'agent_running' | 'none';
+
+export type FileStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'untracked';
+
+export interface ChangedFile {
+  path: string;
+  status: FileStatus;
+  additions: number;
+  deletions: number;
+}
+
+export interface FileDiffData {
+  path: string;
+  patch: string;
 }

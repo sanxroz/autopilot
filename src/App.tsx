@@ -3,6 +3,7 @@ import { Navbar } from "./components/Navbar";
 import { Sidebar } from "./components/Sidebar";
 import { TerminalGrid } from "./components/TerminalGrid";
 import { RightPanel } from "./components/RightPanel";
+import { DiffOverlay } from "./components/DiffOverlay";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { CommandMenu } from "./components/CommandMenu";
 import { useAppStore } from "./store";
@@ -15,6 +16,8 @@ function App() {
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
   const codeReviewOpen = useAppStore((state) => state.codeReviewOpen);
   const setCodeReviewOpen = useAppStore((state) => state.setCodeReviewOpen);
+  const diffOverlayOpen = useAppStore((state) => state.diffOverlayOpen);
+  const setDiffOverlayOpen = useAppStore((state) => state.setDiffOverlayOpen);
   const settingsOpen = useAppStore((state) => state.settingsOpen);
   const toggleSettings = useAppStore((state) => state.toggleSettings);
   const theme = useTheme();
@@ -53,9 +56,15 @@ function App() {
         }}
       >
         <Sidebar />
-        <div className="flex flex-col flex-1 overflow-hidden">
+        <div className="flex flex-col flex-1 overflow-hidden relative">
           <Navbar />
           <TerminalGrid />
+          {diffOverlayOpen && (
+            <DiffOverlay
+              worktreePath={selectedWorktree?.path ?? null}
+              onClose={() => setDiffOverlayOpen(false)}
+            />
+          )}
         </div>
         {codeReviewOpen && (
           <RightPanel

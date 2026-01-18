@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: 'Departure Mono';
+  src: url('/fonts/DepartureMono-Regular.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -83,4 +91,48 @@ body {
 
 .xterm-viewport {
   overflow-y: auto !important;
+}
+
+.diff-overlay [class*="diff-view"] {
+  --diff-font-size--: 12px;
+  --diff-font-family--: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --diff-line-height--: 1.5;
+  --diff-hunk-line-height--: 28px;
+  --diff-background-color--: transparent;
+  --diff-add-background-color--: rgba(46, 160, 67, 0.15);
+  --diff-del-background-color--: rgba(248, 81, 73, 0.15);
+  --diff-add-widget-background-color--: rgba(46, 160, 67, 0.3);
+  --diff-del-widget-background-color--: rgba(248, 81, 73, 0.3);
+  --diff-hunk-background-color--: rgba(56, 139, 253, 0.1);
+  --diff-hunk-hover-background-color--: rgba(56, 139, 253, 0.2);
+  --diff-line-number-color--: #6e7681;
+  --diff-content-color--: #e6edf3;
+  --diff-expand-content-color--: #6e7681;
+  --diff-add-line-number-background-color--: rgba(46, 160, 67, 0.2);
+  --diff-del-line-number-background-color--: rgba(248, 81, 73, 0.2);
+  --diff-border-color--: #30363d;
+}
+
+.agent-diff-wrapper {
+  --diff-font-size--: 12px;
+  --diff-line-height--: 1.5;
+  font-size: 12px;
+  line-height: 1.5;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.agent-diff-wrapper .diff-line-content-item,
+.agent-diff-wrapper .diff-line-syntax-raw,
+.agent-diff-wrapper .unified-diff-table,
+.agent-diff-wrapper .diff-line-num {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.agent-diff-wrapper code,
+.agent-diff-wrapper pre {
+  font-size: 12px;
+  font-family: "Monaco", "Menlo", "Consolas", monospace;
 }

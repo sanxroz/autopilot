@@ -224,6 +224,102 @@ pub fn list_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
     Ok(branches)
 }
 
+const CITY_NAMES: &[&str] = &[
+    "tokyo", "paris", "london", "berlin", "sydney", "toronto", "mumbai", "cairo",
+    "rio", "seoul", "dublin", "oslo", "vienna", "prague", "lisbon", "athens",
+    "rome", "madrid", "amsterdam", "brussels", "zurich", "stockholm", "helsinki",
+    "warsaw", "budapest", "bangkok", "singapore", "jakarta", "manila", "hanoi",
+    "beijing", "shanghai", "hongkong", "taipei", "osaka", "kyoto", "melbourne",
+    "auckland", "vancouver", "montreal", "chicago", "boston", "seattle", "denver",
+    "austin", "miami", "atlanta", "phoenix", "portland", "detroit", "dallas",
+    "houston", "philadelphia", "sandiego", "sanfrancisco", "losangeles", "newyork",
+    "nairobi", "lagos", "capetown", "casablanca", "tunis", "algiers", "accra",
+    "lima", "bogota", "santiago", "buenosaires", "montevideo", "quito", "caracas",
+    "havana", "mexicocity", "guadalajara", "panama", "sanjose", "kingston",
+];
+
+fn generate_unique_worktree_name(repo: &Repository) -> Result<String, String> {
+    use rand::Rng;
+    
+    let mut rng = rand::rng();
+    
+    for _ in 0..100 {
+        let city = CITY_NAMES[rng.random_range(0..CITY_NAMES.len())];
+        let num: u32 = rng.random_range(100..999);
+        let name = format!("{}-{}", num, city);
+        
+        let branch_exists = repo.find_branch(&name, BranchType::Local).is_ok();
+        let ref_exists = repo.find_reference(&format!("refs/heads/{}", name)).is_ok();
+        
+        if !branch_exists && !ref_exists {
+            return Ok(name);
+        }
+    }
+
+    Err("Could not generate unique worktree name".to_string())
+}
+
+#[tauri::command]
+pub fn create_worktree_auto(repo_path: String) -> Result<WorktreeInfo, String> {
+    use std::process::Command;
+    
+    Command::new("git")
+        .args(["worktree", "prune"])
+        .current_dir(&repo_path)
+        .output()
+        .ok();
+    
+    let repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
+    
+    let worktree_name = generate_unique_worktree_name(&repo)?;
+    
+    // Find default branch (origin/main or origin/master)
+    let base_branch = if repo.find_branch("origin/main", BranchType::Remote).is_ok() {
+        "main"
+    } else if repo.find_branch("origin/master", BranchType::Remote).is_ok() {
+        "master"
+    } else {
+        return Err("Cannot find origin/main or origin/master".to_string());
+    };
+
+    let worktrees_dir = PathBuf::from(&repo_path).join(".worktrees");
+    if !worktrees_dir.exists() {
+        std::fs::create_dir_all(&worktrees_dir).map_err(|e| e.to_string())?;
+    }
+    
+    let wt_path = worktrees_dir.join(&worktree_name);
+
+    let remote_name = format!("origin/{}", base_branch);
+    let base_commit = repo
+        .find_branch(&remote_name, BranchType::Remote)
+        .map_err(|e| format!("Base branch not found: {}", e.message()))?
+        .get()
+        .peel_to_commit()
+        .map_err(|e| format!("Cannot get commit: {}", e.message()))?;
+
+    let new_branch = repo
+        .branch(&worktree_name, &base_commit, false)
+        .map_err(|e| format!("Cannot create branch: {}", e.message()))?;
+
+    let mut opts = WorktreeAddOptions::new();
+    let branch_ref = new_branch.into_reference();
+    opts.reference(Some(&branch_ref));
+
+    repo.worktree(&worktree_name, &wt_path, Some(&opts))
+        .map_err(|e| e.message().to_string())?;
+
+    let last_modified = get_last_modified(&wt_path);
+    let diff_stats = get_diff_stats_vs_origin_default(&wt_path);
+
+    Ok(WorktreeInfo {
+        name: worktree_name.clone(),
+        path: wt_path.to_string_lossy().to_string(),
+        branch: Some(worktree_name),
+        last_modified,
+        diff_stats,
+    })
+}
+
 #[tauri::command]
 pub fn create_worktree(
     repo_path: String,

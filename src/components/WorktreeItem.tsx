@@ -88,7 +88,7 @@ export function WorktreeItem({
 
   const prStatus = usePRStatusForBranch(repoPath, wt.branch);
   const statusInfo = getStatusInfo(prStatus);
-  const processStatus = useAppStore((state) => state.getProcessStatus(wt.path));
+  const processStatus = useAppStore((state) => state.processStatusByPath[wt.path] || 'none');
   const processStatusColor = PROCESS_STATUS_COLORS[processStatus];
   const processStatusLabel = PROCESS_STATUS_LABELS[processStatus];
 
@@ -132,8 +132,8 @@ export function WorktreeItem({
           <div className="relative flex items-center gap-1.5">
             {!prStatus && hasStats && (
               <div
-                className="flex items-center gap-1 font-mono font-medium flex-shrink-0 rounded-sm text-xs py-0.5 px-1 group-hover:opacity-0 transition-opacity"
-                style={{ border: `1px solid ${theme.border.default}` }}
+                className="flex items-center gap-1 font-medium flex-shrink-0 rounded-sm text-xs py-0.5 px-1 group-hover:opacity-0 transition-opacity"
+                style={{ fontFamily: "'Departure Mono', monospace" }}
               >
                 {wt.diff_stats!.additions > 0 && (
                   <span style={{ color: "#22C55E" }}>+{wt.diff_stats!.additions}</span>

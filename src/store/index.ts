@@ -1,7 +1,10 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { load } from '@tauri-apps/plugin-store';
-import type { Repository, WorktreeInfo, TerminalInstance } from '../types';
+import type { Repository, WorktreeInfo, TerminalInstance, ProcessStatus } from '../types';
+import type { GitHubSettings, PRStatus } from '../types/github';
+import { DEFAULT_GITHUB_SETTINGS } from '../types/github';
+import { setThemeMode as setGlobalThemeMode, type ThemeMode } from '../theme';
 
 interface PersistedState {
   repositoryPaths: string[];
@@ -19,6 +22,13 @@ interface AppStore {
   currentTerminals: TerminalInstance[];
   currentActiveTerminalId: string | null;
   isInitialized: boolean;
+  githubSettings: GitHubSettings;
+  prStatusByBranch: Record<string, Record<string, PRStatus>>;
+  collapsedRepos: Set<string>;
+  settingsOpen: boolean;
+  codeReviewOpen: boolean;
+  diffOverlayOpen: boolean;
+  processStatusByPath: Record<string, ProcessStatus>;
 
   initialize: () => Promise<void>;
   addRepository: (path: string) => Promise<void>;
@@ -26,19 +36,33 @@ interface AppStore {
   toggleRepoExpanded: (path: string) => void;
   refreshWorktrees: (repoPath: string) => Promise<void>;
   selectWorktree: (worktree: WorktreeInfo) => Promise<void>;
-
   addTerminal: () => Promise<string | null>;
   removeTerminal: (terminalId: string) => void;
   setActiveTerminal: (terminalId: string) => void;
+  toggleRepoCollapsed: (path: string) => void;
+  setThemeMode: (mode: ThemeMode) => Promise<void>;
+  toggleSettings: () => void;
+  setCodeReviewOpen: (open: boolean) => void;
+  toggleCodeReview: () => void;
+  setDiffOverlayOpen: (open: boolean) => void;
+  toggleDiffOverlay: () => void;
+  createWorktreeAuto: (repoPath: string) => Promise<WorktreeInfo | null>;
+  deleteWorktree: (repoPath: string, worktreeName: string) => Promise<void>;
+  setPRStatusBatch: (batch: Record<string, Record<string, PRStatus>>) => void;
+  setPollingInterval: (intervalMs: number) => void;
+  checkGitHubCli: () => Promise<void>;
+  refreshProcessStatuses: () => Promise<void>;
+  getProcessStatus: (worktreePath: string) => ProcessStatus;
 }
 
 const STORE_PATH = 'autopilot-settings.json';
 
-async function loadPersistedState(): Promise<PersistedState> {
+async function loadPersistedState(): Promise<PersistedState & { themeMode?: ThemeMode }> {
   try {
     const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
     const paths = await store.get<string[]>('repositoryPaths');
-    return { repositoryPaths: paths || [] };
+    const themeMode = await store.get<ThemeMode>('themeMode');
+    return { repositoryPaths: paths || [], themeMode };
   } catch {
     return { repositoryPaths: [] };
   }
@@ -61,11 +85,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
   currentTerminals: [],
   currentActiveTerminalId: null,
   isInitialized: false,
+  githubSettings: DEFAULT_GITHUB_SETTINGS,
+  prStatusByBranch: {},
+  collapsedRepos: new Set<string>(),
+  settingsOpen: false,
+  codeReviewOpen: false,
+  diffOverlayOpen: false,
+  processStatusByPath: {},
 
   initialize: async () => {
     if (get().isInitialized) return;
 
     const persisted = await loadPersistedState();
+    
+    if (persisted.themeMode) {
+      setGlobalThemeMode(persisted.themeMode);
+    }
     
     for (const path of persisted.repositoryPaths) {
       try {
@@ -84,6 +119,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
 
     set({ isInitialized: true });
+    
+    get().checkGitHubCli();
   },
 
   addRepository: async (path: string) => {
@@ -251,5 +288,117 @@ export const useAppStore = create<AppStore>((set, get) => ({
         },
       },
     }));
+  },
+
+  toggleRepoCollapsed: (path: string) => {
+    set((state) => {
+      const newCollapsed = new Set(state.collapsedRepos);
+      if (newCollapsed.has(path)) {
+        newCollapsed.delete(path);
+      } else {
+        newCollapsed.add(path);
+      }
+      return { collapsedRepos: newCollapsed };
+    });
+  },
+
+  setThemeMode: async (mode: ThemeMode) => {
+    setGlobalThemeMode(mode);
+    try {
+      const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
+      await store.set('themeMode', mode);
+      await store.save();
+    } catch (e) {
+      console.error('Failed to save theme mode:', e);
+    }
+  },
+
+  toggleSettings: () => {
+    set((state) => ({ settingsOpen: !state.settingsOpen }));
+  },
+
+  setCodeReviewOpen: (open: boolean) => {
+    set({ codeReviewOpen: open });
+  },
+
+  toggleCodeReview: () => {
+    set((state) => ({ codeReviewOpen: !state.codeReviewOpen }));
+  },
+
+  setDiffOverlayOpen: (open: boolean) => {
+    set({ diffOverlayOpen: open });
+  },
+
+  toggleDiffOverlay: () => {
+    set((state) => ({ diffOverlayOpen: !state.diffOverlayOpen }));
+  },
+
+  createWorktreeAuto: async (repoPath: string) => {
+    try {
+      const worktree = await invoke<WorktreeInfo>('create_worktree_auto', { repoPath });
+      await get().refreshWorktrees(repoPath);
+      return worktree;
+    } catch (e) {
+      console.error('Failed to create worktree:', e);
+      throw e;
+    }
+  },
+
+  deleteWorktree: async (repoPath: string, worktreeName: string) => {
+    try {
+      await invoke('delete_worktree', { repoPath, worktreeName, force: true });
+      await get().refreshWorktrees(repoPath);
+    } catch (e) {
+      console.error('Failed to delete worktree:', e);
+      throw e;
+    }
+  },
+
+  setPRStatusBatch: (batch: Record<string, Record<string, PRStatus>>) => {
+    set({ prStatusByBranch: batch });
+  },
+
+  setPollingInterval: (intervalMs: number) => {
+    set((state) => ({
+      githubSettings: { ...state.githubSettings, pollingIntervalMs: intervalMs },
+    }));
+  },
+
+  checkGitHubCli: async () => {
+    try {
+      const available = await invoke<boolean>('check_gh_cli');
+      let user: string | null = null;
+      
+      if (available) {
+        try {
+          user = await invoke<string>('check_gh_auth');
+        } catch {
+          user = null;
+        }
+      }
+      
+      set((state) => ({
+        githubSettings: {
+          ...state.githubSettings,
+          ghCliAvailable: available,
+          ghAuthUser: user,
+        },
+      }));
+    } catch (e) {
+      console.error('Failed to check GitHub CLI:', e);
+      set((state) => ({
+        githubSettings: {
+          ...state.githubSettings,
+          ghCliAvailable: false,
+          ghAuthUser: null,
+        },
+      }));
+    }
+  },
+
+  refreshProcessStatuses: async () => {},
+
+  getProcessStatus: (worktreePath: string): ProcessStatus => {
+    return get().processStatusByPath[worktreePath] || 'none';
   },
 }));

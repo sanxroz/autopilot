@@ -1,27 +1,30 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import type { ChangedFile, FileDiffData } from '../types';
 
 interface UseCodeReviewResult {
   changedFiles: ChangedFile[];
-  selectedFile: string | null;
-  fileDiff: FileDiffData | null;
   isLoading: boolean;
   error: string | null;
-  selectFile: (path: string) => void;
+  getDiff: (path: string) => FileDiffData | null;
+  loadDiff: (path: string) => Promise<void>;
+  isDiffLoading: (path: string) => boolean;
   refresh: () => void;
 }
 
 export function useCodeReview(worktreePath: string | null): UseCodeReviewResult {
   const [changedFiles, setChangedFiles] = useState<ChangedFile[]>([]);
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [fileDiff, setFileDiff] = useState<FileDiffData | null>(null);
+  const [diffCache, setDiffCache] = useState<Record<string, FileDiffData>>({});
+  const [loadingDiffs, setLoadingDiffs] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const worktreePathRef = useRef(worktreePath);
+  worktreePathRef.current = worktreePath;
 
   const fetchChangedFiles = useCallback(async () => {
     if (!worktreePath) {
       setChangedFiles([]);
+      setDiffCache({});
       return;
     }
 
@@ -33,60 +36,63 @@ export function useCodeReview(worktreePath: string | null): UseCodeReviewResult 
         worktreePath,
       });
       setChangedFiles(files);
-      
-      if (files.length > 0 && !selectedFile) {
-        setSelectedFile(files[0].path);
-      }
     } catch (e) {
       setError(String(e));
       setChangedFiles([]);
     } finally {
       setIsLoading(false);
     }
-  }, [worktreePath, selectedFile]);
+  }, [worktreePath]);
 
-  const fetchFileDiff = useCallback(async () => {
-    if (!worktreePath || !selectedFile) {
-      setFileDiff(null);
+  const loadDiff = useCallback(async (path: string) => {
+    const currentWorktreePath = worktreePathRef.current;
+    if (!currentWorktreePath || diffCache[path] || loadingDiffs.has(path)) {
       return;
     }
 
+    setLoadingDiffs((prev) => new Set(prev).add(path));
+
     try {
       const diff = await invoke<FileDiffData>('get_file_diff', {
-        worktreePath,
-        filePath: selectedFile,
+        worktreePath: currentWorktreePath,
+        filePath: path,
       });
-      setFileDiff(diff);
-    } catch (e) {
-      setError(String(e));
-      setFileDiff(null);
+      setDiffCache((prev) => ({ ...prev, [path]: diff }));
+    } catch {
+      setDiffCache((prev) => ({ ...prev, [path]: { path, patch: '' } }));
+    } finally {
+      setLoadingDiffs((prev) => {
+        const next = new Set(prev);
+        next.delete(path);
+        return next;
+      });
     }
-  }, [worktreePath, selectedFile]);
+  }, [diffCache, loadingDiffs]);
+
+  const getDiff = useCallback((path: string): FileDiffData | null => {
+    return diffCache[path] || null;
+  }, [diffCache]);
+
+  const isDiffLoading = useCallback((path: string): boolean => {
+    return loadingDiffs.has(path);
+  }, [loadingDiffs]);
 
   useEffect(() => {
     fetchChangedFiles();
   }, [fetchChangedFiles]);
 
-  useEffect(() => {
-    fetchFileDiff();
-  }, [fetchFileDiff]);
-
-  const selectFile = useCallback((path: string) => {
-    setSelectedFile(path);
-  }, []);
-
   const refresh = useCallback(() => {
-    setSelectedFile(null);
+    setDiffCache({});
     fetchChangedFiles();
   }, [fetchChangedFiles]);
 
   return {
     changedFiles,
-    selectedFile,
-    fileDiff,
     isLoading,
     error,
-    selectFile,
+    getDiff,
+    loadDiff,
+    isDiffLoading,
     refresh,
   };
 }

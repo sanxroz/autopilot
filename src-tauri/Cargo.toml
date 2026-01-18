@@ -29,6 +29,7 @@ dirs = "5"
 chrono = { version = "0.4", features = ["serde"] }
 window-vibrancy = "0.6"
 sysinfo = "0.32"
+rand = "0.9.2"
 
 [target."cfg(unix)".dependencies]
 libc = "0.2"

@@ -32,6 +32,7 @@ pub fn run() {
             git::discover_repository,
             git::list_worktrees,
             git::create_worktree,
+            git::create_worktree_auto,
             git::delete_worktree,
             git::list_branches,
             git::get_worktree_info,

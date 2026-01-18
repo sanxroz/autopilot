@@ -303,8 +303,6 @@ struct GhCheckRun {
     name: String,
     state: String,
     #[serde(default)]
-    description: Option<String>,
-    #[serde(default)]
     link: Option<String>,
     #[serde(default)]
     started_at: Option<String>,

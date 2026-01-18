@@ -8,10 +8,8 @@ import {
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTheme } from "../../hooks/useTheme";
-import { useCodeReview } from "../../hooks/useCodeReview";
 import { usePRStatusForBranch } from "../../hooks/usePRStatus";
 import { useAppStore } from "../../store";
-import { ChangesTab } from "./ChangesTab";
 import { ChecksTab } from "./ChecksTab";
 import { ReviewTab } from "./ReviewTab";
 import type { CreatePRResult } from "../../types/github";
@@ -21,7 +19,7 @@ interface RightPanelProps {
   onClose: () => void;
 }
 
-type TabId = "changes" | "checks" | "review";
+type TabId = "checks" | "review";
 
 const MIN_WIDTH = 300;
 const MAX_WIDTH = 800;
@@ -31,7 +29,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const theme = useTheme();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
-  const [activeTab, setActiveTab] = useState<TabId>("changes");
+  const [activeTab, setActiveTab] = useState<TabId>("checks");
   const [showPRDropdown, setShowPRDropdown] = useState(false);
   const [isCreatingPR, setIsCreatingPR] = useState(false);
 
@@ -46,15 +44,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const branch = selectedWorktree?.branch ?? null;
   const prStatus = usePRStatusForBranch(repoPath ?? "", branch);
 
-  const {
-    changedFiles,
-    selectedFile,
-    fileDiff,
-    isLoading,
-    error,
-    selectFile,
-    refresh,
-  } = useCodeReview(worktreePath);
+  const refresh = useCallback(() => {}, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -123,8 +113,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
     prStatus.checks_status === "success" &&
     (prStatus.review_decision === "APPROVED" || prStatus.review_decision === null);
 
-  const tabs: { id: TabId; label: string; count?: number; color?: string }[] = [
-    { id: "changes", label: "Changes", count: changedFiles.length },
+  const tabs: { id: TabId; label: string; color?: string }[] = [
     { id: "checks", label: "Checks", color: getChecksColor() },
     { id: "review", label: "Review" },
   ];
@@ -208,17 +197,6 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
               }}
             >
               {tab.label}
-              {tab.count !== undefined && (
-                <span
-                  className="text-xs px-1.5 py-0.5 rounded"
-                  style={{
-                    background: theme.bg.tertiary,
-                    color: theme.text.tertiary,
-                  }}
-                >
-                  {tab.count}
-                </span>
-              )}
             </button>
           );
         })}
@@ -316,29 +294,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         )}
       </div>
 
-      {error && (
-        <div
-          className="px-3 py-2 text-xs border-b"
-          style={{
-            background: theme.semantic.errorMuted,
-            borderColor: theme.border.default,
-            color: theme.semantic.error,
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      <div className="flex-1 overflow-hidden flex flex-col">
-        {activeTab === "changes" && (
-          <ChangesTab
-            changedFiles={changedFiles}
-            selectedFile={selectedFile}
-            fileDiff={fileDiff}
-            isLoading={isLoading}
-            onSelectFile={selectFile}
-          />
-        )}
+<div className="flex-1 overflow-hidden flex flex-col">
         {activeTab === "checks" && (
           <ChecksTab
             repoPath={repoPath}
