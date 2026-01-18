@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use git2::{BranchType, Repository, WorktreeAddOptions};
+use git2::{BranchType, Delta, DiffOptions, Repository, WorktreeAddOptions};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -9,12 +9,19 @@ pub struct RepoInfo {
     pub name: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DiffStats {
+    pub additions: usize,
+    pub deletions: usize,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WorktreeInfo {
     pub name: String,
     pub path: String,
     pub branch: Option<String>,
     pub last_modified: Option<String>,
+    pub diff_stats: Option<DiffStats>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -22,6 +29,23 @@ pub struct BranchInfo {
     pub name: String,
     pub is_remote: bool,
     pub is_head: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ChangedFile {
+    pub path: String,
+    pub status: String,
+    pub old_path: Option<String>,
+    pub additions: usize,
+    pub deletions: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileDiffData {
+    pub path: String,
+    pub old_content: Option<String>,
+    pub new_content: Option<String>,
+    pub patch: String,
 }
 
 fn get_last_modified(path: &std::path::Path) -> Option<String> {
@@ -38,6 +62,38 @@ fn get_worktree_branch(repo_path: &std::path::Path) -> Option<String> {
     let repo = Repository::open(repo_path).ok()?;
     let head = repo.head().ok()?;
     head.shorthand().map(String::from)
+}
+
+fn get_diff_stats_vs_origin_default(repo_path: &std::path::Path) -> Option<DiffStats> {
+    let repo = Repository::open(repo_path).ok()?;
+    
+    let head = repo.head().ok()?;
+    let head_commit = head.peel_to_commit().ok()?;
+    
+    let base_commit = repo
+        .find_branch("origin/main", BranchType::Remote)
+        .or_else(|_| repo.find_branch("origin/master", BranchType::Remote))
+        .or_else(|_| repo.find_branch("main", BranchType::Local))
+        .or_else(|_| repo.find_branch("master", BranchType::Local))
+        .ok()?
+        .get()
+        .peel_to_commit()
+        .ok()?;
+    
+    if head_commit.id() == base_commit.id() {
+        return Some(DiffStats { additions: 0, deletions: 0 });
+    }
+    
+    let base_tree = base_commit.tree().ok()?;
+    let head_tree = head_commit.tree().ok()?;
+    
+    let diff = repo.diff_tree_to_tree(Some(&base_tree), Some(&head_tree), None).ok()?;
+    let stats = diff.stats().ok()?;
+    
+    Some(DiffStats {
+        additions: stats.insertions(),
+        deletions: stats.deletions(),
+    })
 }
 
 #[tauri::command]
@@ -79,6 +135,7 @@ pub fn list_worktrees(repo_path: String) -> Result<Vec<WorktreeInfo>, String> {
             path: main_path.to_string_lossy().to_string(),
             branch,
             last_modified,
+            diff_stats: None,
         });
     }
 
@@ -87,12 +144,14 @@ pub fn list_worktrees(repo_path: String) -> Result<Vec<WorktreeInfo>, String> {
             let wt_path = wt.path().to_path_buf();
             let branch = get_worktree_branch(&wt_path);
             let last_modified = get_last_modified(&wt_path);
+            let diff_stats = get_diff_stats_vs_origin_default(&wt_path);
 
             result.push(WorktreeInfo {
                 name: wt_name.to_string(),
                 path: wt_path.to_string_lossy().to_string(),
                 branch,
                 last_modified,
+                diff_stats,
             });
         }
     }
@@ -105,6 +164,7 @@ pub fn get_worktree_info(worktree_path: String) -> Result<WorktreeInfo, String> 
     let path = PathBuf::from(&worktree_path);
     let branch = get_worktree_branch(&path);
     let last_modified = get_last_modified(&path);
+    let diff_stats = get_diff_stats_vs_origin_default(&path);
 
     let name = path
         .file_name()
@@ -117,6 +177,7 @@ pub fn get_worktree_info(worktree_path: String) -> Result<WorktreeInfo, String> 
         path: worktree_path,
         branch,
         last_modified,
+        diff_stats,
     })
 }
 
@@ -167,7 +228,8 @@ pub fn list_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
 pub fn create_worktree(
     repo_path: String,
     worktree_name: String,
-    branch_name: String,
+    base_branch: String,
+    new_branch_name: Option<String>,
     target_path: Option<String>,
 ) -> Result<WorktreeInfo, String> {
     let repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
@@ -175,63 +237,278 @@ pub fn create_worktree(
     let wt_path = match target_path {
         Some(p) => PathBuf::from(p),
         None => {
-            let repo_parent = PathBuf::from(&repo_path)
-                .parent()
-                .ok_or("Cannot get parent directory")?
-                .to_path_buf();
-            repo_parent.join(&worktree_name)
+            PathBuf::from(&repo_path)
+                .join(".worktrees")
+                .join(&worktree_name)
         }
     };
 
-    let branch = repo
-        .find_branch(&branch_name, BranchType::Local)
-        .or_else(|_| {
-            let remote_name = format!("origin/{}", branch_name);
-            repo.find_branch(&remote_name, BranchType::Remote)
-                .and_then(|remote_branch| {
-                    let commit = remote_branch.get().peel_to_commit()?;
-                    repo.branch(&branch_name, &commit, false)
-                })
-        })
-        .map_err(|e| format!("Branch not found: {}", e.message()))?;
+    let branch_name = new_branch_name.unwrap_or_else(|| worktree_name.clone());
+
+    let remote_name = format!("origin/{}", base_branch);
+    let base_commit = repo
+        .find_branch(&remote_name, BranchType::Remote)
+        .or_else(|_| repo.find_branch(&base_branch, BranchType::Local))
+        .map_err(|e| format!("Base branch not found: {}", e.message()))?
+        .get()
+        .peel_to_commit()
+        .map_err(|e| format!("Cannot get commit: {}", e.message()))?;
+
+    let new_branch = repo
+        .branch(&branch_name, &base_commit, false)
+        .map_err(|e| format!("Cannot create branch: {}", e.message()))?;
 
     let mut opts = WorktreeAddOptions::new();
-    let branch_ref = branch.into_reference();
+    let branch_ref = new_branch.into_reference();
     opts.reference(Some(&branch_ref));
 
     repo.worktree(&worktree_name, &wt_path, Some(&opts))
         .map_err(|e| e.message().to_string())?;
 
     let last_modified = get_last_modified(&wt_path);
+    let diff_stats = get_diff_stats_vs_origin_default(&wt_path);
 
     Ok(WorktreeInfo {
         name: worktree_name,
         path: wt_path.to_string_lossy().to_string(),
         branch: Some(branch_name),
         last_modified,
+        diff_stats,
     })
 }
 
 #[tauri::command]
-pub fn delete_worktree(repo_path: String, worktree_name: String) -> Result<(), String> {
-    let repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
-    let worktree = repo
-        .find_worktree(&worktree_name)
-        .map_err(|e| e.message().to_string())?;
+pub async fn delete_worktree(repo_path: String, worktree_name: String, force: bool) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
+        let worktree = repo
+            .find_worktree(&worktree_name)
+            .map_err(|e| e.message().to_string())?;
 
-    let wt_path = worktree.path().to_path_buf();
+        let wt_path = worktree.path().to_path_buf();
 
-    let mut prune_opts = git2::WorktreePruneOptions::new();
-    prune_opts.valid(true);
-    prune_opts.working_tree(true);
+        if force {
+            if wt_path.exists() {
+                std::fs::remove_dir_all(&wt_path).map_err(|e| e.to_string())?;
+            }
+            
+            let git_worktrees_dir = PathBuf::from(&repo_path)
+                .join(".git")
+                .join("worktrees")
+                .join(&worktree_name);
+            if git_worktrees_dir.exists() {
+                std::fs::remove_dir_all(&git_worktrees_dir).map_err(|e| e.to_string())?;
+            }
+        } else {
+            let mut prune_opts = git2::WorktreePruneOptions::new();
+            prune_opts.valid(true);
+            prune_opts.working_tree(true);
 
-    worktree
-        .prune(Some(&mut prune_opts))
-        .map_err(|e| e.message().to_string())?;
+            worktree
+                .prune(Some(&mut prune_opts))
+                .map_err(|e| e.message().to_string())?;
 
-    if wt_path.exists() {
-        std::fs::remove_dir_all(&wt_path).map_err(|e| e.to_string())?;
-    }
+            if wt_path.exists() {
+                std::fs::remove_dir_all(&wt_path).map_err(|e| e.to_string())?;
+            }
+        }
 
-    Ok(())
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn get_changed_files(worktree_path: String) -> Result<Vec<ChangedFile>, String> {
+    tokio::task::spawn_blocking(move || {
+        let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
+        
+        let base_branch_commit = repo
+            .find_branch("origin/main", BranchType::Remote)
+            .or_else(|_| repo.find_branch("origin/master", BranchType::Remote))
+            .map_err(|e| format!("Cannot find origin/main or origin/master: {}", e.message()))?
+            .get()
+            .peel_to_commit()
+            .map_err(|e| format!("Cannot get base commit: {}", e.message()))?;
+        
+        let head_commit = repo.head()
+            .map_err(|e| format!("Cannot get HEAD: {}", e.message()))?
+            .peel_to_commit()
+            .map_err(|e| format!("Cannot get HEAD commit: {}", e.message()))?;
+        
+        let merge_base_oid = repo
+            .merge_base(base_branch_commit.id(), head_commit.id())
+            .map_err(|e| format!("Cannot find merge base: {}", e.message()))?;
+        let merge_base_commit = repo
+            .find_commit(merge_base_oid)
+            .map_err(|e| format!("Cannot get merge base commit: {}", e.message()))?;
+        let base_tree = merge_base_commit.tree().map_err(|e| e.message().to_string())?;
+        
+        let head_tree = head_commit.tree().map_err(|e| e.message().to_string())?;
+        
+        let mut diff_opts = DiffOptions::new();
+        
+        let diff = repo
+            .diff_tree_to_tree(Some(&base_tree), Some(&head_tree), Some(&mut diff_opts))
+            .map_err(|e| e.message().to_string())?;
+        
+        let mut files: Vec<ChangedFile> = Vec::new();
+        let mut path_to_idx: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        
+        for delta in diff.deltas() {
+            let status = match delta.status() {
+                Delta::Added => "added",
+                Delta::Deleted => "deleted",
+                Delta::Modified => "modified",
+                Delta::Renamed => "renamed",
+                Delta::Copied => "copied",
+                Delta::Untracked => "untracked",
+                _ => "unknown",
+            };
+            
+            let new_path = delta.new_file().path().map(|p| p.to_string_lossy().to_string());
+            let old_path = delta.old_file().path().map(|p| p.to_string_lossy().to_string());
+            
+            if let Some(path) = new_path.clone().or(old_path.clone()) {
+                path_to_idx.insert(path.clone(), files.len());
+                files.push(ChangedFile {
+                    path,
+                    status: status.to_string(),
+                    old_path: if status == "renamed" { old_path } else { None },
+                    additions: 0,
+                    deletions: 0,
+                });
+            }
+        }
+        
+        let _ = diff.print(git2::DiffFormat::Patch, |delta, _hunk, line| {
+            if let Some(path) = delta.new_file().path().or(delta.old_file().path()) {
+                let path_str = path.to_string_lossy().to_string();
+                if let Some(&idx) = path_to_idx.get(&path_str) {
+                    match line.origin() {
+                        '+' => files[idx].additions += 1,
+                        '-' => files[idx].deletions += 1,
+                        _ => {}
+                    }
+                }
+            }
+            true
+        });
+        
+        Ok::<Vec<ChangedFile>, String>(files)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn get_file_diff(worktree_path: String, file_path: String) -> Result<FileDiffData, String> {
+    tokio::task::spawn_blocking(move || {
+        let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
+        
+        let base_branch_commit = repo
+            .find_branch("origin/main", BranchType::Remote)
+            .or_else(|_| repo.find_branch("origin/master", BranchType::Remote))
+            .map_err(|e| format!("Cannot find origin/main or origin/master: {}", e.message()))?
+            .get()
+            .peel_to_commit()
+            .map_err(|e| format!("Cannot get base commit: {}", e.message()))?;
+        
+        let head_commit = repo.head()
+            .map_err(|e| format!("Cannot get HEAD: {}", e.message()))?
+            .peel_to_commit()
+            .map_err(|e| format!("Cannot get HEAD commit: {}", e.message()))?;
+        
+        let merge_base_oid = repo
+            .merge_base(base_branch_commit.id(), head_commit.id())
+            .map_err(|e| format!("Cannot find merge base: {}", e.message()))?;
+        let merge_base_commit = repo
+            .find_commit(merge_base_oid)
+            .map_err(|e| format!("Cannot get merge base commit: {}", e.message()))?;
+        let base_tree = merge_base_commit.tree().map_err(|e| e.message().to_string())?;
+        
+        let head_tree = head_commit.tree().map_err(|e| e.message().to_string())?;
+        
+        let old_content = base_tree
+            .get_path(std::path::Path::new(&file_path))
+            .ok()
+            .and_then(|entry| repo.find_blob(entry.id()).ok())
+            .and_then(|blob| String::from_utf8(blob.content().to_vec()).ok());
+        
+        let new_content = head_tree
+            .get_path(std::path::Path::new(&file_path))
+            .ok()
+            .and_then(|entry| repo.find_blob(entry.id()).ok())
+            .and_then(|blob| String::from_utf8(blob.content().to_vec()).ok());
+        
+        let mut diff_opts = DiffOptions::new();
+        diff_opts.pathspec(&file_path);
+        
+        let diff = repo
+            .diff_tree_to_tree(Some(&base_tree), Some(&head_tree), Some(&mut diff_opts))
+            .map_err(|e| e.message().to_string())?;
+        
+        let mut patch = String::new();
+        diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+            if let Ok(content) = std::str::from_utf8(line.content()) {
+                let origin = line.origin();
+                if origin == '+' || origin == '-' || origin == ' ' {
+                    patch.push(origin);
+                }
+                patch.push_str(content);
+            }
+            true
+        }).map_err(|e| e.message().to_string())?;
+        
+        Ok::<FileDiffData, String>(FileDiffData {
+            path: file_path,
+            old_content,
+            new_content,
+            patch,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn get_file_content(
+    worktree_path: String,
+    file_path: String,
+    git_ref: Option<String>,
+) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        if let Some(ref_name) = git_ref {
+            let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
+            
+            let reference = repo
+                .find_branch(&ref_name, BranchType::Remote)
+                .or_else(|_| repo.find_branch(&ref_name, BranchType::Local))
+                .map_err(|e| format!("Cannot find ref {}: {}", ref_name, e.message()))?;
+            
+            let commit = reference
+                .get()
+                .peel_to_commit()
+                .map_err(|e| e.message().to_string())?;
+            
+            let tree = commit.tree().map_err(|e| e.message().to_string())?;
+            
+            let entry = tree
+                .get_path(std::path::Path::new(&file_path))
+                .map_err(|e| e.message().to_string())?;
+            
+            let blob = repo
+                .find_blob(entry.id())
+                .map_err(|e| e.message().to_string())?;
+            
+            String::from_utf8(blob.content().to_vec())
+                .map_err(|_| "File is not valid UTF-8".to_string())
+        } else {
+            let full_path = PathBuf::from(&worktree_path).join(&file_path);
+            std::fs::read_to_string(&full_path).map_err(|e| e.to_string())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

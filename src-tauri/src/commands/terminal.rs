@@ -11,7 +11,6 @@ use crate::AppState;
 
 pub struct TerminalSession {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
-    #[allow(dead_code)]
     child: Box<dyn portable_pty::Child + Send + Sync>,
     master: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
 }
@@ -33,6 +32,11 @@ fn get_shell() -> String {
     } else {
         std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
     }
+}
+
+fn should_wrap_shell(shell: &str) -> bool {
+    let s = shell.to_ascii_lowercase();
+    s.ends_with("/zsh") || s.ends_with("/bash")
 }
 
 #[tauri::command]
@@ -57,7 +61,13 @@ pub fn spawn_terminal(
         .map_err(|e| e.to_string())?;
 
     let shell = get_shell();
-    let mut cmd = CommandBuilder::new(&shell);
+    let mut cmd = if !cfg!(target_os = "windows") && should_wrap_shell(&shell) {
+        let mut c = CommandBuilder::new(&shell);
+        c.arg("-li");
+        c
+    } else {
+        CommandBuilder::new(&shell)
+    };
     cmd.cwd(&cwd);
 
     if !cfg!(target_os = "windows") {
@@ -155,8 +165,23 @@ pub fn resize_terminal(
 #[tauri::command]
 pub fn close_terminal(state: State<'_, AppState>, terminal_id: String) -> Result<(), String> {
     let mut terminals = state.terminals.lock();
-    if let Some(mut session) = terminals.remove(&terminal_id) {
-        let _ = session.child.kill();
+    if let Some(session) = terminals.remove(&terminal_id) {
+        if let Some(pid) = session.child.process_id() {
+            #[cfg(unix)]
+            {
+                unsafe {
+                    libc::kill(-(pid as i32), libc::SIGTERM);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                unsafe {
+                    libc::kill(-(pid as i32), libc::SIGKILL);
+                }
+            }
+            #[cfg(windows)]
+            {
+                let _ = session.child.kill();
+            }
+        }
     }
     Ok(())
 }
