@@ -22,7 +22,7 @@ import {
 import { DiffView, DiffModeEnum, DiffFile } from "@git-diff-view/react";
 import "@git-diff-view/react/styles/diff-view.css";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useTheme } from "../hooks/useTheme";
+import { useTheme, useThemeMode } from "../hooks/useTheme";
 import { useCodeReview } from "../hooks/useCodeReview";
 import { useAppStore } from "../store";
 import { getDiffHighlighter, type DiffHighlighter } from "../lib/diff-highlighter";
@@ -165,6 +165,7 @@ interface FileSectionProps {
   patch: string | null;
   isLoading: boolean;
   shikiHighlighter: Omit<DiffHighlighter, "getHighlighterEngine"> | null;
+  isLightMode: boolean;
 }
 
 function FileSection({
@@ -174,6 +175,7 @@ function FileSection({
   patch,
   isLoading,
   shikiHighlighter,
+  isLightMode,
 }: FileSectionProps) {
   const theme = useTheme();
   const Icon = getFileIcon(file.status);
@@ -289,7 +291,7 @@ function FileSection({
                 diffFile={diffFile}
                 diffViewMode={DiffModeEnum.Unified}
                 diffViewWrap={false}
-                diffViewTheme="dark"
+                diffViewTheme={isLightMode ? "light" : "dark"}
                 diffViewHighlight={!!shikiHighlighter}
                 registerHighlighter={shikiHighlighter as any}
               />
@@ -310,6 +312,8 @@ function FileSection({
 
 export function DiffOverlay({ worktreePath, onClose }: DiffOverlayProps) {
   const theme = useTheme();
+  const themeMode = useThemeMode();
+  const isLightMode = themeMode === "light";
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -414,17 +418,18 @@ export function DiffOverlay({ worktreePath, onClose }: DiffOverlayProps) {
 
   return (
     <div
-      className="absolute inset-0 z-20 flex flex-col diff-overlay"
+      className={`absolute inset-0 z-20 flex flex-col diff-overlay ${isLightMode ? "light-mode" : ""}`}
       style={{ background: theme.bg.primary }}
     >
       <div
+        data-tauri-drag-region
         className="flex items-center justify-between px-4 shrink-0"
         style={{
           height: "35px",
           minHeight: "35px",
         }}
       >
-        <div className="flex items-center gap-3">
+        <div data-tauri-drag-region className="flex items-center gap-3">
           <span className="text-sm font-medium" style={{ color: theme.text.primary }}>
             Changes
           </span>
@@ -441,10 +446,10 @@ export function DiffOverlay({ worktreePath, onClose }: DiffOverlayProps) {
               {changedFiles.length} files
             </span>
             {totalAdditions > 0 && (
-              <span style={{ color: "#22C55E" }}>+{totalAdditions}</span>
+              <span className="font-mono" style={{ color: "#22C55E" }}>+{totalAdditions}</span>
             )}
             {totalDeletions > 0 && (
-              <span style={{ color: "#EF4444" }}>-{totalDeletions}</span>
+              <span className="font-mono" style={{ color: "#EF4444" }}>-{totalDeletions}</span>
             )}
           </div>
         </div>
@@ -541,6 +546,7 @@ export function DiffOverlay({ worktreePath, onClose }: DiffOverlayProps) {
                     patch={diff?.patch || null}
                     isLoading={isDiffLoading(file.path)}
                     shikiHighlighter={shikiHighlighter}
+                    isLightMode={isLightMode}
                   />
                 </div>
               );

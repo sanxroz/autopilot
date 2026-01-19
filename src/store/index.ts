@@ -4,7 +4,7 @@ import { load } from '@tauri-apps/plugin-store';
 import type { Repository, WorktreeInfo, TerminalInstance, ProcessStatus } from '../types';
 import type { GitHubSettings, PRStatus } from '../types/github';
 import { DEFAULT_GITHUB_SETTINGS } from '../types/github';
-import { setThemeMode as setGlobalThemeMode, type ThemeMode } from '../theme';
+import { setThemeMode as setGlobalThemeMode, getThemeMode, type ThemeMode } from '../theme';
 
 interface PersistedState {
   repositoryPaths: string[];
@@ -189,6 +189,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       cwd: worktree.path,
       cols: 80,
       rows: 24,
+      isDarkMode: getThemeMode() === 'dark',
     });
 
     const terminal: TerminalInstance = {
@@ -220,6 +221,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       cwd: worktree.path,
       cols: 80,
       rows: 24,
+      isDarkMode: getThemeMode() === 'dark',
     });
 
     const terminal: TerminalInstance = {

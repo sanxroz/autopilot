@@ -46,6 +46,7 @@ pub fn spawn_terminal(
     cwd: String,
     cols: u16,
     rows: u16,
+    is_dark_mode: bool,
 ) -> Result<TerminalSpawnResult, String> {
     let terminal_id = Uuid::new_v4().to_string();
 
@@ -72,6 +73,12 @@ pub fn spawn_terminal(
 
     if !cfg!(target_os = "windows") {
         cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
+        cmd.env("TERM_PROGRAM", "Autopilot");
+        // COLORFGBG helps TUI apps detect light/dark mode (xterm-256 color indices)
+        // "231;16" = white fg on black bg (dark mode)
+        // "16;231" = black fg on white bg (light mode)
+        cmd.env("COLORFGBG", if is_dark_mode { "231;16" } else { "16;231" });
     }
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;

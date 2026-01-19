@@ -86,6 +86,44 @@ export function Terminal({ terminalId, isActive, isVisible, onFocus }: Props) {
       invoke("write_to_terminal", { terminalId, data }).catch(console.error);
     });
 
+    // Handle OSC 10/11 queries for foreground/background color detection
+    // TUI apps like opencode send these to detect dark/light mode
+    
+    // Convert hex color to xterm RGB format: rgb:RRRR/GGGG/BBBB
+    const hexToXtermRgb = (hex: string): string => {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      // xterm uses 16-bit color values (0000-ffff)
+      const r16 = (r << 8 | r).toString(16).padStart(4, '0');
+      const g16 = (g << 8 | g).toString(16).padStart(4, '0');
+      const b16 = (b << 8 | b).toString(16).padStart(4, '0');
+      return `rgb:${r16}/${g16}/${b16}`;
+    };
+
+    // OSC 10: query/set foreground color
+    term.parser.registerOscHandler(10, (data) => {
+      if (data === '?') {
+        const t = getTheme();
+        const fgColor = t.terminal.foreground;
+        const response = `\x1b]10;${hexToXtermRgb(fgColor)}\x1b\\`;
+        invoke("write_to_terminal", { terminalId, data: response }).catch(console.error);
+      }
+      return true;
+    });
+
+    // OSC 11: query/set background color  
+    term.parser.registerOscHandler(11, (data) => {
+      if (data === '?') {
+        const t = getTheme();
+        // Use a solid color for background detection since our bg is transparent
+        const bgColor = t.bg.primary;
+        const response = `\x1b]11;${hexToXtermRgb(bgColor)}\x1b\\`;
+        invoke("write_to_terminal", { terminalId, data: response }).catch(console.error);
+      }
+      return true;
+    });
+
     const unlisten = listen<{ terminal_id: string; data: string }>(
       "terminal-output",
       (event) => {

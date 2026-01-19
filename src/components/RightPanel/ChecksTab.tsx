@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  CheckCircle,
-  XCircle,
-  Clock,
+  Check,
+  X,
+  CircleDashed,
   ExternalLink,
   RefreshCw,
   Circle,
@@ -15,17 +15,18 @@ interface ChecksTabProps {
   repoPath: string | null;
   prNumber: number | null;
   prUrl: string | null;
+  onRefreshReady?: (refresh: () => void) => void;
 }
 
 function getCheckIcon(status: string, conclusion: string | null) {
   if (status !== "completed") {
-    return Clock;
+    return CircleDashed;
   }
   if (conclusion === "success") {
-    return CheckCircle;
+    return Check;
   }
   if (conclusion === "failure" || conclusion === "cancelled") {
-    return XCircle;
+    return X;
   }
   return Circle;
 }
@@ -92,7 +93,7 @@ function getMergeStatusColor(status: string): string {
   }
 }
 
-export function ChecksTab({ repoPath, prNumber, prUrl }: ChecksTabProps) {
+export function ChecksTab({ repoPath, prNumber, prUrl, onRefreshReady }: ChecksTabProps) {
   const theme = useTheme();
   const [checksResult, setChecksResult] = useState<PRChecksResult | null>(null);
   const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(null);
@@ -128,6 +129,12 @@ export function ChecksTab({ repoPath, prNumber, prUrl }: ChecksTabProps) {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (onRefreshReady) {
+      onRefreshReady(() => fetchData);
+    }
+  }, [onRefreshReady, fetchData]);
 
   if (!prNumber) {
     return (
@@ -186,22 +193,8 @@ export function ChecksTab({ repoPath, prNumber, prUrl }: ChecksTabProps) {
 
   return (
     <div className="flex flex-col h-full overflow-auto">
-      <div
-        className="px-3 py-1.5 flex items-center justify-end border-b"
-        style={{ borderColor: theme.border.default }}
-      >
-        <button
-          onClick={fetchData}
-          className="p-1 rounded transition-colors"
-          style={{ color: theme.text.tertiary }}
-          title="Refresh"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
       {prDetails && (
-        <div className="px-3 py-3 border-b" style={{ borderColor: theme.border.default }}>
+        <div className="px-3 py-3" style={{ borderColor: theme.border.default }}>
           <div
             className="text-xs font-medium mb-2"
             style={{ color: theme.text.tertiary }}
@@ -211,7 +204,7 @@ export function ChecksTab({ repoPath, prNumber, prUrl }: ChecksTabProps) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Circle
-                className="w-4 h-4"
+                className="w-3.5 h-3.5"
                 style={{ color: getMergeStatusColor(prDetails.merge_state_status) }}
               />
               <span className="text-sm" style={{ color: theme.text.primary }}>
@@ -238,7 +231,7 @@ export function ChecksTab({ repoPath, prNumber, prUrl }: ChecksTabProps) {
       )}
 
       {deployments.length > 0 && (
-        <div className="px-3 py-3 border-b" style={{ borderColor: theme.border.default }}>
+        <div className="px-3 py-3" style={{ borderColor: theme.border.default }}>
           <div
             className="text-xs font-medium mb-2"
             style={{ color: theme.text.tertiary }}
@@ -254,7 +247,7 @@ export function ChecksTab({ repoPath, prNumber, prUrl }: ChecksTabProps) {
                 key={index}
                 className="flex items-center gap-2 py-1.5"
               >
-                <Icon className="w-4 h-4 flex-shrink-0" style={{ color }} />
+                <Icon className="w-3-5 h-3.5 flex-shrink-0" style={{ color }} />
                 <span
                   className="flex-1 text-sm truncate"
                   style={{ color: theme.text.primary }}
@@ -279,7 +272,7 @@ export function ChecksTab({ repoPath, prNumber, prUrl }: ChecksTabProps) {
       )}
 
       {regularChecks.length > 0 && (
-        <div className="px-3 py-3 border-b" style={{ borderColor: theme.border.default }}>
+        <div className="px-3 py-3" style={{ borderColor: theme.border.default }}>
           <div
             className="text-xs font-medium mb-2"
             style={{ color: theme.text.tertiary }}
@@ -296,7 +289,7 @@ export function ChecksTab({ repoPath, prNumber, prUrl }: ChecksTabProps) {
                 key={index}
                 className="flex items-center gap-2 py-1.5"
               >
-                <Icon className="w-4 h-4 flex-shrink-0" style={{ color }} />
+                <Icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color }} />
                 <span
                   className="flex-1 text-sm truncate"
                   style={{ color: theme.text.primary }}
@@ -328,59 +321,12 @@ export function ChecksTab({ repoPath, prNumber, prUrl }: ChecksTabProps) {
         </div>
       )}
 
-      {prDetails && prDetails.comments.length > 0 && (
-        <div className="px-3 py-3">
-          <div className="flex items-center justify-between mb-2">
-            <div
-              className="text-xs font-medium"
-              style={{ color: theme.text.tertiary }}
-            >
-              Comments
-            </div>
-          </div>
-          {prDetails.comments.slice(0, 5).map((comment, index) => (
-            <div
-              key={index}
-              className="flex items-start gap-2 py-2 border-b last:border-b-0"
-              style={{ borderColor: theme.border.subtle }}
-            >
-              <Circle className="w-3 h-3 mt-1 flex-shrink-0" style={{ color: theme.text.tertiary }} />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span
-                    className="text-xs font-medium"
-                    style={{ color: theme.text.primary }}
-                  >
-                    {comment.author}
-                  </span>
-                </div>
-                <p
-                  className="text-xs mt-0.5 line-clamp-2"
-                  style={{ color: theme.text.secondary }}
-                >
-                  {comment.body}
-                </p>
-              </div>
-            </div>
-          ))}
-          {prDetails.comments.length > 5 && (
-            <div
-              className="text-xs mt-2 text-center"
-              style={{ color: theme.text.tertiary }}
-            >
-              +{prDetails.comments.length - 5} more comments
-            </div>
-          )}
-        </div>
-      )}
-
-      {(!checksResult || checksResult.checks.length === 0) &&
-        (!prDetails || prDetails.comments.length === 0) && (
+      {(!checksResult || checksResult.checks.length === 0) && (
           <div
             className="flex-1 flex items-center justify-center text-sm"
             style={{ color: theme.text.secondary }}
           >
-            No checks or comments
+            No checks
           </div>
         )}
     </div>

@@ -5,10 +5,9 @@ import {
   PackagePlus,
   Sun,
   Moon,
-  MoreHorizontal,
   ChevronDown,
   ChevronRight,
-  Settings,
+  Archive,
   User,
 } from "lucide-react";
 import { useAppStore } from "../store";
@@ -181,92 +180,79 @@ export function Sidebar() {
                 )}
 
                 <div
-                  className="flex items-center justify-between px-3 py-1.5 mt-0.5 mb-1 group w-full min-w-0 rounded-md cursor-pointer"
-                  onClick={() => toggleRepoCollapsed(group.repoPath)}
-                  style={{ background: "transparent" }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = theme.bg.hover;
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "transparent";
-                  }}
-                >
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <span
-                      className="font-departure font-medium truncate min-w-0"
-                      style={{ color: theme.text.primary }}
-                    >
-                      {group.repoName}
-                    </span>
-                    <span className="opacity-0 group-hover:opacity-100 transition-opacity">
-                      {isCollapsed ? (
-                        <ChevronRight
-                          className="h-3 w-3"
-                          style={{ color: theme.text.tertiary }}
-                        />
-                      ) : (
-                        <ChevronDown
-                          className="h-3 w-3"
-                          style={{ color: theme.text.tertiary }}
-                        />
-                      )}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={(e) => handleRemoveRepository(e, group.repoPath)}
-                      className="p-1 -m-1 rounded-sm transition-colors"
-                      style={{ color: theme.text.tertiary }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.color = theme.text.primary;
-                        e.currentTarget.style.background = theme.bg.hover;
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.color = theme.text.tertiary;
-                        e.currentTarget.style.background = "transparent";
-                      }}
-                      title="Repository settings"
-                    >
-                      <Settings className="h-3 w-3" />
-                    </button>
-                  </div>
-                </div>
+                   className="flex items-center justify-between px-3 py-1.5 mt-0.5 mb-1 group w-full min-w-0 rounded-md cursor-pointer"
+                   onClick={() => toggleRepoCollapsed(group.repoPath)}
+                   style={{ background: "transparent" }}
+                   onMouseEnter={(e) => {
+                     e.currentTarget.style.background = theme.bg.hover;
+                   }}
+                   onMouseLeave={(e) => {
+                     e.currentTarget.style.background = "transparent";
+                   }}
+                 >
+                   <div className="flex items-center gap-1.5 min-w-0">
+                     <span
+                       className=" font-medium text-sm truncate min-w-0"
+                       style={{ color: theme.text.primary }}
+                     >
+                       {group.repoName}
+                     </span>
+                     <span className="opacity-0 group-hover:opacity-100 transition-opacity">
+                       {isCollapsed ? (
+                         <ChevronRight
+                           className="h-3.5 w-3.5"
+                           style={{ color: theme.text.tertiary }}
+                         />
+                       ) : (
+                         <ChevronDown
+                           className="h-3.5 w-3.5"
+                           style={{ color: theme.text.tertiary }}
+                         />
+                       )}
+                     </span>
+                   </div>
+                   <div className="flex items-center gap-2.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                     <button
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         handleCreateWorktree(group.repoPath);
+                       }}
+                       className="p-1 -m-1 rounded-sm transition-colors"
+                       style={{ color: theme.text.tertiary }}
+                       onMouseEnter={(e) => {
+                         e.currentTarget.style.color = theme.text.primary;
+                         e.currentTarget.style.background = theme.bg.hover;
+                       }}
+                       onMouseLeave={(e) => {
+                         e.currentTarget.style.color = theme.text.tertiary;
+                         e.currentTarget.style.background = "transparent";
+                       }}
+                       title="New workspace"
+                     >
+                       <Plus className="h-3.5 w-3.5" />
+                     </button>
+                     <button
+                       onClick={(e) => handleRemoveRepository(e, group.repoPath)}
+                       className="p-1 -m-1 rounded-sm transition-colors"
+                       style={{ color: theme.text.tertiary }}
+                       onMouseEnter={(e) => {
+                         e.currentTarget.style.color = theme.text.primary;
+                         e.currentTarget.style.background = theme.bg.hover;
+                       }}
+                       onMouseLeave={(e) => {
+                         e.currentTarget.style.color = theme.text.tertiary;
+                         e.currentTarget.style.background = "transparent";
+                       }}
+                       title="Archive repository"
+                     >
+                       <Archive className="h-3.5 w-3.5" />
+                     </button>
+                   </div>
+                 </div>
 
                 {!isCollapsed && (
-                  <div className="w-full min-w-0 space-y-1">
-                    <button
-                      onClick={() => handleCreateWorktree(group.repoPath)}
-                      className="w-full h-8 py-3 text-sm gap-2 rounded-md flex items-center justify-start px-3 transition-colors group/button"
-                      style={{
-                        color: theme.text.secondary,
-                        background: "transparent",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = theme.bg.hover;
-                        e.currentTarget.style.color = theme.text.primary;
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = "transparent";
-                        e.currentTarget.style.color = theme.text.secondary;
-                      }}
-                    >
-                      <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center gap-2">
-                          <Plus className="h-3 w-3 flex-shrink-0" />
-                          <span className="truncate text-sm">
-                            New workspace
-                          </span>
-                        </div>
-                        <div
-                          className="flex-shrink-0 p-1 -m-1 pr-1.5 rounded-sm opacity-0 group-hover/button:opacity-100 transition-opacity"
-                          style={{ color: theme.text.tertiary }}
-                        >
-                          <MoreHorizontal className="h-3 w-3" />
-                        </div>
-                      </div>
-                    </button>
-
-                    {group.worktrees.map((wt) => (
+                   <div className="w-full min-w-0 space-y-1">
+                     {group.worktrees.map((wt) => (
                       <WorktreeItem
                         key={wt.path}
                         worktree={wt}
@@ -331,7 +317,7 @@ export function Sidebar() {
                 className="w-5 h-5 rounded-full flex items-center justify-center"
                 style={{ background: theme.bg.tertiary }}
               >
-                <User className="w-3 h-3" style={{ color: theme.text.tertiary }} />
+                <User className="w-3.5 h-3.5" style={{ color: theme.text.tertiary }} />
               </div>
             )}
           </button>
@@ -354,9 +340,9 @@ export function Sidebar() {
             }}
           >
             {themeMode === "dark" ? (
-              <Sun className="w-4 h-4" strokeWidth={1.5} />
+              <Sun className="w-4 h-4" />
             ) : (
-              <Moon className="w-4 h-4" strokeWidth={1.5} />
+              <Moon className="w-4 h-4" />
             )}
           </button>
         </div>

@@ -2,13 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
-@font-face {
-  font-family: 'Departure Mono';
-  src: url('/fonts/DepartureMono-Regular.woff2') format('woff2');
-  font-weight: normal;
-  font-style: normal;
-  font-display: swap;
+/* Position native Tauri window controls at top-left */
+.titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 35px;
+  display: flex;
+  align-items: center;
+  padding-left: 10px;
+  z-index: 1000;
+  pointer-events: none;
 }
+
+.titlebar-button {
+  pointer-events: auto;
+}
+
+
 
 * {
   margin: 0;
@@ -29,7 +41,7 @@ body,
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: transparent !important;
@@ -95,7 +107,7 @@ body {
 
 .diff-overlay [class*="diff-view"] {
   --diff-font-size--: 12px;
-  --diff-font-family--: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --diff-font-family--: 'Geist Mono', ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --diff-line-height--: 1.5;
   --diff-hunk-line-height--: 28px;
   --diff-background-color--: transparent;
@@ -111,6 +123,22 @@ body {
   --diff-add-line-number-background-color--: rgba(46, 160, 67, 0.2);
   --diff-del-line-number-background-color--: rgba(248, 81, 73, 0.2);
   --diff-border-color--: #30363d;
+}
+
+.diff-overlay.light-mode [class*="diff-view"] {
+  --diff-background-color--: transparent;
+  --diff-add-background-color--: rgba(46, 160, 67, 0.12);
+  --diff-del-background-color--: rgba(248, 81, 73, 0.12);
+  --diff-add-widget-background-color--: rgba(46, 160, 67, 0.25);
+  --diff-del-widget-background-color--: rgba(248, 81, 73, 0.25);
+  --diff-hunk-background-color--: rgba(56, 139, 253, 0.08);
+  --diff-hunk-hover-background-color--: rgba(56, 139, 253, 0.15);
+  --diff-line-number-color--: #57606a;
+  --diff-content-color--: #1f2328;
+  --diff-expand-content-color--: #57606a;
+  --diff-add-line-number-background-color--: rgba(46, 160, 67, 0.15);
+  --diff-del-line-number-background-color--: rgba(248, 81, 73, 0.15);
+  --diff-border-color--: #d0d7de;
 }
 
 .agent-diff-wrapper {
@@ -134,5 +162,5 @@ body {
 .agent-diff-wrapper code,
 .agent-diff-wrapper pre {
   font-size: 12px;
-  font-family: "Monaco", "Menlo", "Consolas", monospace;
+  font-family: 'Geist Mono', "Monaco", "Menlo", "Consolas", monospace;
 }

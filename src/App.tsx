@@ -22,6 +22,7 @@ function App() {
   const toggleSettings = useAppStore((state) => state.toggleSettings);
   const theme = useTheme();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
     initialize();
@@ -55,9 +56,9 @@ function App() {
           color: theme.text.primary,
         }}
       >
-        <Sidebar />
+        {sidebarOpen && <Sidebar />}
         <div className="flex flex-col flex-1 overflow-hidden relative">
-          <Navbar />
+          <Navbar sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
           <TerminalGrid />
           {diffOverlayOpen && (
             <DiffOverlay

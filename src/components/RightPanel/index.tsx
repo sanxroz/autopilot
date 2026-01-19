@@ -5,6 +5,10 @@ import {
   ChevronDown,
   RefreshCw,
   ExternalLink,
+  ListTodo,
+  MessageCircle,
+  Eye,
+  type LucideIcon,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTheme } from "../../hooks/useTheme";
@@ -12,6 +16,9 @@ import { usePRStatusForBranch } from "../../hooks/usePRStatus";
 import { useAppStore } from "../../store";
 import { ChecksTab } from "./ChecksTab";
 import { ReviewTab } from "./ReviewTab";
+import { CommentsTab } from "./CommentsTab";
+import { Tabs, TabsList, TabsTrigger } from "../ui/segmented-control";
+import * as Tooltip from "../ui/tooltip";
 import type { CreatePRResult } from "../../types/github";
 
 interface RightPanelProps {
@@ -19,7 +26,7 @@ interface RightPanelProps {
   onClose: () => void;
 }
 
-type TabId = "checks" | "review";
+type TabId = "checks" | "comments" | "code-review";
 
 const MIN_WIDTH = 300;
 const MAX_WIDTH = 800;
@@ -32,6 +39,8 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>("checks");
   const [showPRDropdown, setShowPRDropdown] = useState(false);
   const [isCreatingPR, setIsCreatingPR] = useState(false);
+  const [checksRefresh, setChecksRefresh] = useState<(() => void) | null>(null);
+  const [commentsRefresh, setCommentsRefresh] = useState<(() => void) | null>(null);
 
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
   const repositories = useAppStore((state) => state.repositories);
@@ -113,9 +122,10 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
     prStatus.checks_status === "success" &&
     (prStatus.review_decision === "APPROVED" || prStatus.review_decision === null);
 
-  const tabs: { id: TabId; label: string; color?: string }[] = [
-    { id: "checks", label: "Checks", color: getChecksColor() },
-    { id: "review", label: "Review" },
+  const tabs: { id: TabId; label: string; icon: LucideIcon; color?: string }[] = [
+    { id: "checks", label: "Checks", icon: ListTodo, color: getChecksColor() },
+    { id: "comments", label: "Comments", icon: MessageCircle },
+    { id: "code-review", label: "Code Review", icon: Eye },
   ];
 
   return (
@@ -125,7 +135,6 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         width: `${width}px`,
         minWidth: `${MIN_WIDTH}px`,
         maxWidth: `${MAX_WIDTH}px`,
-        background: theme.bg.secondary,
         borderLeft: `1px solid ${theme.border.default}`,
       }}
     >
@@ -168,40 +177,55 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
           </a>
         )}
 
-        {tabs.map((tab) => {
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className="px-2 py-1 rounded text-sm transition-colors flex items-center gap-1.5"
-              style={{
-                background: isActive ? theme.bg.active : "transparent",
-                color: tab.color
-                  ? isActive
-                    ? tab.color
-                    : tab.color
-                  : isActive
-                  ? theme.text.primary
-                  : theme.text.secondary,
-              }}
-              onMouseEnter={(e) => {
-                if (!isActive) {
-                  e.currentTarget.style.background = theme.bg.hover;
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isActive) {
-                  e.currentTarget.style.background = "transparent";
-                }
-              }}
+        <Tooltip.Provider delayDuration={300}>
+          <Tabs
+            value={activeTab}
+            onValueChange={(value: string) => setActiveTab(value as TabId)}
+          >
+            <TabsList
+              containerBgColor={theme.bg.primary}
+              floatingBgColor={theme.bg.tertiary}
             >
-              {tab.label}
-            </button>
-          );
-        })}
+              {tabs.map((tab) => {
+                const isActive = activeTab === tab.id;
+                return (
+                  <Tooltip.Root key={tab.id}>
+                    <Tooltip.Trigger asChild>
+                      <TabsTrigger
+                        value={tab.id}
+                        style={{
+                          color: tab.color
+                            ? tab.color
+                            : isActive
+                            ? theme.text.primary
+                            : theme.text.secondary,
+                        }}
+                      >
+                        <tab.icon className="w-3.5 h-3.5" />
+                      </TabsTrigger>
+                    </Tooltip.Trigger>
+                    <Tooltip.Content  side="bottom" size="small">
+                      {tab.label}
+                    </Tooltip.Content>
+                  </Tooltip.Root>
+                );
+              })}
+            </TabsList>
+          </Tabs>
+        </Tooltip.Provider>
 
         <div className="flex-1" />
+
+        {((activeTab === "checks" && checksRefresh) || (activeTab === "comments" && commentsRefresh)) && (
+          <button
+            onClick={activeTab === "checks" ? checksRefresh! : commentsRefresh!}
+            className="p-1 rounded transition-colors mr-2"
+            style={{ color: theme.text.tertiary }}
+            title="Refresh"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+          </button>
+        )}
 
         {isReadyToMerge && (
           <button
@@ -300,9 +324,17 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
             repoPath={repoPath}
             prNumber={prStatus?.number ?? null}
             prUrl={prStatus?.url ?? null}
+            onRefreshReady={setChecksRefresh}
           />
         )}
-        {activeTab === "review" && <ReviewTab repoPath={worktreePath} />}
+        {activeTab === "comments" && (
+          <CommentsTab
+            repoPath={repoPath}
+            prNumber={prStatus?.number ?? null}
+            onRefreshReady={setCommentsRefresh}
+          />
+        )}
+        {activeTab === "code-review" && <ReviewTab repoPath={worktreePath} />}
       </div>
     </div>
   );

@@ -408,11 +408,22 @@ struct GhComment {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct GhReview {
+    author: GhCommentAuthor,
+    body: String,
+    submitted_at: Option<String>,
+    state: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct GhPRDetailedResponse {
     merge_state_status: String,
     mergeable: String,
     #[serde(default)]
     comments: Vec<GhComment>,
+    #[serde(default)]
+    reviews: Vec<GhReview>,
     #[serde(default)]
     review_decision: Option<String>,
 }
@@ -424,7 +435,7 @@ pub async fn get_pr_details(repo_path: String, pr_number: u64) -> Result<PRDetai
     let output = Command::new("gh")
         .args([
             "pr", "view", &pr_ref,
-            "--json", "mergeStateStatus,mergeable,comments,reviewDecision",
+            "--json", "mergeStateStatus,mergeable,comments,reviews,reviewDecision",
         ])
         .current_dir(&repo_path)
         .output()
@@ -441,14 +452,28 @@ pub async fn get_pr_details(repo_path: String, pr_number: u64) -> Result<PRDetai
     let pr: GhPRDetailedResponse = serde_json::from_str(&stdout)
         .map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
+    let mut all_comments: Vec<PRComment> = pr.comments.into_iter().map(|c| PRComment {
+        author: c.author.login,
+        body: c.body,
+        created_at: c.created_at,
+    }).collect();
+
+    for review in pr.reviews {
+        if !review.body.is_empty() {
+            all_comments.push(PRComment {
+                author: format!("{} ({})", review.author.login, review.state.to_lowercase()),
+                body: review.body,
+                created_at: review.submitted_at.unwrap_or_default(),
+            });
+        }
+    }
+
+    all_comments.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+
     Ok(PRDetailedInfo {
         merge_state_status: pr.merge_state_status,
         mergeable: pr.mergeable,
-        comments: pr.comments.into_iter().map(|c| PRComment {
-            author: c.author.login,
-            body: c.body,
-            created_at: c.created_at,
-        }).collect(),
+        comments: all_comments,
         review_decision: pr.review_decision,
     })
 }

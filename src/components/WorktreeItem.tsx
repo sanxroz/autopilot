@@ -132,8 +132,7 @@ export function WorktreeItem({
           <div className="relative flex items-center gap-1.5">
             {!prStatus && hasStats && (
               <div
-                className="flex items-center gap-1 font-medium flex-shrink-0 rounded-sm text-xs py-0.5 px-1 group-hover:opacity-0 transition-opacity"
-                style={{ fontFamily: "'Departure Mono', monospace" }}
+                className="flex items-center gap-1 font-mono font-medium flex-shrink-0 rounded-sm text-xs py-0.5 px-1 group-hover:opacity-0 transition-opacity"
               >
                 {wt.diff_stats!.additions > 0 && (
                   <span style={{ color: "#22C55E" }}>+{wt.diff_stats!.additions}</span>
@@ -163,7 +162,7 @@ export function WorktreeItem({
                 }}
                 title="Delete worktree"
               >
-                <Trash2 className="h-4 w-4" />
+                <Trash2 className="h-3.5 w-3.5" />
               </button>
             </div>
           </div>

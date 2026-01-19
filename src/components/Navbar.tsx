@@ -1,8 +1,13 @@
-import { GitBranch, GitCompareArrows, PanelRight } from "lucide-react";
+import { GitBranch, Diff, ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAppStore } from "../store";
 import { useTheme } from "../hooks/useTheme";
 
-export function Navbar() {
+interface NavbarProps {
+  sidebarOpen: boolean;
+  onToggleSidebar: () => void;
+}
+
+export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
   const diffOverlayOpen = useAppStore((state) => state.diffOverlayOpen);
   const toggleDiffOverlay = useAppStore((state) => state.toggleDiffOverlay);
@@ -16,19 +21,46 @@ export function Navbar() {
   return (
     <div
       data-tauri-drag-region
-      className="flex justify-between px-3 select-none"
+      className="relative flex items-center justify-between select-none"
       style={{
         height: "35px",
         minHeight: "35px",
+        paddingLeft: sidebarOpen ? "12px" : "75px",
+        paddingRight: "12px",
       }}
     >
+      {/* Left - Sidebar toggle */}
+      <button
+        onClick={onToggleSidebar}
+        className="py-1.5 px-2 transition-colors rounded-md"
+        style={{
+          background: "transparent",
+          color: theme.text.tertiary,
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = theme.bg.hover;
+          e.currentTarget.style.color = theme.text.primary;
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = "transparent";
+          e.currentTarget.style.color = theme.text.tertiary;
+        }}
+        title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+      >
+        {sidebarOpen ? (
+          <ChevronLeft className="w-4 h-4" />
+        ) : (
+          <ChevronRight className="w-4 h-4" />
+        )}
+      </button>
 
+      {/* Center content - branch info */}
       <div
         data-tauri-drag-region
-        className="flex items-center gap-2 text-sm"
+        className="flex items-center gap-2 text-sm absolute left-1/2 transform -translate-x-1/2"
         style={{ color: theme.text.secondary }}
       >
-        {branchName ? (
+        {branchName && (
           <>
             <GitBranch
               className="w-3.5 h-3.5 flex-shrink-0"
@@ -44,12 +76,11 @@ export function Navbar() {
               </>
             )}
           </>
-        ) : (
-          <span style={{ color: theme.text.tertiary }}>No workspace selected</span>
         )}
       </div>
 
-      <div className="flex items-center gap-1 justify-end">
+      {/* Right controls */}
+      <div className="flex items-center gap-1 ml-auto">
         <button
           onClick={toggleDiffOverlay}
           className="py-1.5 px-2 transition-colors rounded-md"
@@ -71,7 +102,7 @@ export function Navbar() {
           }}
           title="Diff"
         >
-          <GitCompareArrows className="w-4 h-4" strokeWidth={1.5} />
+          <Diff className="w-4 h-4"  />
         </button>
         <button
           onClick={toggleCodeReview}
@@ -94,7 +125,11 @@ export function Navbar() {
           }}
           title="Checks & Review"
         >
-          <PanelRight className="w-4 h-4" strokeWidth={1.5} />
+          {codeReviewOpen ? (
+            <ChevronsRight className="w-4 h-4" />
+          ) : (
+            <ChevronsLeft className="w-4 h-4" />
+          )}
         </button>
       </div>
     </div>
