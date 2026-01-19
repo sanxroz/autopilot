@@ -1,6 +1,8 @@
+#![allow(deprecated)]
+
 mod commands;
 
-use commands::{git, github, process, terminal};
+use commands::{git, github, process, terminal, watcher};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -90,6 +92,7 @@ pub fn run() {
             Ok(())
         })
         .manage(AppState::default())
+        .manage(watcher::WatcherState::default())
         .invoke_handler(tauri::generate_handler![
             git::discover_repository,
             git::list_worktrees,
@@ -117,6 +120,9 @@ pub fn run() {
             terminal::write_to_terminal,
             terminal::resize_terminal,
             terminal::close_terminal,
+            watcher::start_watching_repository,
+            watcher::stop_watching_repository,
+            watcher::stop_all_watchers,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

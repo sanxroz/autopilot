@@ -118,7 +118,7 @@ export function CommandMenu({ open: isOpen, onOpenChange }: CommandMenuProps) {
                 >
                   <CommandMenuUI.ItemIcon as={GitBranch} style={{ color: theme.text.tertiary }} />
                   <div className="flex flex-col">
-                    <span className='font-medium'>{wt.branch || wt.name}</span>
+                    <span>{wt.branch || wt.name}</span>
                     <span className="text-xs" style={{ color: theme.text.tertiary }}>
                       {wt.repoName}
                     </span>
@@ -132,22 +132,22 @@ export function CommandMenu({ open: isOpen, onOpenChange }: CommandMenuProps) {
         <CommandMenuUI.Group heading="Actions">
           <CommandMenuUI.Item onSelect={handleAddRepository} style={{ color: theme.text.primary }}>
             <CommandMenuUI.ItemIcon as={FolderPlus} style={{ color: theme.text.tertiary }} />
-            <span className='font-medium'>Add Repository</span>
+            Add Repository
           </CommandMenuUI.Item>
           <CommandMenuUI.Item onSelect={handleNewWorkspace} style={{ color: theme.text.primary }}>
             <CommandMenuUI.ItemIcon as={Plus} style={{ color: theme.text.tertiary }} />
-            <span className='font-medium'>New Workspace</span>
+            New Workspace
           </CommandMenuUI.Item>
         </CommandMenuUI.Group>
 
         <CommandMenuUI.Group heading="Navigation">
           <CommandMenuUI.Item onSelect={handleToggleCodeReview} style={{ color: theme.text.primary }}>
             <CommandMenuUI.ItemIcon as={GitCompare} style={{ color: theme.text.tertiary }} />
-            <span className='font-medium'>Toggle Code Review</span>
+            Toggle Code Review
           </CommandMenuUI.Item>
           <CommandMenuUI.Item onSelect={handleOpenSettings} style={{ color: theme.text.primary }}>
             <CommandMenuUI.ItemIcon as={Settings} style={{ color: theme.text.tertiary }} />
-            <span className='font-medium'>Open Settings</span>
+            Open Settings
           </CommandMenuUI.Item>
         </CommandMenuUI.Group>
 
@@ -157,7 +157,7 @@ export function CommandMenu({ open: isOpen, onOpenChange }: CommandMenuProps) {
               as={themeMode === "dark" ? Sun : Moon}
               style={{ color: theme.text.tertiary }}
             />
-            <span className='font-medium'>Switch to {themeMode === "dark" ? "Light" : "Dark"} Mode</span>
+            Switch to {themeMode === "dark" ? "Light" : "Dark"} Mode
           </CommandMenuUI.Item>
         </CommandMenuUI.Group>
       </CommandMenuUI.List>

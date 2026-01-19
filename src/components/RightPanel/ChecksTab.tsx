@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  Check,
-  X,
-  CircleDashed,
+  CheckCircle,
+  XCircle,
+  Clock,
   ExternalLink,
   RefreshCw,
   Circle,
@@ -20,13 +20,13 @@ interface ChecksTabProps {
 
 function getCheckIcon(status: string, conclusion: string | null) {
   if (status !== "completed") {
-    return CircleDashed;
+    return Clock;
   }
   if (conclusion === "success") {
-    return Check;
+    return CheckCircle;
   }
   if (conclusion === "failure" || conclusion === "cancelled") {
-    return X;
+    return XCircle;
   }
   return Circle;
 }
@@ -194,7 +194,7 @@ export function ChecksTab({ repoPath, prNumber, prUrl, onRefreshReady }: ChecksT
   return (
     <div className="flex flex-col h-full overflow-auto">
       {prDetails && (
-        <div className="px-3 py-3" style={{ borderColor: theme.border.default }}>
+        <div className="px-3 py-3 border-b" style={{ borderColor: theme.border.default }}>
           <div
             className="text-xs font-medium mb-2"
             style={{ color: theme.text.tertiary }}
@@ -204,7 +204,7 @@ export function ChecksTab({ repoPath, prNumber, prUrl, onRefreshReady }: ChecksT
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Circle
-                className="w-3.5 h-3.5"
+                className="w-4 h-4"
                 style={{ color: getMergeStatusColor(prDetails.merge_state_status) }}
               />
               <span className="text-sm" style={{ color: theme.text.primary }}>
@@ -231,7 +231,7 @@ export function ChecksTab({ repoPath, prNumber, prUrl, onRefreshReady }: ChecksT
       )}
 
       {deployments.length > 0 && (
-        <div className="px-3 py-3" style={{ borderColor: theme.border.default }}>
+        <div className="px-3 py-3 border-b" style={{ borderColor: theme.border.default }}>
           <div
             className="text-xs font-medium mb-2"
             style={{ color: theme.text.tertiary }}
@@ -247,7 +247,7 @@ export function ChecksTab({ repoPath, prNumber, prUrl, onRefreshReady }: ChecksT
                 key={index}
                 className="flex items-center gap-2 py-1.5"
               >
-                <Icon className="w-3-5 h-3.5 flex-shrink-0" style={{ color }} />
+                <Icon className="w-4 h-4 flex-shrink-0" style={{ color }} />
                 <span
                   className="flex-1 text-sm truncate"
                   style={{ color: theme.text.primary }}
@@ -272,7 +272,7 @@ export function ChecksTab({ repoPath, prNumber, prUrl, onRefreshReady }: ChecksT
       )}
 
       {regularChecks.length > 0 && (
-        <div className="px-3 py-3" style={{ borderColor: theme.border.default }}>
+        <div className="px-3 py-3 border-b" style={{ borderColor: theme.border.default }}>
           <div
             className="text-xs font-medium mb-2"
             style={{ color: theme.text.tertiary }}
@@ -289,7 +289,7 @@ export function ChecksTab({ repoPath, prNumber, prUrl, onRefreshReady }: ChecksT
                 key={index}
                 className="flex items-center gap-2 py-1.5"
               >
-                <Icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color }} />
+                <Icon className="w-4 h-4 flex-shrink-0" style={{ color }} />
                 <span
                   className="flex-1 text-sm truncate"
                   style={{ color: theme.text.primary }}

@@ -20,7 +20,13 @@
   pointer-events: auto;
 }
 
-
+@font-face {
+  font-family: 'Departure Mono';
+  src: url('/fonts/DepartureMono-Regular.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
 
 * {
   margin: 0;
@@ -41,7 +47,7 @@ body,
 }
 
 body {
-  font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: transparent !important;
@@ -107,7 +113,7 @@ body {
 
 .diff-overlay [class*="diff-view"] {
   --diff-font-size--: 12px;
-  --diff-font-family--: 'Geist Mono', ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --diff-font-family--: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --diff-line-height--: 1.5;
   --diff-hunk-line-height--: 28px;
   --diff-background-color--: transparent;
@@ -162,5 +168,5 @@ body {
 .agent-diff-wrapper code,
 .agent-diff-wrapper pre {
   font-size: 12px;
-  font-family: 'Geist Mono', "Monaco", "Menlo", "Consolas", monospace;
+  font-family: "Monaco", "Menlo", "Consolas", monospace;
 }

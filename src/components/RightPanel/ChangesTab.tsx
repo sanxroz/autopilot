@@ -5,6 +5,7 @@ import {
   FileMinus,
   FileEdit,
   Square,
+  Loader
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
 import type { ChangedFile, FileDiffData } from "../../types";
@@ -240,7 +241,8 @@ export function ChangesTab({
               className="flex items-center justify-center h-full text-sm"
               style={{ color: theme.text.secondary }}
             >
-              Loading diff...
+              <Loader className="w-4 h-4 animate-spin mr-2" />
+              <span className="text-sm font-medium">Loading diff...</span>
             </div>
           )}
           {parsedDiff.length > 0 && (
