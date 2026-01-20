@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import {
   GitPullRequest,
   GitMerge,
@@ -9,6 +9,7 @@ import {
   MessageCircle,
   Eye,
   type LucideIcon,
+  Diff,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTheme } from "../../hooks/useTheme";
@@ -17,6 +18,7 @@ import { useAppStore } from "../../store";
 import { ChecksTab } from "./ChecksTab";
 import { ReviewTab } from "./ReviewTab";
 import { CommentsTab } from "./CommentsTab";
+import { DiffTab } from "./DiffTab";
 import { Tabs, TabsList, TabsTrigger } from "../ui/segmented-control";
 import * as Tooltip from "../ui/tooltip";
 import type { CreatePRResult } from "../../types/github";
@@ -26,7 +28,7 @@ interface RightPanelProps {
   onClose: () => void;
 }
 
-type TabId = "checks" | "comments" | "code-review";
+type TabId = "checks" | "comments" | "code-review" | "changes";
 
 const MIN_WIDTH = 300;
 const MAX_WIDTH = 800;
@@ -40,15 +42,16 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const [showPRDropdown, setShowPRDropdown] = useState(false);
   const [isCreatingPR, setIsCreatingPR] = useState(false);
   const [checksRefresh, setChecksRefresh] = useState<(() => void) | null>(null);
-  const [commentsRefresh, setCommentsRefresh] = useState<(() => void) | null>(null);
+  const [commentsRefresh, setCommentsRefresh] = useState<(() => void) | null>(
+    null,
+  );
 
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
   const repositories = useAppStore((state) => state.repositories);
 
   const repoPath =
-    repositories.find((r) =>
-      r.worktrees.some((w) => w.path === worktreePath)
-    )?.info.path ?? null;
+    repositories.find((r) => r.worktrees.some((w) => w.path === worktreePath))
+      ?.info.path ?? null;
 
   const branch = selectedWorktree?.branch ?? null;
   const prStatus = usePRStatusForBranch(repoPath ?? "", branch);
@@ -67,7 +70,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
       const containerRight = window.innerWidth;
       const newWidth = Math.min(
         MAX_WIDTH,
-        Math.max(MIN_WIDTH, containerRight - e.clientX)
+        Math.max(MIN_WIDTH, containerRight - e.clientX),
       );
       setWidth(newWidth);
     };
@@ -120,13 +123,39 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
     !prStatus.merged &&
     prStatus.state === "open" &&
     prStatus.checks_status === "success" &&
-    (prStatus.review_decision === "APPROVED" || prStatus.review_decision === null);
+    (prStatus.review_decision === "APPROVED" ||
+      prStatus.review_decision === null);
 
-  const tabs: { id: TabId; label: string; icon: LucideIcon; color?: string }[] = [
-    { id: "checks", label: "Checks", icon: ListTodo, color: getChecksColor() },
-    { id: "comments", label: "Comments", icon: MessageCircle },
-    { id: "code-review", label: "Code Review", icon: Eye },
-  ];
+  const diffViewMode = useAppStore((state) => state.diffViewMode);
+  const prevDiffViewModeRef = useRef(diffViewMode);
+
+  const showChangesTab = diffViewMode === "sidebar";
+
+  useEffect(() => {
+    const prevMode = prevDiffViewModeRef.current;
+    prevDiffViewModeRef.current = diffViewMode;
+
+    if (diffViewMode === 'sidebar' && prevMode === 'overlay') {
+      setActiveTab("changes");
+    } else if (diffViewMode === 'overlay' && prevMode === 'sidebar' && activeTab === "changes") {
+      setActiveTab("checks");
+    }
+  }, [diffViewMode, activeTab]);
+
+  const tabs: { id: TabId; label: string; icon: LucideIcon; color?: string }[] =
+    [
+      {
+        id: "checks",
+        label: "Checks",
+        icon: ListTodo,
+        color: getChecksColor(),
+      },
+      { id: "comments", label: "Comments", icon: MessageCircle },
+      { id: "code-review", label: "Code Review", icon: Eye },
+      ...(showChangesTab
+        ? [{ id: "changes" as TabId, label: "Changes", icon: Diff }]
+        : []),
+    ];
 
   return (
     <div
@@ -172,7 +201,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
             }}
             title={prStatus.title}
           >
-            <span className='font-medium'>#{prStatus.number}</span>
+            <span className="font-medium">#{prStatus.number}</span>
             <ExternalLink className="w-3 h-3" />
           </a>
         )}
@@ -197,14 +226,14 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
                           color: tab.color
                             ? tab.color
                             : isActive
-                            ? theme.text.primary
-                            : theme.text.secondary,
+                              ? theme.text.primary
+                              : theme.text.secondary,
                         }}
                       >
                         <tab.icon className="w-3.5 h-3.5" />
                       </TabsTrigger>
                     </Tooltip.Trigger>
-                    <Tooltip.Content  side="bottom" size="small">
+                    <Tooltip.Content side="bottom" size="small">
                       {tab.label}
                     </Tooltip.Content>
                   </Tooltip.Root>
@@ -216,7 +245,8 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
 
         <div className="flex-1" />
 
-        {((activeTab === "checks" && checksRefresh) || (activeTab === "comments" && commentsRefresh)) && (
+        {((activeTab === "checks" && checksRefresh) ||
+          (activeTab === "comments" && commentsRefresh)) && (
           <button
             onClick={activeTab === "checks" ? checksRefresh! : commentsRefresh!}
             className="p-1 rounded transition-colors mr-2"
@@ -318,7 +348,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         )}
       </div>
 
-<div className="flex-1 overflow-hidden flex flex-col">
+      <div className="flex-1 overflow-hidden flex flex-col">
         {activeTab === "checks" && (
           <ChecksTab
             repoPath={repoPath}
@@ -335,6 +365,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
           />
         )}
         {activeTab === "code-review" && <ReviewTab repoPath={worktreePath} />}
+        {activeTab === "changes" && <DiffTab worktreePath={worktreePath} />}
       </div>
     </div>
   );

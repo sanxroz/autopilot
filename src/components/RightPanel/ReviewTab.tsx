@@ -47,11 +47,15 @@ export function ReviewTab({ repoPath }: ReviewTabProps) {
   return (
     <div className="flex flex-col h-full">
       <div
-        className="px-3 py-3 border-b flex items-center justify-between"
+        className="px-3 py-3 flex items-center justify-between"
         style={{ borderColor: theme.border.default }}
       >
         <div className="flex items-center gap-2">
-          <Terminal className="w-4 h-4" strokeWidth={2.5} style={{ color: theme.text.tertiary }} />
+          <Terminal
+            className="w-4 h-4"
+            strokeWidth={2.5}
+            style={{ color: theme.text.tertiary }}
+          />
           <span className="text-sm" style={{ color: theme.text.primary }}>
             Cubic AI Review
           </span>
@@ -86,7 +90,10 @@ export function ReviewTab({ repoPath }: ReviewTabProps) {
             className="flex flex-col items-center justify-center h-full text-center gap-3"
             style={{ color: theme.text.secondary }}
           >
-            <Terminal className="w-8 h-8" style={{ color: theme.text.tertiary }} />
+            <Terminal
+              className="w-8 h-8"
+              style={{ color: theme.text.tertiary }}
+            />
             <div>
               <p className="text-sm mb-1">Run AI-powered code review</p>
               <p className="text-xs" style={{ color: theme.text.tertiary }}>
@@ -101,7 +108,10 @@ export function ReviewTab({ repoPath }: ReviewTabProps) {
             className="flex flex-col items-center justify-center h-full text-center gap-3"
             style={{ color: theme.text.secondary }}
           >
-            <RefreshCw className="w-8 h-8 animate-spin" style={{ color: "#3B82F6" }} />
+            <RefreshCw
+              className="w-8 h-8 animate-spin"
+              style={{ color: "#3B82F6" }}
+            />
             <p className="text-sm">Analyzing your code...</p>
           </div>
         )}
@@ -115,7 +125,11 @@ export function ReviewTab({ repoPath }: ReviewTabProps) {
             }}
           >
             <div className="flex items-center gap-2 mb-2">
-              <XCircle className="w-4 h-4" strokeWidth={2.5} style={{ color: theme.semantic.error }} />
+              <XCircle
+                className="w-4 h-4"
+                strokeWidth={2.5}
+                style={{ color: theme.semantic.error }}
+              />
               <span
                 className="text-sm font-medium"
                 style={{ color: theme.semantic.error }}
@@ -143,9 +157,17 @@ export function ReviewTab({ repoPath }: ReviewTabProps) {
               }}
             >
               {result.success ? (
-                <CheckCircle className="w-4 h-4" strokeWidth={2.5} style={{ color: "#22C55E" }} />
+                <CheckCircle
+                  className="w-4 h-4"
+                  strokeWidth={2.5}
+                  style={{ color: "#22C55E" }}
+                />
               ) : (
-                <XCircle className="w-4 h-4" strokeWidth={2.5} style={{ color: "#EF4444" }} />
+                <XCircle
+                  className="w-4 h-4"
+                  strokeWidth={2.5}
+                  style={{ color: "#EF4444" }}
+                />
               )}
               <span
                 className="text-sm font-medium"

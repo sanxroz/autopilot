@@ -101,6 +101,7 @@ pub fn run() {
             git::delete_worktree,
             git::list_branches,
             git::get_worktree_info,
+            git::get_worktree_branch_name,
             git::get_changed_files,
             git::get_file_diff,
             git::get_file_content,

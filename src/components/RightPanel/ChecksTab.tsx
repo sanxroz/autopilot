@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  CheckCircle,
-  XCircle,
-  Clock,
+  Check,
+  X,
+  CircleDashed,
   ExternalLink,
   RefreshCw,
   Circle,
@@ -20,13 +20,13 @@ interface ChecksTabProps {
 
 function getCheckIcon(status: string, conclusion: string | null) {
   if (status !== "completed") {
-    return Clock;
+    return CircleDashed;
   }
   if (conclusion === "success") {
-    return CheckCircle;
+    return Check;
   }
   if (conclusion === "failure" || conclusion === "cancelled") {
-    return XCircle;
+    return X;
   }
   return Circle;
 }
@@ -46,7 +46,7 @@ function getCheckColor(status: string, conclusion: string | null) {
 
 function formatDuration(
   startedAt: string | null,
-  completedAt: string | null
+  completedAt: string | null,
 ): string {
   if (!startedAt || !completedAt) return "";
 
@@ -93,7 +93,12 @@ function getMergeStatusColor(status: string): string {
   }
 }
 
-export function ChecksTab({ repoPath, prNumber, prUrl, onRefreshReady }: ChecksTabProps) {
+export function ChecksTab({
+  repoPath,
+  prNumber,
+  prUrl,
+  onRefreshReady,
+}: ChecksTabProps) {
   const theme = useTheme();
   const [checksResult, setChecksResult] = useState<PRChecksResult | null>(null);
   const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(null);
@@ -177,24 +182,29 @@ export function ChecksTab({ repoPath, prNumber, prUrl, onRefreshReady }: ChecksT
     );
   }
 
-  const deployments = checksResult?.checks.filter(
-    (c) =>
-      c.name.toLowerCase().includes("vercel") ||
-      c.name.toLowerCase().includes("deploy") ||
-      c.name.toLowerCase().includes("preview")
-  ) || [];
+  const deployments =
+    checksResult?.checks.filter(
+      (c) =>
+        c.name.toLowerCase().includes("vercel") ||
+        c.name.toLowerCase().includes("deploy") ||
+        c.name.toLowerCase().includes("preview"),
+    ) || [];
 
-  const regularChecks = checksResult?.checks.filter(
-    (c) =>
-      !c.name.toLowerCase().includes("vercel") &&
-      !c.name.toLowerCase().includes("deploy") &&
-      !c.name.toLowerCase().includes("preview")
-  ) || [];
+  const regularChecks =
+    checksResult?.checks.filter(
+      (c) =>
+        !c.name.toLowerCase().includes("vercel") &&
+        !c.name.toLowerCase().includes("deploy") &&
+        !c.name.toLowerCase().includes("preview"),
+    ) || [];
 
   return (
     <div className="flex flex-col h-full overflow-auto">
       {prDetails && (
-        <div className="px-3 py-3 border-b" style={{ borderColor: theme.border.default }}>
+        <div
+          className="px-3 py-3"
+          style={{ borderColor: theme.border.default }}
+        >
           <div
             className="text-xs font-medium mb-2"
             style={{ color: theme.text.tertiary }}
@@ -204,8 +214,11 @@ export function ChecksTab({ repoPath, prNumber, prUrl, onRefreshReady }: ChecksT
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Circle
-                className="w-4 h-4"
-                style={{ color: getMergeStatusColor(prDetails.merge_state_status) }}
+                className="w-3 h-3"
+                strokeWidth={2}
+                style={{
+                  color: getMergeStatusColor(prDetails.merge_state_status),
+                }}
               />
               <span className="text-sm" style={{ color: theme.text.primary }}>
                 {getMergeStatusText(prDetails.merge_state_status)}
@@ -231,7 +244,10 @@ export function ChecksTab({ repoPath, prNumber, prUrl, onRefreshReady }: ChecksT
       )}
 
       {deployments.length > 0 && (
-        <div className="px-3 py-3 border-b" style={{ borderColor: theme.border.default }}>
+        <div
+          className="px-3 py-3"
+          style={{ borderColor: theme.border.default }}
+        >
           <div
             className="text-xs font-medium mb-2"
             style={{ color: theme.text.tertiary }}
@@ -243,11 +259,12 @@ export function ChecksTab({ repoPath, prNumber, prUrl, onRefreshReady }: ChecksT
             const color = getCheckColor(check.status, check.conclusion);
 
             return (
-              <div
-                key={index}
-                className="flex items-center gap-2 py-1.5"
-              >
-                <Icon className="w-4 h-4 flex-shrink-0" style={{ color }} />
+              <div key={index} className="flex items-center gap-2 py-1.5">
+                <Icon
+                  className="w-3 h-3 flex-shrink-0"
+                  strokeWidth={2}
+                  style={{ color }}
+                />
                 <span
                   className="flex-1 text-sm truncate"
                   style={{ color: theme.text.primary }}
@@ -262,7 +279,7 @@ export function ChecksTab({ repoPath, prNumber, prUrl, onRefreshReady }: ChecksT
                     className="p-1 rounded transition-colors flex-shrink-0"
                     style={{ color: theme.text.tertiary }}
                   >
-                    <ExternalLink className="w-3 h-3" />
+                    <ExternalLink className="w-3 h-3" strokeWidth={2} />
                   </a>
                 )}
               </div>
@@ -272,7 +289,10 @@ export function ChecksTab({ repoPath, prNumber, prUrl, onRefreshReady }: ChecksT
       )}
 
       {regularChecks.length > 0 && (
-        <div className="px-3 py-3 border-b" style={{ borderColor: theme.border.default }}>
+        <div
+          className="px-3 py-3"
+          style={{ borderColor: theme.border.default }}
+        >
           <div
             className="text-xs font-medium mb-2"
             style={{ color: theme.text.tertiary }}
@@ -282,14 +302,18 @@ export function ChecksTab({ repoPath, prNumber, prUrl, onRefreshReady }: ChecksT
           {regularChecks.map((check, index) => {
             const Icon = getCheckIcon(check.status, check.conclusion);
             const color = getCheckColor(check.status, check.conclusion);
-            const duration = formatDuration(check.started_at, check.completed_at);
+            const duration = formatDuration(
+              check.started_at,
+              check.completed_at,
+            );
 
             return (
-              <div
-                key={index}
-                className="flex items-center gap-2 py-1.5"
-              >
-                <Icon className="w-4 h-4 flex-shrink-0" style={{ color }} />
+              <div key={index} className="flex items-center gap-2 py-1.5">
+                <Icon
+                  className="w-3 h-3 flex-shrink-0"
+                  strokeWidth={2}
+                  style={{ color }}
+                />
                 <span
                   className="flex-1 text-sm truncate"
                   style={{ color: theme.text.primary }}
@@ -312,7 +336,7 @@ export function ChecksTab({ repoPath, prNumber, prUrl, onRefreshReady }: ChecksT
                     className="p-1 rounded transition-colors flex-shrink-0"
                     style={{ color: theme.text.tertiary }}
                   >
-                    <ExternalLink className="w-3 h-3" />
+                    <ExternalLink className="w-3 h-3" strokeWidth={2} />
                   </a>
                 )}
               </div>
@@ -322,13 +346,13 @@ export function ChecksTab({ repoPath, prNumber, prUrl, onRefreshReady }: ChecksT
       )}
 
       {(!checksResult || checksResult.checks.length === 0) && (
-          <div
-            className="flex-1 flex items-center justify-center text-sm"
-            style={{ color: theme.text.secondary }}
-          >
-            No checks
-          </div>
-        )}
+        <div
+          className="flex-1 flex items-center justify-center text-sm"
+          style={{ color: theme.text.secondary }}
+        >
+          No checks
+        </div>
+      )}
     </div>
   );
 }

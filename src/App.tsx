@@ -10,6 +10,7 @@ import { useAppStore } from "./store";
 import { useTheme } from "./hooks/useTheme";
 import { usePRStatusPolling } from "./hooks/usePRStatus";
 import { useProcessStatusPolling } from "./hooks/useProcessStatus";
+import { useGitWatcher } from "./hooks/useGitWatcher";
 
 function App() {
   const initialize = useAppStore((state) => state.initialize);
@@ -18,6 +19,7 @@ function App() {
   const setCodeReviewOpen = useAppStore((state) => state.setCodeReviewOpen);
   const diffOverlayOpen = useAppStore((state) => state.diffOverlayOpen);
   const setDiffOverlayOpen = useAppStore((state) => state.setDiffOverlayOpen);
+  const diffViewMode = useAppStore((state) => state.diffViewMode);
   const settingsOpen = useAppStore((state) => state.settingsOpen);
   const toggleSettings = useAppStore((state) => state.toggleSettings);
   const theme = useTheme();
@@ -42,6 +44,7 @@ function App() {
 
   usePRStatusPolling();
   useProcessStatusPolling();
+  useGitWatcher();
 
   return (
     <div
@@ -60,7 +63,7 @@ function App() {
         <div className="flex flex-col flex-1 overflow-hidden relative">
           <Navbar sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
           <TerminalGrid />
-          {diffOverlayOpen && (
+          {diffOverlayOpen && diffViewMode === 'overlay' && (
             <DiffOverlay
               worktreePath={selectedWorktree?.path ?? null}
               onClose={() => setDiffOverlayOpen(false)}

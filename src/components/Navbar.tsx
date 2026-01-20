@@ -11,9 +11,14 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
   const diffOverlayOpen = useAppStore((state) => state.diffOverlayOpen);
   const toggleDiffOverlay = useAppStore((state) => state.toggleDiffOverlay);
+  const diffViewMode = useAppStore((state) => state.diffViewMode);
   const codeReviewOpen = useAppStore((state) => state.codeReviewOpen);
-  const toggleCodeReview = useAppStore((state) => state.toggleCodeReview);
+  const setCodeReviewOpen = useAppStore((state) => state.setCodeReviewOpen);
   const theme = useTheme();
+
+  const handleToggleRightPanel = () => {
+    setCodeReviewOpen(!codeReviewOpen);
+  };
 
   const worktreeName = selectedWorktree?.name ?? null;
   const branchName = selectedWorktree?.branch ?? null;
@@ -29,7 +34,6 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
         paddingRight: "12px",
       }}
     >
-      {/* Left - Sidebar toggle */}
       <button
         onClick={onToggleSidebar}
         className="py-1.5 px-2 transition-colors rounded-md"
@@ -81,31 +85,33 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
 
       {/* Right controls */}
       <div className="flex items-center gap-1 ml-auto">
+        {diffViewMode === 'overlay' && (
+          <button
+            onClick={toggleDiffOverlay}
+            className="py-1.5 px-2 transition-colors rounded-md"
+            style={{
+              background: "transparent",
+              color: diffOverlayOpen ? theme.accent.primary : theme.text.tertiary,
+            }}
+            onMouseEnter={(e) => {
+              if (!diffOverlayOpen) {
+                e.currentTarget.style.background = theme.bg.hover;
+                e.currentTarget.style.color = theme.text.primary;
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+              if (!diffOverlayOpen) {
+                e.currentTarget.style.color = theme.text.tertiary;
+              }
+            }}
+            title="Diff"
+          >
+            <Diff className="w-4 h-4" />
+          </button>
+        )}
         <button
-          onClick={toggleDiffOverlay}
-          className="py-1.5 px-2 transition-colors rounded-md"
-          style={{
-            background: "transparent",
-            color: diffOverlayOpen ? theme.accent.primary : theme.text.tertiary,
-          }}
-          onMouseEnter={(e) => {
-            if (!diffOverlayOpen) {
-              e.currentTarget.style.background = theme.bg.hover;
-              e.currentTarget.style.color = theme.text.primary;
-            }
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "transparent";
-            if (!diffOverlayOpen) {
-              e.currentTarget.style.color = theme.text.tertiary;
-            }
-          }}
-          title="Diff"
-        >
-          <Diff className="w-4 h-4"  />
-        </button>
-        <button
-          onClick={toggleCodeReview}
+          onClick={handleToggleRightPanel}
           className="py-1.5 px-2 transition-colors rounded-md"
           style={{
             background: "transparent",

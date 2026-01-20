@@ -1,4 +1,4 @@
-import { useEffect, useRef, useMemo } from 'react';
+import { useEffect, useRef, useMemo, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { useAppStore } from '../store';
@@ -9,11 +9,20 @@ interface GitChangeEvent {
   change_type: string;
 }
 
+interface WorktreeChangeEvent {
+  repo_path: string;
+  change_type: string;
+}
+
 export function useGitWatcher() {
   const repositories = useAppStore((state) => state.repositories);
   const refreshWorktrees = useAppStore((state) => state.refreshWorktrees);
+  const updateWorktreeBranch = useAppStore((state) => state.updateWorktreeBranch);
   const isInitialized = useAppStore((state) => state.isInitialized);
-  const unlistenRef = useRef<UnlistenFn | null>(null);
+  const unlistenHeadRef = useRef<UnlistenFn | null>(null);
+  const unlistenWorktreeRef = useRef<UnlistenFn | null>(null);
+  const pendingBranchUpdates = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const pendingWorktreeUpdates = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const repoWorktreeSignature = useMemo(() => {
     return repositories.map(r => ({
@@ -22,27 +31,59 @@ export function useGitWatcher() {
     }));
   }, [repositories]);
 
+  const debouncedBranchUpdate = useCallback((worktreePath: string) => {
+    const existing = pendingBranchUpdates.current.get(worktreePath);
+    if (existing) clearTimeout(existing);
+    
+    const timeout = setTimeout(() => {
+      pendingBranchUpdates.current.delete(worktreePath);
+      updateWorktreeBranch(worktreePath);
+    }, 300);
+    
+    pendingBranchUpdates.current.set(worktreePath, timeout);
+  }, [updateWorktreeBranch]);
+
+  const debouncedWorktreeRefresh = useCallback((repoPath: string) => {
+    const existing = pendingWorktreeUpdates.current.get(repoPath);
+    if (existing) clearTimeout(existing);
+    
+    const timeout = setTimeout(() => {
+      pendingWorktreeUpdates.current.delete(repoPath);
+      refreshWorktrees(repoPath);
+    }, 500);
+    
+    pendingWorktreeUpdates.current.set(repoPath, timeout);
+  }, [refreshWorktrees]);
+
   useEffect(() => {
     if (!isInitialized) return;
 
     let mounted = true;
 
-    const setupListener = async () => {
-      if (unlistenRef.current) return;
+    const setupListeners = async () => {
+      if (!unlistenHeadRef.current) {
+        unlistenHeadRef.current = await listen<GitChangeEvent>('git-head-changed', (event) => {
+          if (!mounted) return;
+          console.log('[GitWatcher] Branch changed:', event.payload);
+          debouncedBranchUpdate(event.payload.worktree_path);
+        });
+      }
 
-      unlistenRef.current = await listen<GitChangeEvent>('git-head-changed', (event) => {
-        if (!mounted) return;
-        console.log('[GitWatcher] Branch changed:', event.payload);
-        refreshWorktrees(event.payload.repo_path);
-      });
+      if (!unlistenWorktreeRef.current) {
+        unlistenWorktreeRef.current = await listen<WorktreeChangeEvent>('worktree-changed', (event) => {
+          if (!mounted) return;
+          console.log('[GitWatcher] Worktree changed:', event.payload);
+          debouncedWorktreeRefresh(event.payload.repo_path);
+        });
+      }
     };
 
-    setupListener();
+    setupListeners();
 
     return () => {
       mounted = false;
     };
-  }, [isInitialized, refreshWorktrees]);
+  }, [isInitialized, debouncedBranchUpdate, debouncedWorktreeRefresh]);
 
   useEffect(() => {
     if (!isInitialized || repositories.length === 0) return;
@@ -58,9 +99,13 @@ export function useGitWatcher() {
 
   useEffect(() => {
     return () => {
-      if (unlistenRef.current) {
-        unlistenRef.current();
-        unlistenRef.current = null;
+      if (unlistenHeadRef.current) {
+        unlistenHeadRef.current();
+        unlistenHeadRef.current = null;
+      }
+      if (unlistenWorktreeRef.current) {
+        unlistenWorktreeRef.current();
+        unlistenWorktreeRef.current = null;
       }
       invoke('stop_all_watchers').catch(console.error);
     };

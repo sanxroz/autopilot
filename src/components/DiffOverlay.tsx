@@ -18,6 +18,8 @@ import {
   AlertTriangle,
   ChevronUp,
   ChevronsUpDown,
+  PanelRight,
+  Maximize2,
 } from "lucide-react";
 import { DiffView, DiffModeEnum, DiffFile } from "@git-diff-view/react";
 import "@git-diff-view/react/styles/diff-view.css";
@@ -80,6 +82,7 @@ class DiffErrorBoundary extends Component<
 interface DiffOverlayProps {
   worktreePath: string | null;
   onClose: () => void;
+  asSidebar?: boolean;
 }
 
 function getFileIcon(status: ChangedFile["status"]) {
@@ -310,11 +313,22 @@ function FileSection({
   );
 }
 
-export function DiffOverlay({ worktreePath, onClose }: DiffOverlayProps) {
+const MIN_SIDEBAR_WIDTH = 300;
+const MAX_SIDEBAR_WIDTH = 800;
+const DEFAULT_SIDEBAR_WIDTH = 500;
+
+export function DiffOverlay({ worktreePath, onClose, asSidebar = false }: DiffOverlayProps) {
   const theme = useTheme();
   const themeMode = useThemeMode();
   const isLightMode = themeMode === "light";
-  const selectedWorktree = useAppStore((state) => state.selectedWorktree);
+  const setDiffViewMode = useAppStore((state) => state.setDiffViewMode);
+  const setCodeReviewOpen = useAppStore((state) => state.setCodeReviewOpen);
+
+  const handleMoveToSidebar = () => {
+    setDiffViewMode('sidebar');
+    setCodeReviewOpen(true);
+    onClose();
+  };
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -322,6 +336,39 @@ export function DiffOverlay({ worktreePath, onClose }: DiffOverlayProps) {
     DiffHighlighter,
     "getHighlighterEngine"
   > | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (!asSidebar) return;
+    e.preventDefault();
+    setIsResizing(true);
+  }, [asSidebar]);
+
+  useEffect(() => {
+    if (!isResizing || !asSidebar) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const containerRight = window.innerWidth;
+      const newWidth = Math.min(
+        MAX_SIDEBAR_WIDTH,
+        Math.max(MIN_SIDEBAR_WIDTH, containerRight - e.clientX)
+      );
+      setSidebarWidth(newWidth);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+
+    return () => {
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isResizing, asSidebar]);
 
   useEffect(() => {
     let cancelled = false;
@@ -418,9 +465,26 @@ export function DiffOverlay({ worktreePath, onClose }: DiffOverlayProps) {
 
   return (
     <div
-      className={`absolute inset-0 z-20 flex flex-col diff-overlay ${isLightMode ? "light-mode" : ""}`}
-      style={{ background: theme.bg.primary }}
+      className={`${asSidebar ? 'relative' : 'absolute inset-0 z-20'} flex flex-col diff-overlay ${isLightMode ? "light-mode" : ""}`}
+      style={{
+        background: theme.bg.primary,
+        ...(asSidebar && {
+          width: `${sidebarWidth}px`,
+          minWidth: `${MIN_SIDEBAR_WIDTH}px`,
+          maxWidth: `${MAX_SIDEBAR_WIDTH}px`,
+          borderLeft: `1px solid ${theme.border.default}`,
+        }),
+      }}
     >
+      {asSidebar && (
+        <div
+          onMouseDown={handleMouseDown}
+          className="absolute top-0 left-0 w-1 h-full cursor-col-resize z-10 transition-colors"
+          style={{
+            backgroundColor: isResizing ? theme.border.strong : "transparent",
+          }}
+        />
+      )}
       <div
         data-tauri-drag-region
         className="flex items-center justify-between px-4 shrink-0"
@@ -433,11 +497,6 @@ export function DiffOverlay({ worktreePath, onClose }: DiffOverlayProps) {
           <span className="text-sm font-medium" style={{ color: theme.text.primary }}>
             Changes
           </span>
-          {selectedWorktree && (
-            <span className="text-xs" style={{ color: theme.text.tertiary }}>
-              {selectedWorktree.branch}
-            </span>
-          )}
           <div className="flex items-center gap-2 text-xs">
             <span
               className="px-1.5 py-0.5 rounded"
@@ -478,6 +537,26 @@ export function DiffOverlay({ worktreePath, onClose }: DiffOverlayProps) {
               )}
             </button>
           )}
+          <button
+            onClick={handleMoveToSidebar}
+            className="p-1 rounded transition-colors"
+            style={{ color: theme.text.tertiary }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = theme.bg.hover;
+              e.currentTarget.style.color = theme.text.primary;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.color = theme.text.tertiary;
+            }}
+            title={asSidebar ? "Expand to overlay" : "Move to sidebar"}
+          >
+            {asSidebar ? (
+              <Maximize2 className="w-4 h-4" />
+            ) : (
+              <PanelRight className="w-4 h-4" />
+            )}
+          </button>
           <button
             onClick={onClose}
             className="p-1 rounded transition-colors"

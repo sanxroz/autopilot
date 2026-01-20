@@ -42,6 +42,8 @@ export interface Repository {
 
 export type ProcessStatus = 'dev_server' | 'agent_running' | 'none';
 
+export type DiffViewMode = 'overlay' | 'sidebar';
+
 export type FileStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'untracked';
 
 export interface ChangedFile {

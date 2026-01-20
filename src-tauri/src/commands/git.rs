@@ -182,6 +182,12 @@ pub fn get_worktree_info(worktree_path: String) -> Result<WorktreeInfo, String> 
 }
 
 #[tauri::command]
+pub fn get_worktree_branch_name(worktree_path: String) -> Result<Option<String>, String> {
+    let path = PathBuf::from(&worktree_path);
+    Ok(get_worktree_branch(&path))
+}
+
+#[tauri::command]
 pub fn list_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
     let repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
 

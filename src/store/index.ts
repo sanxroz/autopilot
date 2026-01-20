@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { load } from '@tauri-apps/plugin-store';
-import type { Repository, WorktreeInfo, TerminalInstance, ProcessStatus } from '../types';
+import type { Repository, WorktreeInfo, TerminalInstance, ProcessStatus, DiffViewMode } from '../types';
 import type { GitHubSettings, PRStatus } from '../types/github';
 import { DEFAULT_GITHUB_SETTINGS } from '../types/github';
 import { setThemeMode as setGlobalThemeMode, getThemeMode, type ThemeMode } from '../theme';
@@ -28,6 +28,7 @@ interface AppStore {
   settingsOpen: boolean;
   codeReviewOpen: boolean;
   diffOverlayOpen: boolean;
+  diffViewMode: DiffViewMode;
   processStatusByPath: Record<string, ProcessStatus>;
 
   initialize: () => Promise<void>;
@@ -35,6 +36,7 @@ interface AppStore {
   removeRepository: (path: string) => void;
   toggleRepoExpanded: (path: string) => void;
   refreshWorktrees: (repoPath: string) => Promise<void>;
+  updateWorktreeBranch: (worktreePath: string) => Promise<void>;
   selectWorktree: (worktree: WorktreeInfo) => Promise<void>;
   addTerminal: () => Promise<string | null>;
   removeTerminal: (terminalId: string) => void;
@@ -46,6 +48,8 @@ interface AppStore {
   toggleCodeReview: () => void;
   setDiffOverlayOpen: (open: boolean) => void;
   toggleDiffOverlay: () => void;
+  setDiffViewMode: (mode: DiffViewMode) => void;
+  toggleDiffViewMode: () => void;
   createWorktreeAuto: (repoPath: string) => Promise<WorktreeInfo | null>;
   deleteWorktree: (repoPath: string, worktreeName: string) => Promise<void>;
   setPRStatusBatch: (batch: Record<string, Record<string, PRStatus>>) => void;
@@ -91,6 +95,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   settingsOpen: false,
   codeReviewOpen: false,
   diffOverlayOpen: false,
+  diffViewMode: 'overlay',
   processStatusByPath: {},
 
   initialize: async () => {
@@ -166,6 +171,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
       repositories: state.repositories.map((r) =>
         r.info.path === repoPath ? { ...r, worktrees } : r
       ),
+    }));
+  },
+
+  updateWorktreeBranch: async (worktreePath: string) => {
+    const branch = await invoke<string | null>('get_worktree_branch_name', { worktreePath });
+    set((state) => ({
+      repositories: state.repositories.map((repo) => ({
+        ...repo,
+        worktrees: repo.worktrees.map((wt) =>
+          wt.path === worktreePath ? { ...wt, branch } : wt
+        ),
+      })),
+      selectedWorktree: state.selectedWorktree?.path === worktreePath
+        ? { ...state.selectedWorktree, branch }
+        : state.selectedWorktree,
     }));
   },
 
@@ -333,6 +353,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   toggleDiffOverlay: () => {
     set((state) => ({ diffOverlayOpen: !state.diffOverlayOpen }));
+  },
+
+  setDiffViewMode: (mode: DiffViewMode) => {
+    set({ diffViewMode: mode });
+  },
+
+  toggleDiffViewMode: () => {
+    set((state) => ({ diffViewMode: state.diffViewMode === 'overlay' ? 'sidebar' : 'overlay' }));
   },
 
   createWorktreeAuto: async (repoPath: string) => {
