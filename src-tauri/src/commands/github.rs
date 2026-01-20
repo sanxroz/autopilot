@@ -415,6 +415,8 @@ struct GhComment {
 #[serde(rename_all = "camelCase")]
 struct GhReview {
     id: String,
+    #[serde(default)]
+    database_id: Option<u64>,
     author: GhCommentAuthor,
     body: String,
     submitted_at: Option<String>,
@@ -422,15 +424,25 @@ struct GhReview {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+struct RestApiReview {
+    id: u64,
+    user: GhCommentAuthor,
+    body: String,
+    submitted_at: Option<String>,
+    state: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct GhReviewComment {
-    author: GhCommentAuthor,
+    user: GhCommentAuthor,
     body: String,
     created_at: String,
     path: String,
     line: Option<u32>,
     original_line: Option<u32>,
-    pull_request_review_id: Option<String>,
+    pull_request_review_id: Option<u64>,
+    #[serde(default)]
+    id: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -446,7 +458,41 @@ struct GhPRDetailedResponse {
     review_decision: Option<String>,
 }
 
+async fn fetch_reviews_rest_api(repo_path: &str, pr_number: u64) -> Result<Vec<RestApiReview>, String> {
+    eprintln!("DEBUG: Fetching reviews via REST API for PR #{}", pr_number);
+    let output = Command::new("gh")
+        .args([
+            "api",
+            &format!("repos/{{owner}}/{{repo}}/pulls/{}/reviews", pr_number),
+            "--paginate",
+        ])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to fetch reviews: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("DEBUG: gh api reviews failed: {}", stderr);
+        return Ok(Vec::new());
+    }
+
+    let stdout = String::from_utf8(output.stdout)
+        .map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
+
+    match serde_json::from_str::<Vec<RestApiReview>>(&stdout) {
+        Ok(reviews) => {
+            eprintln!("DEBUG: Successfully parsed {} reviews from REST API", reviews.len());
+            Ok(reviews)
+        }
+        Err(e) => {
+            eprintln!("DEBUG: Failed to parse reviews: {}", e);
+            Ok(Vec::new())
+        }
+    }
+}
+
 async fn fetch_review_comments(repo_path: &str, pr_number: u64) -> Result<Vec<GhReviewComment>, String> {
+    eprintln!("DEBUG: Fetching review comments for PR #{}", pr_number);
     let output = Command::new("gh")
         .args([
             "api",
@@ -458,13 +504,24 @@ async fn fetch_review_comments(repo_path: &str, pr_number: u64) -> Result<Vec<Gh
         .map_err(|e| format!("Failed to fetch review comments: {}", e))?;
 
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("DEBUG: gh api failed: {}", stderr);
         return Ok(Vec::new());
     }
 
     let stdout = String::from_utf8(output.stdout)
         .map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
 
-    Ok(serde_json::from_str(&stdout).unwrap_or_else(|_| Vec::new()))
+    match serde_json::from_str::<Vec<GhReviewComment>>(&stdout) {
+        Ok(comments) => {
+            eprintln!("DEBUG: Successfully parsed {} review comments", comments.len());
+            Ok(comments)
+        }
+        Err(e) => {
+            eprintln!("DEBUG: Failed to parse review comments: {}", e);
+            Ok(Vec::new())
+        }
+    }
 }
 
 #[tauri::command]
@@ -502,42 +559,49 @@ pub async fn get_pr_details(repo_path: String, pr_number: u64) -> Result<PRDetai
         review_id: None,
     }).collect();
 
-    eprintln!("DEBUG: Found {} reviews", pr.reviews.len());
-    for review in pr.reviews {
+    let rest_reviews = fetch_reviews_rest_api(&repo_path, pr_number).await?;
+    eprintln!("DEBUG: Found {} reviews from REST API", rest_reviews.len());
+    for review in rest_reviews {
         eprintln!("DEBUG: Review - id: {}, author: {}, state: {}, has_body: {}", 
-                  review.id, review.author.login, review.state, !review.body.is_empty());
+                  review.id, review.user.login, review.state, !review.body.is_empty());
         all_comments.push(PRComment {
-            author: review.author.login.clone(),
+            author: review.user.login,
             body: review.body,
-            created_at: review.submitted_at.clone().unwrap_or_default(),
+            created_at: review.submitted_at.unwrap_or_default(),
             comment_type: "review".to_string(),
-            state: Some(review.state.clone()),
+            state: Some(review.state),
             path: None,
             line: None,
-            review_id: Some(review.id),
+            review_id: Some(review.id.to_string()),
         });
     }
 
     let review_comments = fetch_review_comments(&repo_path, pr_number).await?;
     eprintln!("DEBUG: Fetched {} review comments", review_comments.len());
     for rc in &review_comments {
-        eprintln!("DEBUG: Review comment - author: {}, review_id: {:?}, path: {}", 
-                  rc.author.login, rc.pull_request_review_id, rc.path);
+        eprintln!("DEBUG: Review comment - id: {}, author: {}, review_id: {:?}, path: {}", 
+                  rc.id, rc.user.login, rc.pull_request_review_id, rc.path);
     }
     for rc in review_comments {
         all_comments.push(PRComment {
-            author: rc.author.login,
+            author: rc.user.login,
             body: rc.body,
             created_at: rc.created_at,
             comment_type: "review_thread".to_string(),
             state: None,
             path: Some(rc.path),
             line: rc.line.or(rc.original_line),
-            review_id: rc.pull_request_review_id,
+            review_id: rc.pull_request_review_id.map(|id| id.to_string()),
         });
     }
 
     all_comments.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+
+    eprintln!("DEBUG: Final comment breakdown:");
+    eprintln!("  - Issue comments: {}", all_comments.iter().filter(|c| c.comment_type == "issue").count());
+    eprintln!("  - Reviews: {}", all_comments.iter().filter(|c| c.comment_type == "review").count());
+    eprintln!("  - Review threads: {}", all_comments.iter().filter(|c| c.comment_type == "review_thread").count());
+    eprintln!("DEBUG: Total comments being returned: {}", all_comments.len());
 
     Ok(PRDetailedInfo {
         merge_state_status: pr.merge_state_status,

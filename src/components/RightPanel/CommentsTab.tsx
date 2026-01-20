@@ -264,18 +264,51 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
 
   const comments = prDetails?.comments || [];
 
+  console.log('[CommentsTab] Total comments received:', comments.length);
+  console.log('[CommentsTab] Comment breakdown:', {
+    issue: comments.filter(c => c.comment_type === 'issue').length,
+    review: comments.filter(c => c.comment_type === 'review').length,
+    review_thread: comments.filter(c => c.comment_type === 'review_thread').length,
+  });
+
   const threadsByReviewId = new Map<string, PRComment[]>();
   const topLevelComments: PRComment[] = [];
   
   for (const comment of comments) {
     if (comment.comment_type === 'review_thread' && comment.review_id) {
+      console.log('[CommentsTab] Found review thread:', {
+        author: comment.author,
+        review_id: comment.review_id,
+        path: comment.path,
+        line: comment.line
+      });
       const existing = threadsByReviewId.get(comment.review_id) || [];
       existing.push(comment);
       threadsByReviewId.set(comment.review_id, existing);
     } else {
       topLevelComments.push(comment);
+      if (comment.comment_type === 'review') {
+        console.log('[CommentsTab] Found review:', {
+          author: comment.author,
+          state: comment.state,
+          review_id: comment.review_id,
+          body_length: comment.body?.length || 0
+        });
+      }
     }
   }
+  
+  console.log('[CommentsTab] Threads by review ID:', Array.from(threadsByReviewId.entries()).map(([id, threads]) => ({
+    review_id: id,
+    thread_count: threads.length
+  })));
+  console.log('[CommentsTab] Top level comments:', topLevelComments.length);
+  
+  console.log('[CommentsTab] Review IDs in top-level comments:', 
+    topLevelComments
+      .filter(c => c.comment_type === 'review')
+      .map(c => c.review_id)
+  );
   
   topLevelComments.sort((a, b) => 
     new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -458,6 +491,16 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
               : [];
             const hasBody = comment.body && comment.body.trim().length > 0;
             const hasNestedThreads = nestedThreads.length > 0;
+            
+            if (comment.comment_type === 'review') {
+              console.log('[CommentsTab] Rendering review:', {
+                author: comment.author,
+                review_id: comment.review_id,
+                hasBody,
+                hasNestedThreads,
+                nestedCount: nestedThreads.length
+              });
+            }
             
             return (
               <div

@@ -6,11 +6,13 @@ import { RightPanel } from "./components/RightPanel";
 import { DiffOverlay } from "./components/DiffOverlay";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { CommandMenu } from "./components/CommandMenu";
+import { UpdateNotification } from "./components/UpdateNotification";
 import { useAppStore } from "./store";
 import { useTheme } from "./hooks/useTheme";
 import { usePRStatusPolling } from "./hooks/usePRStatus";
 import { useProcessStatusPolling } from "./hooks/useProcessStatus";
 import { useGitWatcher } from "./hooks/useGitWatcher";
+import { useUpdater } from "./hooks/useUpdater";
 
 function App() {
   const initialize = useAppStore((state) => state.initialize);
@@ -45,6 +47,25 @@ function App() {
   usePRStatusPolling();
   useProcessStatusPolling();
   useGitWatcher();
+
+  const {
+    status: updateStatus,
+    updateInfo,
+    downloadProgress,
+    error: updateError,
+    downloadAndInstall,
+    restart,
+    dismissUpdate,
+    checkForUpdates,
+  } = useUpdater();
+
+  const [updateModalOpen, setUpdateModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (updateStatus === "available") {
+      setUpdateModalOpen(true);
+    }
+  }, [updateStatus]);
 
   return (
     <div
@@ -81,6 +102,19 @@ function App() {
       {settingsOpen && <SettingsPanel onClose={toggleSettings} />}
 
       <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
+
+      <UpdateNotification
+        open={updateModalOpen}
+        onOpenChange={setUpdateModalOpen}
+        updateInfo={updateInfo}
+        downloadProgress={downloadProgress}
+        status={updateStatus}
+        error={updateError}
+        onUpdate={downloadAndInstall}
+        onLater={dismissUpdate}
+        onRestart={restart}
+        onRetry={checkForUpdates}
+      />
     </div>
   );
 }

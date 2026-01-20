@@ -80,7 +80,13 @@ export function Sidebar() {
     return repositories.map((repo) => ({
       repoName: repo.info.name || basename(repo.info.path),
       repoPath: repo.info.path,
-      worktrees: repo.worktrees.filter((wt) => wt.name !== "main"),
+      worktrees: repo.worktrees
+        .filter((wt) => wt.name !== "main")
+        .sort((a, b) => {
+          const aTime = a.last_modified ? new Date(a.last_modified).getTime() : 0;
+          const bTime = b.last_modified ? new Date(b.last_modified).getTime() : 0;
+          return bTime - aTime;
+        }),
     }));
   }, [repositories]);
 
