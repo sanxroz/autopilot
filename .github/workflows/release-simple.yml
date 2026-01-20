@@ -1,4 +1,4 @@
-name: Release
+name: Release (Simple)
 
 on:
   push:
@@ -16,16 +16,10 @@ jobs:
         include:
           - platform: macos-latest
             args: --target aarch64-apple-darwin
-            target: aarch64-apple-darwin
-          - platform: macos-latest
-            args: --target x86_64-apple-darwin
-            target: x86_64-apple-darwin
           - platform: ubuntu-22.04
             args: ''
-            target: x86_64-unknown-linux-gnu
           - platform: windows-latest
             args: ''
-            target: x86_64-pc-windows-msvc
 
     runs-on: ${{ matrix.platform }}
 
@@ -48,16 +42,7 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
-
-      - name: Setup OpenSSL for macOS x86_64 cross-compilation
-        if: matrix.target == 'x86_64-apple-darwin'
-        run: |
-          brew fetch --force --bottle-tag=x86_64_sonoma openssl@3
-          brew install $(brew --cache --bottle-tag=x86_64_sonoma openssl@3)
-          echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> $GITHUB_ENV
-          echo "OPENSSL_INCLUDE_DIR=$(brew --prefix openssl@3)/include" >> $GITHUB_ENV
-          echo "OPENSSL_LIB_DIR=$(brew --prefix openssl@3)/lib" >> $GITHUB_ENV
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin' || '' }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -72,7 +57,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         with:
           tagName: v__VERSION__
           releaseName: 'Autopilot v__VERSION__'
