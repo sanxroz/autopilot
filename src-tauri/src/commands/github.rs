@@ -1,3 +1,4 @@
+use super::cli_tools::find_cli_tool;
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
@@ -74,7 +75,11 @@ fn compute_checks_status(checks: &[GhStatusCheck]) -> Option<String> {
 
 #[tauri::command]
 pub fn check_gh_cli() -> Result<bool, String> {
-    match Command::new("gh").arg("--version").output() {
+    let gh_path = match find_cli_tool("gh") {
+        Ok(path) => path,
+        Err(_) => return Ok(false),
+    };
+    match Command::new(&gh_path).arg("--version").output() {
         Ok(output) => Ok(output.status.success()),
         Err(_) => Ok(false),
     }
@@ -82,7 +87,8 @@ pub fn check_gh_cli() -> Result<bool, String> {
 
 #[tauri::command]
 pub fn check_gh_auth() -> Result<String, String> {
-    let output = Command::new("gh")
+    let gh_path = find_cli_tool("gh")?;
+    let output = Command::new(&gh_path)
         .args(["auth", "status"])
         .output()
         .map_err(|e| format!("Failed to run gh auth status: {}", e))?;
@@ -118,7 +124,8 @@ pub async fn get_pr_for_branch(
     repo_path: String,
     branch: String,
 ) -> Result<Option<PRStatus>, String> {
-    let output = Command::new("gh")
+    let gh_path = find_cli_tool("gh")?;
+    let output = Command::new(&gh_path)
         .args([
             "pr", "list",
             "--head", &branch,
@@ -170,13 +177,14 @@ pub struct RepoPRStatuses {
 
 #[tauri::command]
 pub async fn get_all_prs_for_repos(repos: Vec<RepoWithBranches>) -> Result<Vec<RepoPRStatuses>, String> {
+    let gh_path = find_cli_tool("gh")?;
     let mut results = Vec::new();
     
     for repo in repos {
         let mut statuses = Vec::new();
         
         for branch in &repo.branches {
-            let output = Command::new("gh")
+            let output = Command::new(&gh_path)
                 .args([
                     "pr", "list",
                     "--head", branch,
@@ -221,9 +229,10 @@ pub async fn get_pr_status(
     repo_path: String,
     pr_number: u64,
 ) -> Result<PRStatus, String> {
+    let gh_path = find_cli_tool("gh")?;
     let pr_ref = format!("{}", pr_number);
     
-    let output = Command::new("gh")
+    let output = Command::new(&gh_path)
         .args([
             "pr", "view", &pr_ref,
             "--json", PR_JSON_FIELDS,
@@ -260,7 +269,8 @@ pub async fn get_pr_status(
 
 #[tauri::command]
 pub async fn get_repo_from_remote(repo_path: String) -> Result<Option<String>, String> {
-    let output = Command::new("gh")
+    let gh_path = find_cli_tool("gh")?;
+    let output = Command::new(&gh_path)
         .args(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"])
         .current_dir(&repo_path)
         .output()
@@ -312,9 +322,10 @@ struct GhCheckRun {
 
 #[tauri::command]
 pub async fn get_pr_checks(repo_path: String, pr_number: u64) -> Result<PRChecksResult, String> {
+    let gh_path = find_cli_tool("gh")?;
     let pr_ref = format!("{}", pr_number);
     
-    let output = Command::new("gh")
+    let output = Command::new(&gh_path)
         .args([
             "pr", "checks", &pr_ref,
             "--json", "name,state,description,link,startedAt,completedAt",
@@ -459,8 +470,9 @@ struct GhPRDetailedResponse {
 }
 
 async fn fetch_reviews_rest_api(repo_path: &str, pr_number: u64) -> Result<Vec<RestApiReview>, String> {
+    let gh_path = find_cli_tool("gh")?;
     eprintln!("DEBUG: Fetching reviews via REST API for PR #{}", pr_number);
-    let output = Command::new("gh")
+    let output = Command::new(&gh_path)
         .args([
             "api",
             &format!("repos/{{owner}}/{{repo}}/pulls/{}/reviews", pr_number),
@@ -492,8 +504,9 @@ async fn fetch_reviews_rest_api(repo_path: &str, pr_number: u64) -> Result<Vec<R
 }
 
 async fn fetch_review_comments(repo_path: &str, pr_number: u64) -> Result<Vec<GhReviewComment>, String> {
+    let gh_path = find_cli_tool("gh")?;
     eprintln!("DEBUG: Fetching review comments for PR #{}", pr_number);
-    let output = Command::new("gh")
+    let output = Command::new(&gh_path)
         .args([
             "api",
             &format!("repos/{{owner}}/{{repo}}/pulls/{}/comments", pr_number),
@@ -526,9 +539,10 @@ async fn fetch_review_comments(repo_path: &str, pr_number: u64) -> Result<Vec<Gh
 
 #[tauri::command]
 pub async fn get_pr_details(repo_path: String, pr_number: u64) -> Result<PRDetailedInfo, String> {
+    let gh_path = find_cli_tool("gh")?;
     let pr_ref = format!("{}", pr_number);
     
-    let output = Command::new("gh")
+    let output = Command::new(&gh_path)
         .args([
             "pr", "view", &pr_ref,
             "--json", "mergeStateStatus,mergeable,comments,reviews,reviewDecision",
@@ -641,7 +655,8 @@ pub async fn create_pr(
         args.push("--draft");
     }
 
-    let output = Command::new("gh")
+    let gh_path = find_cli_tool("gh")?;
+    let output = Command::new(&gh_path)
         .args(&args)
         .current_dir(&repo_path)
         .output()
@@ -675,7 +690,8 @@ pub struct CubicReviewResult {
 
 #[tauri::command]
 pub async fn run_cubic_review(repo_path: String) -> Result<CubicReviewResult, String> {
-    let output = Command::new("cubic")
+    let cubic_path = find_cli_tool("cubic")?;
+    let output = Command::new(&cubic_path)
         .args(["review"])
         .current_dir(&repo_path)
         .output();
@@ -700,11 +716,7 @@ pub async fn run_cubic_review(repo_path: String) -> Result<CubicReviewResult, St
             }
         }
         Err(e) => {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                Err("cubic CLI not found. Please install cubic first.".to_string())
-            } else {
-                Err(format!("Failed to run cubic: {}", e))
-            }
+            Err(format!("Failed to run cubic: {}", e))
         }
     }
 }
