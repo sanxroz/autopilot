@@ -20,6 +20,9 @@ import {
   ChevronsUpDown,
   PanelRight,
   Maximize2,
+  Check,
+  GitPullRequestArrow,
+  Laptop,
 } from "lucide-react";
 import { DiffView, DiffModeEnum, DiffFile } from "@git-diff-view/react";
 import "@git-diff-view/react/styles/diff-view.css";
@@ -27,8 +30,17 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTheme, useThemeMode } from "../hooks/useTheme";
 import { useCodeReview } from "../hooks/useCodeReview";
 import { useAppStore } from "../store";
-import { getDiffHighlighter, type DiffHighlighter } from "../lib/diff-highlighter";
+import {
+  getDiffHighlighter,
+  type DiffHighlighter,
+} from "../lib/diff-highlighter";
 import type { ChangedFile } from "../types";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 
 interface DiffErrorBoundaryProps {
   children: ReactNode;
@@ -227,7 +239,9 @@ function FileSection({
         className="group px-3 py-1.5 font-mono text-xs cursor-pointer transition-colors"
         style={{
           background: theme.bg.secondary,
-          borderBottom: isExpanded ? `1px solid ${theme.border.default}` : undefined,
+          borderBottom: isExpanded
+            ? `1px solid ${theme.border.default}`
+            : undefined,
         }}
         onClick={onToggle}
         role="button"
@@ -253,13 +267,19 @@ function FileSection({
               style={{ color: theme.text.tertiary }}
             />
           </div>
-          
+
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <span className="font-medium truncate" style={{ color: theme.text.primary }}>
+            <span
+              className="font-medium truncate"
+              style={{ color: theme.text.primary }}
+            >
               {basename(file.path)}
             </span>
             {dir && (
-              <span className="text-[11px] truncate" style={{ color: theme.text.tertiary }}>
+              <span
+                className="text-[11px] truncate"
+                style={{ color: theme.text.tertiary }}
+              >
                 {dir}
               </span>
             )}
@@ -317,7 +337,11 @@ const MIN_SIDEBAR_WIDTH = 300;
 const MAX_SIDEBAR_WIDTH = 800;
 const DEFAULT_SIDEBAR_WIDTH = 500;
 
-export function DiffOverlay({ worktreePath, onClose, asSidebar = false }: DiffOverlayProps) {
+export function DiffOverlay({
+  worktreePath,
+  onClose,
+  asSidebar = false,
+}: DiffOverlayProps) {
   const theme = useTheme();
   const themeMode = useThemeMode();
   const isLightMode = themeMode === "light";
@@ -325,7 +349,7 @@ export function DiffOverlay({ worktreePath, onClose, asSidebar = false }: DiffOv
   const setCodeReviewOpen = useAppStore((state) => state.setCodeReviewOpen);
 
   const handleMoveToSidebar = () => {
-    setDiffViewMode('sidebar');
+    setDiffViewMode("sidebar");
     setCodeReviewOpen(true);
     onClose();
   };
@@ -339,11 +363,14 @@ export function DiffOverlay({ worktreePath, onClose, asSidebar = false }: DiffOv
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (!asSidebar) return;
-    e.preventDefault();
-    setIsResizing(true);
-  }, [asSidebar]);
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (!asSidebar) return;
+      e.preventDefault();
+      setIsResizing(true);
+    },
+    [asSidebar],
+  );
 
   useEffect(() => {
     if (!isResizing || !asSidebar) return;
@@ -352,7 +379,7 @@ export function DiffOverlay({ worktreePath, onClose, asSidebar = false }: DiffOv
       const containerRight = window.innerWidth;
       const newWidth = Math.min(
         MAX_SIDEBAR_WIDTH,
-        Math.max(MIN_SIDEBAR_WIDTH, containerRight - e.clientX)
+        Math.max(MIN_SIDEBAR_WIDTH, containerRight - e.clientX),
       );
       setSidebarWidth(newWidth);
     };
@@ -386,8 +413,15 @@ export function DiffOverlay({ worktreePath, onClose, asSidebar = false }: DiffOv
     };
   }, []);
 
-  const { changedFiles, isLoading, getDiff, loadDiff, isDiffLoading } =
-    useCodeReview(worktreePath);
+  const {
+    changedFiles,
+    isLoading,
+    getDiff,
+    loadDiff,
+    isDiffLoading,
+    diffMode,
+    setDiffMode,
+  } = useCodeReview(worktreePath);
 
   const loadingQueueRef = useRef<string[]>([]);
   const isLoadingRef = useRef(false);
@@ -404,7 +438,7 @@ export function DiffOverlay({ worktreePath, onClose, asSidebar = false }: DiffOv
       if (isLoadingRef.current || loadingQueueRef.current.length === 0) return;
 
       const nextPath = loadingQueueRef.current.find(
-        (p) => !getDiff(p) && !isDiffLoading(p)
+        (p) => !getDiff(p) && !isDiffLoading(p),
       );
 
       if (!nextPath) {
@@ -416,7 +450,9 @@ export function DiffOverlay({ worktreePath, onClose, asSidebar = false }: DiffOv
       await loadDiff(nextPath);
       isLoadingRef.current = false;
 
-      loadingQueueRef.current = loadingQueueRef.current.filter((p) => p !== nextPath);
+      loadingQueueRef.current = loadingQueueRef.current.filter(
+        (p) => p !== nextPath,
+      );
       loadNext();
     };
 
@@ -443,7 +479,8 @@ export function DiffOverlay({ worktreePath, onClose, asSidebar = false }: DiffOv
     setExpandedFiles(new Set());
   }, []);
 
-  const allExpanded = changedFiles.length > 0 && expandedFiles.size === changedFiles.length;
+  const allExpanded =
+    changedFiles.length > 0 && expandedFiles.size === changedFiles.length;
   const allCollapsed = expandedFiles.size === 0;
 
   const virtualizer = useVirtualizer({
@@ -465,7 +502,7 @@ export function DiffOverlay({ worktreePath, onClose, asSidebar = false }: DiffOv
 
   return (
     <div
-      className={`${asSidebar ? 'relative' : 'absolute inset-0 z-20'} flex flex-col diff-overlay ${isLightMode ? "light-mode" : ""}`}
+      className={`${asSidebar ? "relative" : "absolute inset-0 z-20"} flex flex-col diff-overlay ${isLightMode ? "light-mode" : ""}`}
       style={{
         background: theme.bg.primary,
         ...(asSidebar && {
@@ -494,21 +531,66 @@ export function DiffOverlay({ worktreePath, onClose, asSidebar = false }: DiffOv
         }}
       >
         <div data-tauri-drag-region className="flex items-center gap-3">
-          <span className="text-sm font-medium" style={{ color: theme.text.primary }}>
+          <span
+            className="text-sm font-medium"
+            style={{ color: theme.text.primary }}
+          >
             Changes
           </span>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="flex items-center gap-2 px-2 py-1 rounded-md text-sm font-medium transition-colors hover:bg-opacity-80"
+                style={{
+                  color: theme.text.primary,
+                }}
+              >
+                {diffMode === "local" ? (
+                  <>
+                    <Laptop className="w-3.5 h-3.5" />
+                    <span className="text-medium">Local</span>
+                  </>
+                ) : (
+                  <>
+                    <GitPullRequestArrow className="w-3.5 h-3.5" />
+                    <span className="text-medium">Branch</span>
+                  </>
+                )}
+                <ChevronDown className="w-4 h-4 opacity-50" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onClick={() => setDiffMode("local")}>
+                <Laptop className="w-4 h-4" />
+                <span>Local</span>
+                {diffMode === "local" && <Check className="w-4 h-4 ml-auto" />}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setDiffMode("branch")}>
+                <GitPullRequestArrow className="w-4 h-4" />
+                <span>Branch</span>
+                {diffMode === "branch" && <Check className="w-4 h-4 ml-auto" />}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <div className="flex items-center gap-2 text-xs">
             <span
               className="px-1.5 py-0.5 rounded"
-              style={{ background: theme.bg.tertiary, color: theme.text.tertiary }}
+              style={{
+                background: theme.bg.tertiary,
+                color: theme.text.tertiary,
+              }}
             >
               {changedFiles.length} files
             </span>
             {totalAdditions > 0 && (
-              <span className="font-mono" style={{ color: "#22C55E" }}>+{totalAdditions}</span>
+              <span className="font-mono" style={{ color: "#22C55E" }}>
+                +{totalAdditions}
+              </span>
             )}
             {totalDeletions > 0 && (
-              <span className="font-mono" style={{ color: "#EF4444" }}>-{totalDeletions}</span>
+              <span className="font-mono" style={{ color: "#EF4444" }}>
+                -{totalDeletions}
+              </span>
             )}
           </div>
         </div>
@@ -575,10 +657,7 @@ export function DiffOverlay({ worktreePath, onClose, asSidebar = false }: DiffOv
         </div>
       </div>
 
-      <div
-        ref={scrollContainerRef}
-        className="flex-1 overflow-auto p-2"
-      >
+      <div ref={scrollContainerRef} className="flex-1 overflow-auto p-2">
         {isLoading ? (
           <div
             className="flex items-center justify-center h-full text-sm"

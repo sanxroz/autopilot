@@ -382,6 +382,11 @@ pub struct PRComment {
     pub author: String,
     pub body: String,
     pub created_at: String,
+    pub comment_type: String,  // "issue", "review", "review_thread"
+    pub state: Option<String>, // For reviews: "approved", "changes_requested", "commented"
+    pub path: Option<String>,  // For review threads: file path
+    pub line: Option<u32>,     // For review threads: line number
+    pub review_id: Option<String>, // For review threads: parent review ID
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -409,10 +414,23 @@ struct GhComment {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GhReview {
+    id: String,
     author: GhCommentAuthor,
     body: String,
     submitted_at: Option<String>,
     state: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GhReviewComment {
+    author: GhCommentAuthor,
+    body: String,
+    created_at: String,
+    path: String,
+    line: Option<u32>,
+    original_line: Option<u32>,
+    pull_request_review_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -426,6 +444,27 @@ struct GhPRDetailedResponse {
     reviews: Vec<GhReview>,
     #[serde(default)]
     review_decision: Option<String>,
+}
+
+async fn fetch_review_comments(repo_path: &str, pr_number: u64) -> Result<Vec<GhReviewComment>, String> {
+    let output = Command::new("gh")
+        .args([
+            "api",
+            &format!("repos/{{owner}}/{{repo}}/pulls/{}/comments", pr_number),
+            "--paginate",
+        ])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to fetch review comments: {}", e))?;
+
+    if !output.status.success() {
+        return Ok(Vec::new());
+    }
+
+    let stdout = String::from_utf8(output.stdout)
+        .map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
+
+    Ok(serde_json::from_str(&stdout).unwrap_or_else(|_| Vec::new()))
 }
 
 #[tauri::command]
@@ -456,16 +495,46 @@ pub async fn get_pr_details(repo_path: String, pr_number: u64) -> Result<PRDetai
         author: c.author.login,
         body: c.body,
         created_at: c.created_at,
+        comment_type: "issue".to_string(),
+        state: None,
+        path: None,
+        line: None,
+        review_id: None,
     }).collect();
 
+    eprintln!("DEBUG: Found {} reviews", pr.reviews.len());
     for review in pr.reviews {
-        if !review.body.is_empty() {
-            all_comments.push(PRComment {
-                author: format!("{} ({})", review.author.login, review.state.to_lowercase()),
-                body: review.body,
-                created_at: review.submitted_at.unwrap_or_default(),
-            });
-        }
+        eprintln!("DEBUG: Review - id: {}, author: {}, state: {}, has_body: {}", 
+                  review.id, review.author.login, review.state, !review.body.is_empty());
+        all_comments.push(PRComment {
+            author: review.author.login.clone(),
+            body: review.body,
+            created_at: review.submitted_at.clone().unwrap_or_default(),
+            comment_type: "review".to_string(),
+            state: Some(review.state.clone()),
+            path: None,
+            line: None,
+            review_id: Some(review.id),
+        });
+    }
+
+    let review_comments = fetch_review_comments(&repo_path, pr_number).await?;
+    eprintln!("DEBUG: Fetched {} review comments", review_comments.len());
+    for rc in &review_comments {
+        eprintln!("DEBUG: Review comment - author: {}, review_id: {:?}, path: {}", 
+                  rc.author.login, rc.pull_request_review_id, rc.path);
+    }
+    for rc in review_comments {
+        all_comments.push(PRComment {
+            author: rc.author.login,
+            body: rc.body,
+            created_at: rc.created_at,
+            comment_type: "review_thread".to_string(),
+            state: None,
+            path: Some(rc.path),
+            line: rc.line.or(rc.original_line),
+            review_id: rc.pull_request_review_id,
+        });
     }
 
     all_comments.sort_by(|a, b| a.created_at.cmp(&b.created_at));

@@ -73,6 +73,11 @@ export interface PRComment {
   author: string;
   body: string;
   created_at: string;
+  comment_type: 'issue' | 'review' | 'review_thread';
+  state?: 'APPROVED' | 'CHANGES_REQUESTED' | 'COMMENTED' | string;
+  path?: string;
+  line?: number;
+  review_id?: string;
 }
 
 export interface PRDetailedInfo {

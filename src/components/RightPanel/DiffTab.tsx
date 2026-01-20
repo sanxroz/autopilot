@@ -18,6 +18,9 @@ import {
   ChevronUp,
   ChevronsUpDown,
   Maximize2,
+  Check,
+  GitPullRequestArrow,
+  Laptop,
 } from "lucide-react";
 import { DiffView, DiffModeEnum, DiffFile } from "@git-diff-view/react";
 import "@git-diff-view/react/styles/diff-view.css";
@@ -25,8 +28,17 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTheme, useThemeMode } from "../../hooks/useTheme";
 import { useCodeReview } from "../../hooks/useCodeReview";
 import { useAppStore } from "../../store";
-import { getDiffHighlighter, type DiffHighlighter } from "../../lib/diff-highlighter";
+import {
+  getDiffHighlighter,
+  type DiffHighlighter,
+} from "../../lib/diff-highlighter";
 import type { ChangedFile } from "../../types";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 
 interface DiffErrorBoundaryProps {
   children: ReactNode;
@@ -216,7 +228,9 @@ function FileSection({
         className="group px-3 py-1.5 font-mono text-xs cursor-pointer transition-colors"
         style={{
           background: theme.bg.secondary,
-          borderBottom: isExpanded ? `1px solid ${theme.border.default}` : undefined,
+          borderBottom: isExpanded
+            ? `1px solid ${theme.border.default}`
+            : undefined,
         }}
         onClick={onToggle}
         role="button"
@@ -242,13 +256,19 @@ function FileSection({
               style={{ color: theme.text.tertiary }}
             />
           </div>
-          
+
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <span className="font-medium truncate" style={{ color: theme.text.primary }}>
+            <span
+              className="font-medium truncate"
+              style={{ color: theme.text.primary }}
+            >
               {basename(file.path)}
             </span>
             {dir && (
-              <span className="text-[11px] truncate" style={{ color: theme.text.tertiary }}>
+              <span
+                className="text-[11px] truncate"
+                style={{ color: theme.text.tertiary }}
+              >
                 {dir}
               </span>
             )}
@@ -310,7 +330,7 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
   const setDiffOverlayOpen = useAppStore((state) => state.setDiffOverlayOpen);
 
   const handleExpandToOverlay = () => {
-    setDiffViewMode('overlay');
+    setDiffViewMode("overlay");
     setDiffOverlayOpen(true);
   };
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
@@ -337,8 +357,15 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
     };
   }, []);
 
-  const { changedFiles, isLoading, getDiff, loadDiff, isDiffLoading } =
-    useCodeReview(worktreePath);
+  const {
+    changedFiles,
+    isLoading,
+    getDiff,
+    loadDiff,
+    isDiffLoading,
+    diffMode,
+    setDiffMode,
+  } = useCodeReview(worktreePath);
 
   const loadingQueueRef = useRef<string[]>([]);
   const isLoadingRef = useRef(false);
@@ -355,7 +382,7 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
       if (isLoadingRef.current || loadingQueueRef.current.length === 0) return;
 
       const nextPath = loadingQueueRef.current.find(
-        (p) => !getDiff(p) && !isDiffLoading(p)
+        (p) => !getDiff(p) && !isDiffLoading(p),
       );
 
       if (!nextPath) {
@@ -367,7 +394,9 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
       await loadDiff(nextPath);
       isLoadingRef.current = false;
 
-      loadingQueueRef.current = loadingQueueRef.current.filter((p) => p !== nextPath);
+      loadingQueueRef.current = loadingQueueRef.current.filter(
+        (p) => p !== nextPath,
+      );
       loadNext();
     };
 
@@ -394,7 +423,8 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
     setExpandedFiles(new Set());
   }, []);
 
-  const allExpanded = changedFiles.length > 0 && expandedFiles.size === changedFiles.length;
+  const allExpanded =
+    changedFiles.length > 0 && expandedFiles.size === changedFiles.length;
   const allCollapsed = expandedFiles.size === 0;
 
   const virtualizer = useVirtualizer({
@@ -415,23 +445,67 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
   const totalDeletions = changedFiles.reduce((sum, f) => sum + f.deletions, 0);
 
   return (
-    <div className={`flex flex-col h-full diff-overlay ${isLightMode ? "light-mode" : ""}`}>
+    <div
+      className={`flex flex-col h-full diff-overlay ${isLightMode ? "light-mode" : ""}`}
+    >
       <div
         className="flex items-center justify-between px-3 py-2 border-b"
         style={{ borderColor: theme.border.default }}
       >
         <div className="flex items-center gap-2 text-xs">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium transition-colors hover:bg-opacity-80"
+                style={{
+                  color: theme.text.primary,
+                }}
+              >
+                {diffMode === "local" ? (
+                  <>
+                    <Laptop className="w-3.5 h-3.5" />
+                    Local
+                  </>
+                ) : (
+                  <>
+                    <GitPullRequestArrow className="w-3.5 h-3.5" />
+                    Branch
+                  </>
+                )}
+                <ChevronDown className="w-3.5 h-3.5 opacity-50" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onClick={() => setDiffMode("local")}>
+                <Laptop className="w-4 h-4" />
+                <span>Local</span>
+                {diffMode === "local" && <Check className="w-4 h-4 ml-auto" />}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setDiffMode("branch")}>
+                <GitPullRequestArrow className="w-4 h-4" />
+                <span>Branch</span>
+                {diffMode === "branch" && <Check className="w-4 h-4 ml-auto" />}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <span
             className="px-1.5 py-0.5 rounded"
-            style={{ background: theme.bg.tertiary, color: theme.text.tertiary }}
+            style={{
+              background: theme.bg.tertiary,
+              color: theme.text.tertiary,
+            }}
           >
             {changedFiles.length} files
           </span>
           {totalAdditions > 0 && (
-            <span className="font-mono" style={{ color: "#22C55E" }}>+{totalAdditions}</span>
+            <span className="font-mono" style={{ color: "#22C55E" }}>
+              +{totalAdditions}
+            </span>
           )}
           {totalDeletions > 0 && (
-            <span className="font-mono" style={{ color: "#EF4444" }}>-{totalDeletions}</span>
+            <span className="font-mono" style={{ color: "#EF4444" }}>
+              -{totalDeletions}
+            </span>
           )}
         </div>
         <div className="flex items-center gap-1">
@@ -478,10 +552,7 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
         </div>
       </div>
 
-      <div
-        ref={scrollContainerRef}
-        className="flex-1 overflow-auto p-2"
-      >
+      <div ref={scrollContainerRef} className="flex-1 overflow-auto p-2">
         {isLoading ? (
           <div
             className="flex items-center justify-center h-full text-sm"

@@ -104,6 +104,8 @@ pub fn run() {
             git::get_worktree_branch_name,
             git::get_changed_files,
             git::get_file_diff,
+            git::get_uncommitted_files,
+            git::get_uncommitted_diff,
             git::get_file_content,
             github::check_gh_cli,
             github::check_gh_auth,

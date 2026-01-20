@@ -9,13 +9,13 @@ import {
   Circle,
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
-import type { PRChecksResult, PRDetailedInfo } from "../../types/github";
+import type { PRChecksResult, PRDetailedInfo, PRStatus } from "../../types/github";
 
 interface ChecksTabProps {
   repoPath: string | null;
   prNumber: number | null;
   prUrl: string | null;
-  onRefreshReady?: (refresh: () => void) => void;
+  prStatus: PRStatus | null;
 }
 
 function getCheckIcon(status: string, conclusion: string | null) {
@@ -97,7 +97,7 @@ export function ChecksTab({
   repoPath,
   prNumber,
   prUrl,
-  onRefreshReady,
+  prStatus,
 }: ChecksTabProps) {
   const theme = useTheme();
   const [checksResult, setChecksResult] = useState<PRChecksResult | null>(null);
@@ -136,10 +136,10 @@ export function ChecksTab({
   }, [fetchData]);
 
   useEffect(() => {
-    if (onRefreshReady) {
-      onRefreshReady(() => fetchData);
+    if (prStatus) {
+      fetchData();
     }
-  }, [onRefreshReady, fetchData]);
+  }, [prStatus, fetchData]);
 
   if (!prNumber) {
     return (

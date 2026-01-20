@@ -575,6 +575,126 @@ pub async fn get_file_diff(worktree_path: String, file_path: String) -> Result<F
 }
 
 #[tauri::command]
+pub async fn get_uncommitted_files(worktree_path: String) -> Result<Vec<ChangedFile>, String> {
+    tokio::task::spawn_blocking(move || {
+        let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
+        
+        let head_commit = repo.head()
+            .map_err(|e| format!("Cannot get HEAD: {}", e.message()))?
+            .peel_to_commit()
+            .map_err(|e| format!("Cannot get HEAD commit: {}", e.message()))?;
+        let head_tree = head_commit.tree().map_err(|e| e.message().to_string())?;
+        
+        let mut diff_opts = DiffOptions::new();
+        diff_opts.include_untracked(true);
+        diff_opts.recurse_untracked_dirs(true);
+        
+        let diff = repo
+            .diff_tree_to_workdir_with_index(Some(&head_tree), Some(&mut diff_opts))
+            .map_err(|e| e.message().to_string())?;
+        
+        let mut files: Vec<ChangedFile> = Vec::new();
+        let mut path_to_idx: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        
+        for delta in diff.deltas() {
+            let status = match delta.status() {
+                Delta::Added => "added",
+                Delta::Deleted => "deleted",
+                Delta::Modified => "modified",
+                Delta::Renamed => "renamed",
+                Delta::Copied => "copied",
+                Delta::Untracked => "untracked",
+                _ => "unknown",
+            };
+            
+            let new_path = delta.new_file().path().map(|p| p.to_string_lossy().to_string());
+            let old_path = delta.old_file().path().map(|p| p.to_string_lossy().to_string());
+            
+            if let Some(path) = new_path.clone().or(old_path.clone()) {
+                path_to_idx.insert(path.clone(), files.len());
+                files.push(ChangedFile {
+                    path,
+                    status: status.to_string(),
+                    old_path: if status == "renamed" { old_path } else { None },
+                    additions: 0,
+                    deletions: 0,
+                });
+            }
+        }
+        
+        let _ = diff.print(git2::DiffFormat::Patch, |delta, _hunk, line| {
+            if let Some(path) = delta.new_file().path().or(delta.old_file().path()) {
+                let path_str = path.to_string_lossy().to_string();
+                if let Some(&idx) = path_to_idx.get(&path_str) {
+                    match line.origin() {
+                        '+' => files[idx].additions += 1,
+                        '-' => files[idx].deletions += 1,
+                        _ => {}
+                    }
+                }
+            }
+            true
+        });
+        
+        Ok::<Vec<ChangedFile>, String>(files)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn get_uncommitted_diff(worktree_path: String, file_path: String) -> Result<FileDiffData, String> {
+    tokio::task::spawn_blocking(move || {
+        let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
+        
+        let head_commit = repo.head()
+            .map_err(|e| format!("Cannot get HEAD: {}", e.message()))?
+            .peel_to_commit()
+            .map_err(|e| format!("Cannot get HEAD commit: {}", e.message()))?;
+        let head_tree = head_commit.tree().map_err(|e| e.message().to_string())?;
+        
+        let old_content = head_tree
+            .get_path(std::path::Path::new(&file_path))
+            .ok()
+            .and_then(|entry| repo.find_blob(entry.id()).ok())
+            .and_then(|blob| String::from_utf8(blob.content().to_vec()).ok());
+        
+        let workdir = repo.workdir().ok_or("No workdir")?;
+        let full_path = workdir.join(&file_path);
+        let new_content = std::fs::read_to_string(&full_path).ok();
+        
+        let mut diff_opts = DiffOptions::new();
+        diff_opts.pathspec(&file_path);
+        diff_opts.include_untracked(true);
+        
+        let diff = repo
+            .diff_tree_to_workdir_with_index(Some(&head_tree), Some(&mut diff_opts))
+            .map_err(|e| e.message().to_string())?;
+        
+        let mut patch = String::new();
+        diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+            if let Ok(content) = std::str::from_utf8(line.content()) {
+                let origin = line.origin();
+                if origin == '+' || origin == '-' || origin == ' ' {
+                    patch.push(origin);
+                }
+                patch.push_str(content);
+            }
+            true
+        }).map_err(|e| e.message().to_string())?;
+        
+        Ok::<FileDiffData, String>(FileDiffData {
+            path: file_path,
+            old_content,
+            new_content,
+            patch,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn get_file_content(
     worktree_path: String,
     file_path: String,

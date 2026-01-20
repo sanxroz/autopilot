@@ -41,10 +41,6 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>("checks");
   const [showPRDropdown, setShowPRDropdown] = useState(false);
   const [isCreatingPR, setIsCreatingPR] = useState(false);
-  const [checksRefresh, setChecksRefresh] = useState<(() => void) | null>(null);
-  const [commentsRefresh, setCommentsRefresh] = useState<(() => void) | null>(
-    null,
-  );
 
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
   const repositories = useAppStore((state) => state.repositories);
@@ -55,8 +51,6 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
 
   const branch = selectedWorktree?.branch ?? null;
   const prStatus = usePRStatusForBranch(repoPath ?? "", branch);
-
-  const refresh = useCallback(() => {}, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -102,7 +96,6 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         base: null,
         draft,
       });
-      refresh();
     } catch (e) {
       console.error("Failed to create PR:", e);
     } finally {
@@ -245,18 +238,6 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
 
         <div className="flex-1" />
 
-        {((activeTab === "checks" && checksRefresh) ||
-          (activeTab === "comments" && commentsRefresh)) && (
-          <button
-            onClick={activeTab === "checks" ? checksRefresh! : commentsRefresh!}
-            className="p-1 rounded transition-colors mr-2"
-            style={{ color: theme.text.tertiary }}
-            title="Refresh"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-          </button>
-        )}
-
         {isReadyToMerge && (
           <button
             onClick={() => window.open(prStatus.url, "_blank")}
@@ -354,14 +335,14 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
             repoPath={repoPath}
             prNumber={prStatus?.number ?? null}
             prUrl={prStatus?.url ?? null}
-            onRefreshReady={setChecksRefresh}
+            prStatus={prStatus}
           />
         )}
         {activeTab === "comments" && (
           <CommentsTab
             repoPath={repoPath}
             prNumber={prStatus?.number ?? null}
-            onRefreshReady={setCommentsRefresh}
+            prStatus={prStatus}
           />
         )}
         {activeTab === "code-review" && <ReviewTab repoPath={worktreePath} />}
