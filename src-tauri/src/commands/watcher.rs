@@ -20,6 +20,12 @@ pub struct WorktreeChangeEvent {
     pub change_type: String,
 }
 
+#[derive(Clone, serde::Serialize)]
+pub struct GitIndexChangeEvent {
+    pub repo_path: String,
+    pub worktree_path: String,
+}
+
 pub struct GitWatcher {
     watchers: Arc<Mutex<HashMap<String, RecommendedWatcher>>>,
     app_handle: AppHandle,
@@ -47,10 +53,13 @@ impl GitWatcher {
 
         let app_handle = self.app_handle.clone();
         let app_handle_worktree = self.app_handle.clone();
+        let app_handle_index = self.app_handle.clone();
         let repo_path_clone = repo_path.clone();
         let repo_path_for_worktree = repo_path.clone();
+        let repo_path_for_index = repo_path.clone();
 
         let mut git_head_to_worktree: HashMap<PathBuf, String> = HashMap::new();
+        let mut git_index_to_worktree: HashMap<PathBuf, String> = HashMap::new();
         let mut dirs_to_watch: Vec<PathBuf> = Vec::new();
 
         // Track the main .git/worktrees directory for worktree additions/removals
@@ -74,6 +83,9 @@ impl GitWatcher {
                         let head_path = canonicalize_path(&gitdir_path.join("HEAD"));
                         git_head_to_worktree.insert(head_path, wt_path.clone());
 
+                        let index_path = canonicalize_path(&gitdir_path.join("index"));
+                        git_index_to_worktree.insert(index_path, wt_path.clone());
+
                         let canonical_gitdir = canonicalize_path(&gitdir_path);
                         if canonical_gitdir.exists() {
                             dirs_to_watch.push(canonical_gitdir);
@@ -83,6 +95,9 @@ impl GitWatcher {
             } else if git_path.is_dir() {
                 let head_path = canonicalize_path(&git_path.join("HEAD"));
                 git_head_to_worktree.insert(head_path, wt_path.clone());
+
+                let index_path = canonicalize_path(&git_path.join("index"));
+                git_index_to_worktree.insert(index_path, wt_path.clone());
 
                 let canonical_git = canonicalize_path(&git_path);
                 if canonical_git.exists() {
@@ -97,6 +112,8 @@ impl GitWatcher {
 
         let git_head_to_worktree = Arc::new(git_head_to_worktree);
         let git_head_to_worktree_for_handler = git_head_to_worktree.clone();
+        let git_index_to_worktree = Arc::new(git_index_to_worktree);
+        let git_index_to_worktree_for_handler = git_index_to_worktree.clone();
         let canonical_worktrees_dir_arc = Arc::new(canonical_worktrees_dir);
         let canonical_worktrees_dir_for_handler = canonical_worktrees_dir_arc.clone();
 
@@ -138,7 +155,32 @@ impl GitWatcher {
                                     }
                                 }
 
-                                // Check for changes in .git/worktrees directory (worktree added)
+                                if path.file_name().map(|n| n == "index").unwrap_or(false) {
+                                    let canonical_path = canonicalize_path(path);
+
+                                    if let Some(wt_path) =
+                                        git_index_to_worktree_for_handler.get(&canonical_path)
+                                    {
+                                        let _ = app_handle_index.emit(
+                                            "git-index-changed",
+                                            GitIndexChangeEvent {
+                                                repo_path: repo_path_for_index.clone(),
+                                                worktree_path: wt_path.clone(),
+                                            },
+                                        );
+                                    } else if let Some(wt_path) =
+                                        git_index_to_worktree_for_handler.get(path)
+                                    {
+                                        let _ = app_handle_index.emit(
+                                            "git-index-changed",
+                                            GitIndexChangeEvent {
+                                                repo_path: repo_path_for_index.clone(),
+                                                worktree_path: wt_path.clone(),
+                                            },
+                                        );
+                                    }
+                                }
+
                                 if let Some(ref worktrees_dir) =
                                     *canonical_worktrees_dir_for_handler
                                 {

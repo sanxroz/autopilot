@@ -104,10 +104,6 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   };
 
   const getChecksColor = () => {
-    if (!prStatus) return theme.text.secondary;
-    if (prStatus.checks_status === "failure") return "#EF4444";
-    if (prStatus.checks_status === "pending") return "#F59E0B";
-    if (prStatus.checks_status === "success") return "#22C55E";
     return theme.text.secondary;
   };
 
@@ -195,7 +191,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
             title={prStatus.title}
           >
             <span className="font-medium">#{prStatus.number}</span>
-            <ExternalLink className="w-3 h-3" />
+            <ExternalLink className="w-3.5 h-3.5" />
           </a>
         )}
 
@@ -278,7 +274,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
                 <>
                   <GitPullRequest className="w-3.5 h-3.5" />
                   Create PR
-                  <ChevronDown className="w-3 h-3" />
+                  <ChevronDown className="w-3.5 h-3.5" />
                 </>
               )}
             </button>

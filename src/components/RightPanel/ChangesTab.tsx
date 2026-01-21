@@ -221,7 +221,7 @@ export function ChangesTab({
                   <span style={{ color: "#EF4444" }}>-{file.deletions}</span>
                 )}
                 <Square
-                  className="w-3 h-3"
+                  className="w-3.5 h-3.5"
                   style={{ color: statusColor }}
                   fill={statusColor}
                 />
@@ -241,7 +241,7 @@ export function ChangesTab({
               className="flex items-center justify-center h-full text-sm"
               style={{ color: theme.text.secondary }}
             >
-              <Loader className="w-4 h-4 animate-spin mr-2" />
+              <Loader className="w-3.5 h-3.5 animate-spin mr-2" />
               <span className="text-sm font-medium">Loading diff...</span>
             </div>
           )}

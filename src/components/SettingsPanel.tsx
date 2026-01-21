@@ -42,13 +42,13 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [activeSection, setActiveSection] = useState<NavSection>("account");
 
   const navItems: NavItem[] = [
-    { id: "account", label: "Account", icon: <User className="w-4 h-4" /> },
-    { id: "appearance", label: "Appearance", icon: <Palette className="w-4 h-4" /> },
-    { id: "preferences", label: "Preferences", icon: <SlidersHorizontal className="w-4 h-4" /> },
-    { id: "skills", label: "Skills", icon: <BookOpen className="w-4 h-4" />, beta: true },
-    { id: "agents", label: "Custom Agents", icon: <Bot className="w-4 h-4" />, beta: true },
-    { id: "mcp", label: "MCP Servers", icon: <Server className="w-4 h-4" /> },
-    { id: "debug", label: "Debug", icon: <Bug className="w-4 h-4" /> },
+    { id: "account", label: "Account", icon: <User className="w-3.5 h-3.5" /> },
+    { id: "appearance", label: "Appearance", icon: <Palette className="w-3.5 h-3.5" /> },
+    { id: "preferences", label: "Preferences", icon: <SlidersHorizontal className="w-3.5 h-3.5" /> },
+    { id: "skills", label: "Skills", icon: <BookOpen className="w-3.5 h-3.5" />, beta: true },
+    { id: "agents", label: "Custom Agents", icon: <Bot className="w-3.5 h-3.5" />, beta: true },
+    { id: "mcp", label: "MCP Servers", icon: <Server className="w-3.5 h-3.5" /> },
+    { id: "debug", label: "Debug", icon: <Bug className="w-3.5 h-3.5" /> },
   ];
 
   const sectionTitles: Record<NavSection, string> = {
@@ -158,7 +158,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 e.currentTarget.style.background = "transparent";
               }}
             >
-              <X className="w-4 h-4" strokeWidth={2.5} />
+              <X className="w-3.5 h-3.5" />
             </button>
           </div>
 
@@ -238,7 +238,7 @@ function AccountSection({
               </span>
               <div className="flex items-center gap-1.5">
                 <svg
-                  className="w-4 h-4" strokeWidth={2.5}
+                  className="w-3.5 h-3.5"
                   style={{ color: theme.text.tertiary }}
                   viewBox="0 0 16 16"
                   fill="currentColor"
@@ -264,14 +264,14 @@ function AccountSection({
                 className="p-2 rounded-md"
                 style={{ background: theme.bg.tertiary }}
               >
-                <Terminal className="w-5 h-5" strokeWidth={2.5} style={{ color: theme.text.secondary }} />
+                <Terminal className="w-3.5 h-3.5" style={{ color: theme.text.secondary }} />
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium" style={{ color: theme.text.primary }}>
                     GitHub CLI
                   </span>
-                  <AlertCircle className="w-4 h-4" strokeWidth={2.5} style={{ color: theme.semantic.error }} />
+                  <AlertCircle className="w-3.5 h-3.5" style={{ color: theme.semantic.error }} />
                 </div>
                 <p className="text-xs mt-0.5" style={{ color: theme.text.tertiary }}>
                   {githubSettings.ghCliAvailable
@@ -331,7 +331,7 @@ function DebugSection({
                 className="p-2 rounded-md"
                 style={{ background: theme.bg.tertiary }}
               >
-                <Terminal className="w-4 h-4" strokeWidth={2.5} style={{ color: theme.text.secondary }} />
+                <Terminal className="w-3.5 h-3.5" style={{ color: theme.text.secondary }} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
@@ -339,9 +339,9 @@ function DebugSection({
                     GitHub CLI
                   </span>
                   {githubSettings.ghCliAvailable ? (
-                    <Check className="w-4 h-4" strokeWidth={2.5} style={{ color: theme.semantic.success }} />
+                    <Check className="w-3.5 h-3.5" style={{ color: theme.semantic.success }} />
                   ) : (
-                    <AlertCircle className="w-4 h-4" strokeWidth={2.5} style={{ color: theme.semantic.error }} />
+<AlertCircle className="w-3.5 h-3.5" style={{ color: theme.semantic.error }} />
                   )}
                 </div>
                 <p className="text-xs mt-0.5" style={{ color: theme.text.tertiary }}>
@@ -392,7 +392,7 @@ function PlaceholderSection({
         className="w-12 h-12 rounded-full flex items-center justify-center mb-4"
         style={{ background: theme.bg.tertiary }}
       >
-        <SlidersHorizontal className="w-5 h-5" strokeWidth={2.5} style={{ color: theme.text.tertiary }} />
+        <SlidersHorizontal className="w-3.5 h-3.5" style={{ color: theme.text.tertiary }} />
       </div>
       <h4
         className="text-sm font-medium mb-1"

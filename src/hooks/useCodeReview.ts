@@ -1,7 +1,13 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { load } from "@tauri-apps/plugin-store";
 import type { ChangedFile, FileDiffData } from "../types";
+
+interface GitIndexChangeEvent {
+  repo_path: string;
+  worktree_path: string;
+}
 
 export type DiffMode = "local" | "branch";
 
@@ -123,6 +129,21 @@ export function useCodeReview(
       fetchChangedFiles();
     }
   }, [fetchChangedFiles, isInitialized]);
+
+  useEffect(() => {
+    if (!worktreePath || !isInitialized) return;
+
+    const unlisten = listen<GitIndexChangeEvent>("git-index-changed", (event) => {
+      if (event.payload.worktree_path === worktreePath) {
+        setDiffCache({});
+        fetchChangedFiles();
+      }
+    });
+
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [worktreePath, isInitialized, fetchChangedFiles]);
 
   const refresh = useCallback(() => {
     setDiffCache({});

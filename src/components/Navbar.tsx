@@ -52,9 +52,9 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
         title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
       >
         {sidebarOpen ? (
-          <ChevronLeft className="w-4 h-4" />
+          <ChevronLeft className="w-3.5 h-3.5" />
         ) : (
-          <ChevronRight className="w-4 h-4" />
+          <ChevronRight className="w-3.5 h-3.5" />
         )}
       </button>
 
@@ -107,7 +107,7 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
             }}
             title="Diff"
           >
-            <Diff className="w-4 h-4" />
+            <Diff className="w-3.5 h-3.5" />
           </button>
         )}
         <button
@@ -132,9 +132,9 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
           title="Checks & Review"
         >
           {codeReviewOpen ? (
-            <ChevronsRight className="w-4 h-4" />
+            <ChevronsRight className="w-3.5 h-3.5" />
           ) : (
-            <ChevronsLeft className="w-4 h-4" />
+            <ChevronsLeft className="w-3.5 h-3.5" />
           )}
         </button>
       </div>

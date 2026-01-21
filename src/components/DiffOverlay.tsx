@@ -305,7 +305,7 @@ function FileSection({
               className="flex items-center justify-center gap-2 py-8"
               style={{ color: theme.text.tertiary }}
             >
-              <Loader className="w-4 h-4 animate-spin" />
+              <Loader className="w-3.5 h-3.5 animate-spin" />
               <span className="text-sm">Loading diff...</span>
             </div>
           ) : diffFile ? (
@@ -556,19 +556,19 @@ export function DiffOverlay({
                     <span className="text-medium">Branch</span>
                   </>
                 )}
-                <ChevronDown className="w-4 h-4 opacity-50" />
+                <ChevronDown className="w-3.5 h-3.5 opacity-50" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
               <DropdownMenuItem onClick={() => setDiffMode("local")}>
-                <Laptop className="w-4 h-4" />
+                <Laptop className="w-3.5 h-3.5" />
                 <span>Local</span>
-                {diffMode === "local" && <Check className="w-4 h-4 ml-auto" />}
+                {diffMode === "local" && <Check className="w-3.5 h-3.5 ml-auto" />}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setDiffMode("branch")}>
-                <GitPullRequestArrow className="w-4 h-4" />
+                <GitPullRequestArrow className="w-3.5 h-3.5" />
                 <span>Branch</span>
-                {diffMode === "branch" && <Check className="w-4 h-4 ml-auto" />}
+                {diffMode === "branch" && <Check className="w-3.5 h-3.5 ml-auto" />}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -611,11 +611,11 @@ export function DiffOverlay({
               title={allExpanded ? "Collapse all" : "Expand all"}
             >
               {allExpanded ? (
-                <ChevronUp className="w-4 h-4" />
+                <ChevronUp className="w-3.5 h-3.5" />
               ) : allCollapsed ? (
-                <ChevronDown className="w-4 h-4" />
+                <ChevronDown className="w-3.5 h-3.5" />
               ) : (
-                <ChevronsUpDown className="w-4 h-4" />
+                <ChevronsUpDown className="w-3.5 h-3.5" />
               )}
             </button>
           )}
@@ -634,9 +634,9 @@ export function DiffOverlay({
             title={asSidebar ? "Expand to overlay" : "Move to sidebar"}
           >
             {asSidebar ? (
-              <Maximize2 className="w-4 h-4" />
+              <Maximize2 className="w-3.5 h-3.5" />
             ) : (
-              <PanelRight className="w-4 h-4" />
+              <PanelRight className="w-3.5 h-3.5" />
             )}
           </button>
           <button
@@ -652,7 +652,7 @@ export function DiffOverlay({
               e.currentTarget.style.color = theme.text.tertiary;
             }}
           >
-            <X className="w-4 h-4" />
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>

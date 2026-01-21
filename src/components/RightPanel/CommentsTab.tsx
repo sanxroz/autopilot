@@ -93,7 +93,7 @@ function CommentTypeBadge({ comment }: { comment: PRComment }) {
             color: theme.semantic.success 
           }}
         >
-          <CheckCircle2 className="w-3 h-3" />
+          <CheckCircle2 className="w-3.5 h-3.5" />
           Approved
         </span>
       );
@@ -107,7 +107,7 @@ function CommentTypeBadge({ comment }: { comment: PRComment }) {
             color: theme.semantic.error 
           }}
         >
-          <XCircle className="w-3 h-3" />
+          <XCircle className="w-3.5 h-3.5" />
           Changes requested
         </span>
       );
@@ -120,7 +120,7 @@ function CommentTypeBadge({ comment }: { comment: PRComment }) {
           color: theme.text.secondary 
         }}
       >
-        <MessageCircle className="w-3 h-3" />
+        <MessageCircle className="w-3.5 h-3.5" />
         Reviewed
       </span>
     );
@@ -135,7 +135,7 @@ function CommentTypeBadge({ comment }: { comment: PRComment }) {
           color: theme.semantic.info 
         }}
       >
-        <Code2 className="w-3 h-3" />
+        <Code2 className="w-3.5 h-3.5" />
         Code comment
       </span>
     );
@@ -238,7 +238,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
         className="flex-1 flex items-center justify-center text-sm"
         style={{ color: theme.text.secondary }}
       >
-        <Loader className="w-4 h-4 animate-spin mr-2" />
+        <Loader className="w-3.5 h-3.5 animate-spin mr-2" />
         Loading...
       </div>
     );

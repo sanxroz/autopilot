@@ -663,6 +663,8 @@ pub async fn get_uncommitted_diff(worktree_path: String, file_path: String) -> R
         let full_path = workdir.join(&file_path);
         let new_content = std::fs::read_to_string(&full_path).ok();
         
+        let is_new_file = old_content.is_none();
+        
         let mut diff_opts = DiffOptions::new();
         diff_opts.pathspec(&file_path);
         diff_opts.include_untracked(true);
@@ -682,6 +684,24 @@ pub async fn get_uncommitted_diff(worktree_path: String, file_path: String) -> R
             }
             true
         }).map_err(|e| e.message().to_string())?;
+        
+        let patch = if patch.is_empty() && is_new_file {
+            if let Some(ref content) = new_content {
+                let lines: Vec<&str> = content.lines().collect();
+                let line_count = lines.len();
+                let mut synthetic_patch = format!("@@ -0,0 +1,{} @@\n", line_count);
+                for line in lines {
+                    synthetic_patch.push('+');
+                    synthetic_patch.push_str(line);
+                    synthetic_patch.push('\n');
+                }
+                synthetic_patch
+            } else {
+                patch
+            }
+        } else {
+            patch
+        };
         
         Ok::<FileDiffData, String>(FileDiffData {
             path: file_path,

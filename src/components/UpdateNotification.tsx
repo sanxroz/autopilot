@@ -77,7 +77,7 @@ export function UpdateNotification({
                       className="flex items-center gap-1 text-xs"
                       style={{ color: theme.text.tertiary }}
                     >
-                      <Clock className="w-3 h-3" />
+                      <Clock className="w-3.5 h-3.5" />
                       {updateInfo.date}
                     </span>
                   )}
@@ -149,7 +149,7 @@ export function UpdateNotification({
                   e.currentTarget.style.transform = "translateY(0)";
                 }}
               >
-                <Download className="w-4 h-4" />
+                <Download className="w-3.5 h-3.5" />
                 Update Now
               </button>
             </div>
@@ -291,9 +291,9 @@ export function UpdateNotification({
                 e.currentTarget.style.transform = "translateY(0)";
               }}
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className="w-3.5 h-3.5" />
               Restart Now
-              <ArrowRight className="w-4 h-4" />
+              <ArrowRight className="w-3.5 h-3.5" />
             </button>
           </>
         );
@@ -336,7 +336,7 @@ export function UpdateNotification({
                   className="flex items-start gap-2"
                   style={{ color: theme.semantic.error }}
                 >
-                  <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
                   <p className="text-sm leading-relaxed break-words">{error}</p>
                 </div>
               </div>
@@ -378,7 +378,7 @@ export function UpdateNotification({
                   e.currentTarget.style.transform = "translateY(0)";
                 }}
               >
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw className="w-3.5 h-3.5" />
                 Try Again
               </button>
             </div>

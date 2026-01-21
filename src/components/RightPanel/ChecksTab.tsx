@@ -158,7 +158,7 @@ export function ChecksTab({
         className="flex-1 flex items-center justify-center text-sm"
         style={{ color: theme.text.secondary }}
       >
-        <Loader className="w-4 h-4 animate-spin mr-2" />
+        <Loader className="w-3.5 h-3.5 animate-spin mr-2" />
         Loading...
       </div>
     );
@@ -214,8 +214,7 @@ export function ChecksTab({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Circle
-                className="w-3 h-3"
-                strokeWidth={2}
+                className="w-3.5 h-3.5"
                 style={{
                   color: getMergeStatusColor(prDetails.merge_state_status),
                 }}
@@ -261,8 +260,7 @@ export function ChecksTab({
             return (
               <div key={index} className="flex items-center gap-2 py-1.5">
                 <Icon
-                  className="w-3 h-3 flex-shrink-0"
-                  strokeWidth={2}
+                  className="w-3.5 h-3.5 flex-shrink-0"
                   style={{ color }}
                 />
                 <span
@@ -279,7 +277,7 @@ export function ChecksTab({
                     className="p-1 rounded transition-colors flex-shrink-0"
                     style={{ color: theme.text.tertiary }}
                   >
-                    <ExternalLink className="w-3 h-3" strokeWidth={2} />
+                    <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 )}
               </div>
@@ -310,8 +308,7 @@ export function ChecksTab({
             return (
               <div key={index} className="flex items-center gap-2 py-1.5">
                 <Icon
-                  className="w-3 h-3 flex-shrink-0"
-                  strokeWidth={2}
+                  className="w-3.5 h-3.5 flex-shrink-0"
                   style={{ color }}
                 />
                 <span
@@ -336,7 +333,7 @@ export function ChecksTab({
                     className="p-1 rounded transition-colors flex-shrink-0"
                     style={{ color: theme.text.tertiary }}
                   >
-                    <ExternalLink className="w-3 h-3" strokeWidth={2} />
+                    <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 )}
               </div>

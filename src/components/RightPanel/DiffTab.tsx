@@ -294,7 +294,7 @@ function FileSection({
               className="flex items-center justify-center gap-2 py-8"
               style={{ color: theme.text.tertiary }}
             >
-              <Loader className="w-4 h-4 animate-spin" />
+              <Loader className="w-3.5 h-3.5 animate-spin" />
               <span className="text-sm">Loading diff...</span>
             </div>
           ) : diffFile ? (
@@ -449,7 +449,7 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
       className={`flex flex-col h-full diff-overlay ${isLightMode ? "light-mode" : ""}`}
     >
       <div
-        className="flex items-center justify-between px-3 py-2 border-b"
+        className="flex items-center justify-between px-3 py-2"
         style={{ borderColor: theme.border.default }}
       >
         <div className="flex items-center gap-2 text-xs">
@@ -477,14 +477,18 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
               <DropdownMenuItem onClick={() => setDiffMode("local")}>
-                <Laptop className="w-4 h-4" />
+                <Laptop className="w-3.5 h-3.5" />
                 <span>Local</span>
-                {diffMode === "local" && <Check className="w-4 h-4 ml-auto" />}
+                {diffMode === "local" && (
+                  <Check className="w-3.5 h-3.5 ml-auto" />
+                )}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setDiffMode("branch")}>
-                <GitPullRequestArrow className="w-4 h-4" />
+                <GitPullRequestArrow className="w-3.5 h-3.5" />
                 <span>Branch</span>
-                {diffMode === "branch" && <Check className="w-4 h-4 ml-auto" />}
+                {diffMode === "branch" && (
+                  <Check className="w-3.5 h-3.5 ml-auto" />
+                )}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -525,11 +529,11 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
               title={allExpanded ? "Collapse all" : "Expand all"}
             >
               {allExpanded ? (
-                <ChevronUp className="w-4 h-4" />
+                <ChevronUp className="w-3.5 h-3.5" />
               ) : allCollapsed ? (
-                <ChevronDown className="w-4 h-4" />
+                <ChevronDown className="w-3.5 h-3.5" />
               ) : (
-                <ChevronsUpDown className="w-4 h-4" />
+                <ChevronsUpDown className="w-3.5 h-3.5" />
               )}
             </button>
           )}
@@ -547,7 +551,7 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
             }}
             title="Expand to overlay"
           >
-            <Maximize2 className="w-4 h-4" />
+            <Maximize2 className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>

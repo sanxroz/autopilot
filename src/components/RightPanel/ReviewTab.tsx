@@ -52,8 +52,7 @@ export function ReviewTab({ repoPath }: ReviewTabProps) {
       >
         <div className="flex items-center gap-2">
           <Terminal
-            className="w-4 h-4"
-            strokeWidth={2.5}
+            className="w-3.5 h-3.5"
             style={{ color: theme.text.tertiary }}
           />
           <span className="text-sm" style={{ color: theme.text.primary }}>
@@ -72,12 +71,12 @@ export function ReviewTab({ repoPath }: ReviewTabProps) {
         >
           {isRunning ? (
             <>
-              <Loader className="w-3 h-3 animate-spin" />
+              <Loader className="w-3.5 h-3.5 animate-spin" />
               Running...
             </>
           ) : (
             <>
-              <Play className="w-3 h-3" />
+              <Play className="w-3.5 h-3.5" />
               Run Review
             </>
           )}
@@ -126,8 +125,7 @@ export function ReviewTab({ repoPath }: ReviewTabProps) {
           >
             <div className="flex items-center gap-2 mb-2">
               <XCircle
-                className="w-4 h-4"
-                strokeWidth={2.5}
+                className="w-3.5 h-3.5"
                 style={{ color: theme.semantic.error }}
               />
               <span
@@ -158,14 +156,12 @@ export function ReviewTab({ repoPath }: ReviewTabProps) {
             >
               {result.success ? (
                 <CheckCircle
-                  className="w-4 h-4"
-                  strokeWidth={2.5}
+                  className="w-3.5 h-3.5"
                   style={{ color: "#22C55E" }}
                 />
               ) : (
                 <XCircle
-                  className="w-4 h-4"
-                  strokeWidth={2.5}
+                  className="w-3.5 h-3.5"
                   style={{ color: "#EF4444" }}
                 />
               )}

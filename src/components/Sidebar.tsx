@@ -346,9 +346,9 @@ export function Sidebar() {
             }}
           >
             {themeMode === "dark" ? (
-              <Sun className="w-4 h-4" />
+              <Sun className="w-3.5 h-3.5" />
             ) : (
-              <Moon className="w-4 h-4" />
+              <Moon className="w-3.5 h-3.5" />
             )}
           </button>
         </div>
@@ -370,7 +370,7 @@ export function Sidebar() {
             e.currentTarget.style.color = theme.text.secondary;
           }}
         >
-          <PackagePlus className="w-4 h-4" strokeWidth={2} />
+          <PackagePlus className="w-3.5 h-3.5" />
           <span className='font-medium'>Add repository</span>
         </button>
       </div>

@@ -114,7 +114,7 @@ export function WorktreeItem({
       <div className="flex flex-col gap-0.5 w-full relative min-w-0">
         <div className="flex items-center gap-2 w-full min-w-0">
           <div className="flex items-center justify-center flex-shrink-0">
-            <GitBranch className="w-3 h-3" style={{ color: statusInfo?.color || theme.text.tertiary }} />
+            <GitBranch className="w-3.5 h-3.5" style={{ color: statusInfo?.color || theme.text.tertiary }} />
           </div>
           {processStatusColor && (
             <div
