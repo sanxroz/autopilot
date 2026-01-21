@@ -1,8 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { load } from "@tauri-apps/plugin-store";
 import type { ChangedFile, FileDiffData } from "../types";
 
 export type DiffMode = "local" | "branch";
+
+const STORE_PATH = "autopilot-settings.json";
+const DIFF_MODE_KEY = "diffMode";
 
 interface UseCodeReviewResult {
   changedFiles: ChangedFile[];
@@ -19,7 +23,8 @@ interface UseCodeReviewResult {
 export function useCodeReview(
   worktreePath: string | null,
 ): UseCodeReviewResult {
-  const [diffMode, setDiffMode] = useState<DiffMode>("branch");
+  const [diffMode, setDiffMode] = useState<DiffMode>("local");
+  const [isInitialized, setIsInitialized] = useState(false);
   const [changedFiles, setChangedFiles] = useState<ChangedFile[]>([]);
   const [diffCache, setDiffCache] = useState<Record<string, FileDiffData>>({});
   const [loadingDiffs, setLoadingDiffs] = useState<Set<string>>(new Set());
@@ -98,17 +103,42 @@ export function useCodeReview(
   );
 
   useEffect(() => {
-    fetchChangedFiles();
-  }, [fetchChangedFiles]);
+    (async () => {
+      try {
+        const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
+        const savedMode = await store.get<DiffMode>(DIFF_MODE_KEY);
+        if (savedMode && (savedMode === "local" || savedMode === "branch")) {
+          setDiffMode(savedMode);
+        }
+      } catch {
+        /* empty */
+      } finally {
+        setIsInitialized(true);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (isInitialized) {
+      fetchChangedFiles();
+    }
+  }, [fetchChangedFiles, isInitialized]);
 
   const refresh = useCallback(() => {
     setDiffCache({});
     fetchChangedFiles();
   }, [fetchChangedFiles]);
 
-  const handleSetDiffMode = useCallback((mode: DiffMode) => {
+  const handleSetDiffMode = useCallback(async (mode: DiffMode) => {
     setDiffMode(mode);
     setDiffCache({});
+    try {
+      const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
+      await store.set(DIFF_MODE_KEY, mode);
+      await store.save();
+    } catch {
+      /* empty */
+    }
   }, []);
 
   return {

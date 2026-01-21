@@ -3,7 +3,7 @@ import {
   GitPullRequest,
   GitMerge,
   ChevronDown,
-  RefreshCw,
+  Loader,
   ExternalLink,
   ListTodo,
   MessageCircle,
@@ -273,7 +273,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
               }}
             >
               {isCreatingPR ? (
-                <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                <Loader className="w-3.5 h-3.5 animate-spin" />
               ) : (
                 <>
                   <GitPullRequest className="w-3.5 h-3.5" />

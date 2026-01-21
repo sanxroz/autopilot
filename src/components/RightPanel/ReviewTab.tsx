@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Play, RefreshCw, CheckCircle, XCircle, Terminal } from "lucide-react";
+import { Play, Loader, CheckCircle, XCircle, Terminal } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
 import type { CubicReviewResult } from "../../types/github";
 
@@ -72,7 +72,7 @@ export function ReviewTab({ repoPath }: ReviewTabProps) {
         >
           {isRunning ? (
             <>
-              <RefreshCw className="w-3 h-3 animate-spin" />
+              <Loader className="w-3 h-3 animate-spin" />
               Running...
             </>
           ) : (
@@ -108,7 +108,7 @@ export function ReviewTab({ repoPath }: ReviewTabProps) {
             className="flex flex-col items-center justify-center h-full text-center gap-3"
             style={{ color: theme.text.secondary }}
           >
-            <RefreshCw
+            <Loader
               className="w-8 h-8 animate-spin"
               style={{ color: "#3B82F6" }}
             />

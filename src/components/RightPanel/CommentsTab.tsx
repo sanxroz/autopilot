@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { RefreshCw, MessageSquare, Copy, Check, X, CheckCircle2, XCircle, MessageCircle, Code2 } from "lucide-react";
+import { Loader, MessageSquare, Copy, Check, X, CheckCircle2, XCircle, MessageCircle, Code2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -238,7 +238,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
         className="flex-1 flex items-center justify-center text-sm"
         style={{ color: theme.text.secondary }}
       >
-        <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+        <Loader className="w-4 h-4 animate-spin mr-2" />
         Loading...
       </div>
     );

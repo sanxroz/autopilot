@@ -13,7 +13,7 @@ import {
   FileEdit,
   FileCode,
   ChevronDown,
-  Loader2,
+  Loader,
   AlertTriangle,
   ChevronUp,
   ChevronsUpDown,
@@ -294,7 +294,7 @@ function FileSection({
               className="flex items-center justify-center gap-2 py-8"
               style={{ color: theme.text.tertiary }}
             >
-              <Loader2 className="w-4 h-4 animate-spin" />
+              <Loader className="w-4 h-4 animate-spin" />
               <span className="text-sm">Loading diff...</span>
             </div>
           ) : diffFile ? (

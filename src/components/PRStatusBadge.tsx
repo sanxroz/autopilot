@@ -6,7 +6,7 @@ import {
   CircleDashed,
   GitMerge,
   AlertTriangle,
-  Loader2,
+  Loader,
 } from "lucide-react";
 import type { PRStatus } from "../types/github";
 
@@ -61,7 +61,7 @@ function getBadgeVariant(prStatus: PRStatus): BadgeVariant {
 
   if (prStatus.checks_status === "pending") {
     return {
-      icon: Loader2,
+      icon: Loader,
       color: "#F59E0B",
       bgColor: "rgba(245, 158, 11, 0.15)",
       label: "Running",
@@ -109,7 +109,7 @@ export function PRStatusBadge({
       >
         <Icon
           className={`w-2.5 h-2.5 ${
-            variant.icon === Loader2 ? "animate-spin" : ""
+            variant.icon === Loader ? "animate-spin" : ""
           }`}
         />
         <span>#{prStatus.number}</span>
@@ -127,7 +127,7 @@ export function PRStatusBadge({
       title={prStatus.title}
     >
       <Icon
-        className={`w-3 h-3 ${variant.icon === Loader2 ? "animate-spin" : ""}`}
+        className={`w-3 h-3 ${variant.icon === Loader ? "animate-spin" : ""}`}
       />
       <span>#{prStatus.number}</span>
       <span className="opacity-70">{variant.label}</span>

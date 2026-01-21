@@ -5,7 +5,7 @@ import {
   X,
   CircleDashed,
   ExternalLink,
-  RefreshCw,
+  Loader,
   Circle,
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
@@ -158,7 +158,7 @@ export function ChecksTab({
         className="flex-1 flex items-center justify-center text-sm"
         style={{ color: theme.text.secondary }}
       >
-        <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+        <Loader className="w-4 h-4 animate-spin mr-2" />
         Loading...
       </div>
     );
