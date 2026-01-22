@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Check,
@@ -9,6 +9,7 @@ import {
   Circle,
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
+import { useAppStore } from "../../store";
 import type { PRChecksResult, PRDetailedInfo, PRStatus } from "../../types/github";
 
 interface ChecksTabProps {
@@ -100,20 +101,27 @@ export function ChecksTab({
   prStatus,
 }: ChecksTabProps) {
   const theme = useTheme();
-  const [checksResult, setChecksResult] = useState<PRChecksResult | null>(null);
-  const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(null);
+  const getPRDataCache = useAppStore((state) => state.getPRDataCache);
+  const setPRDataCache = useAppStore((state) => state.setPRDataCache);
+  
+  const cachedData = repoPath && prNumber ? getPRDataCache(repoPath, prNumber) : null;
+  const [checksResult, setChecksResult] = useState<PRChecksResult | null>(cachedData?.checksResult ?? null);
+  const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(cachedData?.prDetails ?? null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lastPrStatusRef = useRef<PRStatus | null>(null);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (isPolling = false) => {
     if (!repoPath || !prNumber) {
       setChecksResult(null);
       setPrDetails(null);
       return;
     }
 
-    setIsLoading(true);
-    setError(null);
+    if (!isPolling) {
+      setIsLoading(true);
+      setError(null);
+    }
 
     try {
       const [checks, details] = await Promise.all([
@@ -122,22 +130,39 @@ export function ChecksTab({
       ]);
       setChecksResult(checks);
       setPrDetails(details);
+      setPRDataCache(repoPath, prNumber, { checksResult: checks, prDetails: details });
+      if (isPolling) {
+        setError(null);
+      }
     } catch (e) {
-      setError(String(e));
-      setChecksResult(null);
-      setPrDetails(null);
+      if (!isPolling) {
+        setError(String(e));
+        setChecksResult(null);
+        setPrDetails(null);
+      }
     } finally {
-      setIsLoading(false);
+      if (!isPolling) {
+        setIsLoading(false);
+      }
     }
-  }, [repoPath, prNumber]);
+  }, [repoPath, prNumber, setPRDataCache]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  useEffect(() => {
-    if (prStatus) {
+    if (!repoPath || !prNumber) return;
+    
+    const cached = getPRDataCache(repoPath, prNumber);
+    if (cached?.checksResult && cached?.prDetails) {
+      setChecksResult(cached.checksResult);
+      setPrDetails(cached.prDetails);
+    } else {
       fetchData();
+    }
+  }, [repoPath, prNumber, getPRDataCache, fetchData]);
+
+  useEffect(() => {
+    if (prStatus && prStatus !== lastPrStatusRef.current) {
+      lastPrStatusRef.current = prStatus;
+      fetchData(true);
     }
   }, [prStatus, fetchData]);
 

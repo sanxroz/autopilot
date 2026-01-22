@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Loader, MessageSquare, Copy, Check, X, CheckCircle2, XCircle, Code2, ChevronDown } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { useTheme } from "../../hooks/useTheme";
+import { useAppStore } from "../../store";
 import type { PRDetailedInfo, PRStatus, PRComment } from "../../types/github";
 
 const AVATAR_COLORS = [
@@ -120,11 +121,16 @@ function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
 
 export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) {
   const theme = useTheme();
-  const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(null);
+  const getPRDataCache = useAppStore((state) => state.getPRDataCache);
+  const setPRDataCache = useAppStore((state) => state.setPRDataCache);
+  
+  const cachedData = repoPath && prNumber ? getPRDataCache(repoPath, prNumber) : null;
+  const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(cachedData?.prDetails ?? null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedImage, setExpandedImage] = useState<{ src: string; alt: string } | null>(null);
   const [collapsedReviews, setCollapsedReviews] = useState<Set<string>>(new Set());
+  const lastPrStatusRef = useRef<PRStatus | null>(null);
 
   const fetchData = useCallback(async (isPolling = false) => {
     if (!repoPath || !prNumber) {
@@ -140,6 +146,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
     try {
       const details = await invoke<PRDetailedInfo>("get_pr_details", { repoPath, prNumber });
       setPrDetails(details);
+      setPRDataCache(repoPath, prNumber, { prDetails: details });
       if (isPolling) {
         setError(null);
       }
@@ -153,14 +160,22 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
         setIsLoading(false);
       }
     }
-  }, [repoPath, prNumber]);
+  }, [repoPath, prNumber, setPRDataCache]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (!repoPath || !prNumber) return;
+    
+    const cached = getPRDataCache(repoPath, prNumber);
+    if (cached?.prDetails) {
+      setPrDetails(cached.prDetails);
+    } else {
+      fetchData();
+    }
+  }, [repoPath, prNumber, getPRDataCache, fetchData]);
 
   useEffect(() => {
-    if (prStatus) {
+    if (prStatus && prStatus !== lastPrStatusRef.current) {
+      lastPrStatusRef.current = prStatus;
       fetchData(true);
     }
   }, [prStatus, fetchData]);
@@ -207,7 +222,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
       >
         <span className="text-sm text-center" style={{ color: theme.text.tertiary }}>{error}</span>
         <button
-          onClick={fetchData}
+          onClick={() => fetchData()}
           className="px-3 py-1.5 rounded text-xs font-medium transition-colors"
           style={{ 
             background: theme.bg.tertiary, 
