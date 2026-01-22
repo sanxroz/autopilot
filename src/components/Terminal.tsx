@@ -216,10 +216,9 @@ export function Terminal({ terminalId, isActive, isVisible, onFocus }: Props) {
     >
       {isActive && isVisible && (
         <div
-          className="absolute top-0 left-0 w-0 h-0"
+          className="absolute top-0 left-0 w-1 h-4 rounded-br"
           style={{
-            borderRight: "17px solid transparent",
-            borderTop: "17px solid #3B82F6",
+            background: theme.semantic.info,
           }}
         />
       )}

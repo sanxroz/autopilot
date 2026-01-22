@@ -63,7 +63,7 @@ function TabsList({
 
       <div
         className={cn(
-          "absolute inset-y-1 left-0 -z-10 rounded-md transition-transform duration-300",
+          "absolute inset-y-1 left-0 -z-10 rounded-md transition-transform duration-200",
           {
             hidden: !mounted,
           },

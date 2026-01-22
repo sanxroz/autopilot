@@ -7,6 +7,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import {
   FilePlus,
   FileMinus,
@@ -182,6 +183,7 @@ function FileSection({
   isLightMode,
 }: FileSectionProps) {
   const theme = useTheme();
+  const reducedMotion = useReducedMotion();
   const Icon = getFileIcon(file.status);
   const statusColor = getStatusColor(file.status);
   const dir = dirname(file.path);
@@ -288,7 +290,16 @@ function FileSection({
       </header>
 
       {isExpanded && (
-        <div className="agent-diff-wrapper">
+        <motion.div
+          initial={reducedMotion ? { opacity: 1 } : { opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
+          exit={reducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
+          transition={{
+            duration: reducedMotion ? 0 : 0.3,
+            ease: [0.645, 0.045, 0.355, 1], // cubic-in-out
+          }}
+          className="agent-diff-wrapper overflow-hidden"
+        >
           {isLoading ? (
             <div
               className="flex items-center justify-center gap-2 py-8"
@@ -316,7 +327,7 @@ function FileSection({
               No diff available
             </div>
           )}
-        </div>
+        </motion.div>
       )}
     </div>
   );
