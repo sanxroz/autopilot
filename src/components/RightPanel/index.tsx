@@ -128,9 +128,10 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
       if (mode === "base") {
         command = "cubic review --base";
       } else if (mode === "custom" && prompt) {
-        // Escape backslashes first, then escape double quotes for shell safety
-        const escapedPrompt = prompt.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-        command = `cubic review --prompt "${escapedPrompt}"`;
+        // Use single quotes to prevent shell expansion ($(...), backticks, variables)
+        // Escape single quotes by ending the string, adding escaped quote, starting new string
+        const escapedPrompt = prompt.replace(/'/g, "'\\''");
+        command = `cubic review --prompt '${escapedPrompt}'`;
       }
 
       addTerminalWithCommand(command);

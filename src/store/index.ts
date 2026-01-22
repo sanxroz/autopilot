@@ -274,8 +274,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const worktree = state.selectedWorktree;
     if (!worktree) return null;
 
-    const result = await invoke<{ terminal_id: string }>('spawn_terminal', {
+    // Use spawn_terminal_with_command to avoid race condition
+    // The command is executed as part of shell initialization, eliminating
+    // the timing issue with writing to a terminal before the shell is ready
+    const result = await invoke<{ terminal_id: string }>('spawn_terminal_with_command', {
       cwd: worktree.path,
+      command,
+      args: [],
       cols: 80,
       rows: 24,
       isDarkMode: getThemeMode() === 'dark',
@@ -301,14 +306,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
         },
       };
     });
-
-    // Send command after a short delay to ensure terminal is ready
-    setTimeout(() => {
-      invoke('write_to_terminal', {
-        terminalId: terminal.id,
-        data: `${command}\n`,
-      }).catch(console.error);
-    }, 100);
 
     return terminal.id;
   },
