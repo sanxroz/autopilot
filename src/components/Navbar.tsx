@@ -50,6 +50,7 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
           e.currentTarget.style.color = theme.text.tertiary;
         }}
         title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+        aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
       >
         {sidebarOpen ? (
           <ChevronLeft className="w-3.5 h-3.5" />
@@ -106,6 +107,7 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
               }
             }}
             title="Diff"
+            aria-label="Toggle diff overlay"
           >
             <Diff className="w-3.5 h-3.5" />
           </button>
@@ -130,6 +132,7 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
             }
           }}
           title="Checks & Review"
+          aria-label={codeReviewOpen ? "Close checks and review panel" : "Open checks and review panel"}
         >
           {codeReviewOpen ? (
             <ChevronsRight className="w-3.5 h-3.5" />

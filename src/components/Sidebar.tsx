@@ -1,5 +1,7 @@
 import { useMemo, useState, useCallback, useEffect } from "react";
+import { motion } from "framer-motion";
 import { open } from "@tauri-apps/plugin-dialog";
+import { useReducedMotion } from "../lib/animations";
 import {
   Plus,
   PackagePlus,
@@ -43,6 +45,7 @@ export function Sidebar() {
   } = useAppStore();
   const theme = useTheme();
   const themeMode = useThemeMode();
+  const reducedMotion = useReducedMotion();
   const [showWorktreeDialog, setShowWorktreeDialog] = useState<string | null>(
     null
   );
@@ -150,7 +153,13 @@ export function Sidebar() {
   };
 
   return (
-    <div
+    <motion.div
+      initial={reducedMotion ? { opacity: 1 } : { x: -width, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      transition={{
+        duration: reducedMotion ? 0 : 0.25,
+        ease: [0.215, 0.61, 0.355, 1], // cubic-out
+      }}
       className="relative flex flex-col h-full pt-8 select-none"
       style={{
         width: `${width}px`,
@@ -218,39 +227,41 @@ export function Sidebar() {
                      </span>
                    </div>
                    <div className="flex items-center gap-2.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                     <button
-                       onClick={(e) => {
-                         e.stopPropagation();
-                         handleCreateWorktree(group.repoPath);
-                       }}
-                       className="p-1 -m-1 rounded-sm transition-colors"
-                       style={{ color: theme.text.tertiary }}
-                       onMouseEnter={(e) => {
-                         e.currentTarget.style.color = theme.text.primary;
-                         e.currentTarget.style.background = theme.bg.hover;
-                       }}
-                       onMouseLeave={(e) => {
-                         e.currentTarget.style.color = theme.text.tertiary;
-                         e.currentTarget.style.background = "transparent";
-                       }}
-                       title="New workspace"
-                     >
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCreateWorktree(group.repoPath);
+                        }}
+                        className="p-1 -m-1 rounded-sm transition-colors"
+                        style={{ color: theme.text.tertiary }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.color = theme.text.primary;
+                          e.currentTarget.style.background = theme.bg.hover;
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.color = theme.text.tertiary;
+                          e.currentTarget.style.background = "transparent";
+                        }}
+                        title="New workspace"
+                        aria-label="Create new workspace"
+                      >
                        <Plus className="h-3.5 w-3.5" />
                      </button>
-                     <button
-                       onClick={(e) => handleRemoveRepository(e, group.repoPath)}
-                       className="p-1 -m-1 rounded-sm transition-colors"
-                       style={{ color: theme.text.tertiary }}
-                       onMouseEnter={(e) => {
-                         e.currentTarget.style.color = theme.text.primary;
-                         e.currentTarget.style.background = theme.bg.hover;
-                       }}
-                       onMouseLeave={(e) => {
-                         e.currentTarget.style.color = theme.text.tertiary;
-                         e.currentTarget.style.background = "transparent";
-                       }}
-                       title="Archive repository"
-                     >
+                      <button
+                        onClick={(e) => handleRemoveRepository(e, group.repoPath)}
+                        className="p-1 -m-1 rounded-sm transition-colors"
+                        style={{ color: theme.text.tertiary }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.color = theme.text.primary;
+                          e.currentTarget.style.background = theme.bg.hover;
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.color = theme.text.tertiary;
+                          e.currentTarget.style.background = "transparent";
+                        }}
+                        title="Archive repository"
+                        aria-label="Archive repository"
+                      >
                        <Archive className="h-3.5 w-3.5" />
                      </button>
                    </div>
@@ -311,6 +322,7 @@ export function Sidebar() {
               e.currentTarget.style.background = "transparent";
             }}
             title={githubSettings.ghAuthUser ? `Signed in as ${githubSettings.ghAuthUser}` : "GitHub Setup"}
+            aria-label={githubSettings.ghAuthUser ? `Account settings for ${githubSettings.ghAuthUser}` : "GitHub Setup"}
           >
             {githubSettings.ghAuthUser ? (
               <img
@@ -344,6 +356,7 @@ export function Sidebar() {
               e.currentTarget.style.background = "transparent";
               e.currentTarget.style.color = theme.text.tertiary;
             }}
+            aria-label={themeMode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
           >
             {themeMode === "dark" ? (
               <Sun className="w-3.5 h-3.5" />
@@ -381,6 +394,6 @@ export function Sidebar() {
           onClose={() => setShowWorktreeDialog(null)}
         />
       )}
-    </div>
+    </motion.div>
   );
 }

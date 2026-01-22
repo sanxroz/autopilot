@@ -78,11 +78,18 @@ export function NewWorktreeDialog({ repoPath, onClose }: Props) {
             <select
               value={selectedBranch}
               onChange={(e) => handleBranchSelect(e.target.value)}
-              className="w-full border rounded px-3 py-2 text-sm focus:outline-none"
+              className="w-full border rounded px-3 py-2 text-sm transition-shadow"
               style={{
                 background: theme.bg.tertiary,
                 borderColor: theme.border.subtle,
                 color: theme.text.primary,
+                outline: 'none',
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.boxShadow = `0 0 0 2px ${theme.bg.secondary}, 0 0 0 4px ${theme.accent.primary}`;
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.boxShadow = 'none';
               }}
             >
               <option value="">Select a branch...</option>
@@ -105,11 +112,18 @@ export function NewWorktreeDialog({ repoPath, onClose }: Props) {
               value={worktreeName}
               onChange={(e) => setWorktreeName(e.target.value)}
               placeholder="e.g., feature-branch"
-              className="w-full border rounded px-3 py-2 text-sm focus:outline-none"
+              className="w-full border rounded px-3 py-2 text-sm transition-shadow"
               style={{
                 background: theme.bg.tertiary,
                 borderColor: theme.border.subtle,
                 color: theme.text.primary,
+                outline: 'none',
+              }}
+              onFocus={(e) => {
+                e.currentTarget.style.boxShadow = `0 0 0 2px ${theme.bg.secondary}, 0 0 0 4px ${theme.accent.primary}`;
+              }}
+              onBlur={(e) => {
+                e.currentTarget.style.boxShadow = 'none';
               }}
             />
           </div>

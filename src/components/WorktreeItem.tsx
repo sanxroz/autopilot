@@ -4,12 +4,7 @@ import { usePRStatusForBranch } from "../hooks/usePRStatus";
 import { useAppStore } from "../store";
 import type { WorktreeInfo, ProcessStatus } from "../types";
 import type { PRStatus } from "../types/github";
-
-const PROCESS_STATUS_COLORS: Record<ProcessStatus, string | null> = {
-  dev_server: "#22C55E",
-  agent_running: "#F59E0B",
-  none: null,
-};
+import type { Theme } from "../theme";
 
 const PROCESS_STATUS_LABELS: Record<ProcessStatus, string> = {
   dev_server: "Dev server running",
@@ -17,36 +12,47 @@ const PROCESS_STATUS_LABELS: Record<ProcessStatus, string> = {
   none: "",
 };
 
-function getStatusInfo(prStatus: PRStatus | null): { label: string; color: string } | null {
+function getProcessStatusColor(status: ProcessStatus, theme: Theme): string | null {
+  switch (status) {
+    case "dev_server":
+      return theme.semantic.success;
+    case "agent_running":
+      return theme.semantic.warning;
+    default:
+      return null;
+  }
+}
+
+function getStatusInfo(prStatus: PRStatus | null, theme: Theme): { label: string; color: string } | null {
   if (!prStatus) return null;
 
   if (prStatus.merged) {
-    return { label: "Merged", color: "#A855F7" };
+    return { label: "Merged", color: theme.terminal.magenta };
   }
 
   if (prStatus.state === "closed") {
-    return { label: "Closed", color: "#EF4444" };
+    return { label: "Closed", color: theme.semantic.error };
   }
 
   if (prStatus.draft) {
-    return { label: "Draft", color: "#6B7280" };
+    return { label: "Draft", color: theme.text.tertiary };
   }
 
   if (prStatus.checks_status === "failure") {
-    return { label: "Checks failing", color: "#EF4444" };
+    return { label: "Checks failing", color: theme.semantic.error };
   }
 
   if (prStatus.checks_status === "pending") {
-    return { label: "Checks running", color: "#F59E0B" };
+    return { label: "Checks running", color: theme.semantic.warning };
   }
 
   switch (prStatus.review_decision) {
     case "APPROVED":
-      return { label: "Ready to merge", color: "#22C55E" };
+      return { label: "Ready to merge", color: theme.semantic.success };
     case "CHANGES_REQUESTED":
-      return { label: "Changes requested", color: "#F59E0B" };
+      return { label: "Changes requested", color: theme.semantic.warning };
     default:
-      return { label: "In review", color: "#3B82F6" };
+      return { label: "In review", color: theme.semantic.info };
   }
 }
 
@@ -87,9 +93,9 @@ export function WorktreeItem({
   const hasStats = wt.diff_stats && (wt.diff_stats.additions > 0 || wt.diff_stats.deletions > 0);
 
   const prStatus = usePRStatusForBranch(repoPath, wt.branch);
-  const statusInfo = getStatusInfo(prStatus);
+  const statusInfo = getStatusInfo(prStatus, theme);
   const processStatus = useAppStore((state) => state.processStatusByPath[wt.path] || 'none');
-  const processStatusColor = PROCESS_STATUS_COLORS[processStatus];
+  const processStatusColor = getProcessStatusColor(processStatus, theme);
   const processStatusLabel = PROCESS_STATUS_LABELS[processStatus];
 
   return (
@@ -135,10 +141,10 @@ export function WorktreeItem({
                 className="flex items-center gap-1 font-mono font-medium flex-shrink-0 rounded-sm text-xs py-0.5 px-1 group-hover:opacity-0 transition-opacity"
               >
                 {wt.diff_stats!.additions > 0 && (
-                  <span style={{ color: "#22C55E" }}>+{wt.diff_stats!.additions}</span>
+                  <span style={{ color: theme.semantic.success }}>+{wt.diff_stats!.additions}</span>
                 )}
                 {wt.diff_stats!.deletions > 0 && (
-                  <span style={{ color: "#EF4444" }}>-{wt.diff_stats!.deletions}</span>
+                  <span style={{ color: theme.semantic.error }}>-{wt.diff_stats!.deletions}</span>
                 )}
               </div>
             )}
@@ -161,6 +167,7 @@ export function WorktreeItem({
                   e.currentTarget.style.color = theme.text.secondary;
                 }}
                 title="Delete worktree"
+                aria-label="Delete worktree"
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>

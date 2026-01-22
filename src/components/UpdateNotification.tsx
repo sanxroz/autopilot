@@ -42,19 +42,15 @@ export function UpdateNotification({
           <>
             <div className="flex items-start gap-4 mb-5">
               <div
-                className="relative w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
                 style={{
-                  background: `linear-gradient(135deg, ${theme.accent.primary}20, ${theme.accent.secondary}30)`,
-                  border: `1px solid ${theme.accent.primary}40`,
+                  background: theme.bg.tertiary,
+                  border: `1px solid ${theme.border.default}`,
                 }}
               >
                 <Sparkles
                   className="w-6 h-6"
                   style={{ color: theme.accent.primary }}
-                />
-                <div
-                  className="absolute inset-0 rounded-xl blur-lg opacity-30"
-                  style={{ background: theme.accent.primary }}
                 />
               </div>
               <div className="flex-1 min-w-0">
@@ -161,10 +157,10 @@ export function UpdateNotification({
           <>
             <div className="flex items-center gap-4 mb-5">
               <div
-                className="relative w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
                 style={{
-                  background: `linear-gradient(135deg, ${theme.accent.primary}20, ${theme.accent.secondary}30)`,
-                  border: `1px solid ${theme.accent.primary}40`,
+                  background: theme.bg.tertiary,
+                  border: `1px solid ${theme.border.default}`,
                 }}
               >
                 <Download
@@ -188,19 +184,10 @@ export function UpdateNotification({
                 style={{ background: theme.bg.tertiary }}
               >
                 <div
-                  className="absolute inset-y-0 left-0 rounded-full transition-all duration-300 ease-out"
+                  className="absolute inset-y-0 left-0 rounded-full transition-all duration-150 ease-out"
                   style={{
                     width: `${downloadProgress}%`,
-                    background: `linear-gradient(90deg, ${theme.accent.secondary}, ${theme.accent.primary})`,
-                    boxShadow: `0 0 12px ${theme.accent.primary}60`,
-                  }}
-                />
-                <div
-                  className="absolute inset-y-0 left-0 rounded-full"
-                  style={{
-                    width: `${downloadProgress}%`,
-                    background: `linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent)`,
-                    animation: "shimmer 1.5s infinite",
+                    background: theme.accent.primary,
                   }}
                 />
               </div>
@@ -218,12 +205,6 @@ export function UpdateNotification({
               </div>
             </div>
 
-            <style>{`
-              @keyframes shimmer {
-                0% { transform: translateX(-100%); }
-                100% { transform: translateX(200%); }
-              }
-            `}</style>
           </>
         );
 
@@ -232,19 +213,15 @@ export function UpdateNotification({
           <>
             <div className="flex items-start gap-4 mb-5">
               <div
-                className="relative w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
                 style={{
-                  background: `linear-gradient(135deg, ${theme.semantic.success}20, ${theme.semantic.success}30)`,
-                  border: `1px solid ${theme.semantic.success}40`,
+                  background: theme.semantic.successMuted,
+                  border: `1px solid ${theme.semantic.success}`,
                 }}
               >
                 <RefreshCw
                   className="w-6 h-6"
                   style={{ color: theme.semantic.success }}
-                />
-                <div
-                  className="absolute inset-0 rounded-xl blur-lg opacity-30"
-                  style={{ background: theme.semantic.success }}
                 />
               </div>
               <div className="flex-1 min-w-0">
@@ -303,10 +280,10 @@ export function UpdateNotification({
           <>
             <div className="flex items-start gap-4 mb-5">
               <div
-                className="relative w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
                 style={{
-                  background: `linear-gradient(135deg, ${theme.semantic.error}20, ${theme.semantic.error}30)`,
-                  border: `1px solid ${theme.semantic.error}40`,
+                  background: theme.semantic.errorMuted,
+                  border: `1px solid ${theme.semantic.error}`,
                 }}
               >
                 <AlertCircle

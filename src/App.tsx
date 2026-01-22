@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AnimatePresence } from "framer-motion";
 import { Navbar } from "./components/Navbar";
 import { Sidebar } from "./components/Sidebar";
 import { TerminalGrid } from "./components/TerminalGrid";
@@ -69,18 +70,20 @@ function App() {
 
   return (
     <div
-      className="h-screen overflow-hidden rounded-lg flex flex-col"
+      className="h-dvh overflow-hidden rounded-lg flex flex-col"
       style={{ background: "transparent" }}
     >
       <div
-        className="overflow-hidden backdrop-blur-md flex h-full"
+        className="overflow-hidden flex h-full"
         style={{
           background: theme.bg.primary,
           boxShadow: `inset 0 0 0 1px ${theme.border.subtle}`,
           color: theme.text.primary,
         }}
       >
-        {sidebarOpen && <Sidebar />}
+        <AnimatePresence mode="wait">
+          {sidebarOpen && <Sidebar key="sidebar" />}
+        </AnimatePresence>
         <div className="flex flex-col flex-1 overflow-hidden relative">
           <Navbar sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
           <TerminalGrid />

@@ -7,6 +7,8 @@ import {
   useRef,
   type ReactNode,
 } from "react";
+import { motion } from "framer-motion";
+import { useReducedMotion } from "../lib/animations";
 import {
   FilePlus,
   FileMinus,
@@ -113,19 +115,19 @@ function getFileIcon(status: ChangedFile["status"]) {
   }
 }
 
-function getStatusColor(status: ChangedFile["status"]) {
+function getStatusColor(status: ChangedFile["status"], theme: ReturnType<typeof useTheme>) {
   switch (status) {
     case "added":
     case "untracked":
-      return "#22C55E";
+      return theme.semantic.success;
     case "deleted":
-      return "#EF4444";
+      return theme.semantic.error;
     case "modified":
     case "renamed":
     case "copied":
-      return "#F59E0B";
+      return theme.semantic.warning;
     default:
-      return "#6B7280";
+      return theme.text.tertiary;
   }
 }
 
@@ -194,7 +196,7 @@ function FileSection({
 }: FileSectionProps) {
   const theme = useTheme();
   const Icon = getFileIcon(file.status);
-  const statusColor = getStatusColor(file.status);
+  const statusColor = getStatusColor(file.status, theme);
   const dir = dirname(file.path);
   const diffFileRef = useRef<DiffFile | null>(null);
 
@@ -287,12 +289,12 @@ function FileSection({
 
           <span className="shrink-0 font-mono text-[11px] tabular-nums whitespace-nowrap">
             {file.additions > 0 && (
-              <span className="mr-1.5" style={{ color: "#22C55E" }}>
+              <span className="mr-1.5" style={{ color: theme.semantic.success }}>
                 +{file.additions}
               </span>
             )}
             {file.deletions > 0 && (
-              <span style={{ color: "#EF4444" }}>-{file.deletions}</span>
+              <span style={{ color: theme.semantic.error }}>-{file.deletions}</span>
             )}
           </span>
         </div>
@@ -345,6 +347,7 @@ export function DiffOverlay({
   const theme = useTheme();
   const themeMode = useThemeMode();
   const isLightMode = themeMode === "light";
+  const reducedMotion = useReducedMotion();
   const setDiffViewMode = useAppStore((state) => state.setDiffViewMode);
   const setCodeReviewOpen = useAppStore((state) => state.setCodeReviewOpen);
 
@@ -501,7 +504,26 @@ export function DiffOverlay({
   const totalDeletions = changedFiles.reduce((sum, f) => sum + f.deletions, 0);
 
   return (
-    <div
+    <motion.div
+      initial={
+        asSidebar
+          ? false
+          : reducedMotion
+            ? { opacity: 1 }
+            : { opacity: 0, scale: 0.95 }
+      }
+      animate={{ opacity: 1, scale: 1 }}
+      exit={
+        asSidebar
+          ? undefined
+          : reducedMotion
+            ? { opacity: 0 }
+            : { opacity: 0, scale: 0.95 }
+      }
+      transition={{
+        duration: reducedMotion ? 0 : 0.25,
+        ease: [0.215, 0.61, 0.355, 1], // cubic-out
+      }}
       className={`${asSidebar ? "relative" : "absolute inset-0 z-20"} flex flex-col diff-overlay ${isLightMode ? "light-mode" : ""}`}
       style={{
         background: theme.bg.primary,
@@ -583,12 +605,12 @@ export function DiffOverlay({
               {changedFiles.length} files
             </span>
             {totalAdditions > 0 && (
-              <span className="font-mono" style={{ color: "#22C55E" }}>
+              <span className="font-mono" style={{ color: theme.semantic.success }}>
                 +{totalAdditions}
               </span>
             )}
             {totalDeletions > 0 && (
-              <span className="font-mono" style={{ color: "#EF4444" }}>
+              <span className="font-mono" style={{ color: theme.semantic.error }}>
                 -{totalDeletions}
               </span>
             )}
@@ -609,6 +631,7 @@ export function DiffOverlay({
                 e.currentTarget.style.color = theme.text.tertiary;
               }}
               title={allExpanded ? "Collapse all" : "Expand all"}
+              aria-label={allExpanded ? "Collapse all files" : "Expand all files"}
             >
               {allExpanded ? (
                 <ChevronUp className="w-3.5 h-3.5" />
@@ -632,6 +655,7 @@ export function DiffOverlay({
               e.currentTarget.style.color = theme.text.tertiary;
             }}
             title={asSidebar ? "Expand to overlay" : "Move to sidebar"}
+            aria-label={asSidebar ? "Expand to overlay" : "Move to sidebar"}
           >
             {asSidebar ? (
               <Maximize2 className="w-3.5 h-3.5" />
@@ -651,6 +675,7 @@ export function DiffOverlay({
               e.currentTarget.style.background = "transparent";
               e.currentTarget.style.color = theme.text.tertiary;
             }}
+            aria-label="Close diff view"
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -712,6 +737,6 @@ export function DiffOverlay({
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
