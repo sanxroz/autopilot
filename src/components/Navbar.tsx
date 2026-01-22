@@ -31,7 +31,7 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
   };
 
   const worktreeName = selectedWorktree?.name ?? null;
-  const branchName = selectedWorktree?.branch ?? null;
+  const branchName = selectedWorktree?.branchName ?? null;
 
   return (
     <div

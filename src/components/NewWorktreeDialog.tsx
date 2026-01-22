@@ -31,7 +31,7 @@ export function NewWorktreeDialog({ repoPath, onClose }: Props) {
     setError(null);
 
     try {
-      await invoke('create_worktree', {
+      invoke('create_worktree', {
         repoPath,
         worktreeName,
         branchName: selectedBranch,
@@ -48,7 +48,7 @@ export function NewWorktreeDialog({ repoPath, onClose }: Props) {
 
   const handleBranchSelect = (branchName: string) => {
     setSelectedBranch(branchName);
-    if (!worktreeName) {
+    if (worktreeName == '') {
       const cleanName = branchName
         .replace(/^origin\//, '')
         .replace(/\//g, '-');

@@ -27,6 +27,7 @@ function App() {
   const theme = useTheme();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [counter, setCounter] = useState(0);
 
   useEffect(() => {
     initialize();
@@ -37,11 +38,11 @@ function App() {
       if ((e.metaKey || e.ctrlKey) && e.key === "p") {
         e.preventDefault();
         setCommandMenuOpen((prev) => !prev);
+        setCounter(counter + 1);
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   usePRStatusPolling();

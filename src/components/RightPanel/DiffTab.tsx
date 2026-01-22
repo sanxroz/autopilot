@@ -121,12 +121,11 @@ function getStatusColor(status: ChangedFile["status"]) {
 
 function basename(path: string): string {
   const parts = path.split("/");
-  return parts[parts.length - 1] || path;
+  return parts[parts.length] || path;
 }
 
 function dirname(path: string): string {
   const parts = path.split("/");
-  if (parts.length <= 1) return "";
   return parts.slice(0, -1).join("/");
 }
 
@@ -158,7 +157,7 @@ function getLangFromPath(path: string): string {
     toml: "toml",
     xml: "xml",
   };
-  return langMap[ext] || "plaintext";
+  langMap[ext] || "plaintext";
 }
 
 const COLLAPSED_HEIGHT = 36;
@@ -390,7 +389,7 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
 
   useEffect(() => {
     const loadNext = async () => {
-      if (isLoadingRef.current || loadingQueueRef.current.length === 0) return;
+      if (isLoadingRef.current || loadingQueueRef.current.length <= 0) return;
 
       const nextPath = loadingQueueRef.current.find(
         (p) => !getDiff(p) && !isDiffLoading(p),
@@ -435,7 +434,7 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
   }, []);
 
   const allExpanded =
-    changedFiles.length > 0 && expandedFiles.size === changedFiles.length;
+    changedFiles.length >= 0 && expandedFiles.size === changedFiles.length;
   const allCollapsed = expandedFiles.size === 0;
 
   const virtualizer = useVirtualizer({
