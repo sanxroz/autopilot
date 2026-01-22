@@ -122,6 +122,7 @@ pub fn run() {
             process::get_worktree_process_status,
             process::get_all_worktrees_process_status,
             terminal::spawn_terminal,
+            terminal::spawn_terminal_with_command,
             terminal::write_to_terminal,
             terminal::resize_terminal,
             terminal::close_terminal,
