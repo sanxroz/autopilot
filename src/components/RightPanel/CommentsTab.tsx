@@ -126,23 +126,32 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
   const [expandedImage, setExpandedImage] = useState<{ src: string; alt: string } | null>(null);
   const [collapsedReviews, setCollapsedReviews] = useState<Set<string>>(new Set());
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (isPolling = false) => {
     if (!repoPath || !prNumber) {
       setPrDetails(null);
       return;
     }
 
-    setIsLoading(true);
-    setError(null);
+    if (!isPolling) {
+      setIsLoading(true);
+      setError(null);
+    }
 
     try {
       const details = await invoke<PRDetailedInfo>("get_pr_details", { repoPath, prNumber });
       setPrDetails(details);
+      if (isPolling) {
+        setError(null);
+      }
     } catch (e) {
-      setError(String(e));
-      setPrDetails(null);
+      if (!isPolling) {
+        setError(String(e));
+        setPrDetails(null);
+      }
     } finally {
-      setIsLoading(false);
+      if (!isPolling) {
+        setIsLoading(false);
+      }
     }
   }, [repoPath, prNumber]);
 
@@ -152,7 +161,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
 
   useEffect(() => {
     if (prStatus) {
-      fetchData();
+      fetchData(true);
     }
   }, [prStatus, fetchData]);
 
