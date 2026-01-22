@@ -39,6 +39,7 @@ interface AppStore {
   updateWorktreeBranch: (worktreePath: string) => Promise<void>;
   selectWorktree: (worktree: WorktreeInfo) => Promise<void>;
   addTerminal: () => Promise<string | null>;
+  addTerminalWithCommand: (command: string) => Promise<string | null>;
   removeTerminal: (terminalId: string) => void;
   setActiveTerminal: (terminalId: string) => void;
   toggleRepoCollapsed: (path: string) => void;
@@ -239,6 +240,47 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     const result = await invoke<{ terminal_id: string }>('spawn_terminal', {
       cwd: worktree.path,
+      cols: 80,
+      rows: 24,
+      isDarkMode: getThemeMode() === 'dark',
+    });
+
+    const terminal: TerminalInstance = {
+      id: result.terminal_id,
+      worktreePath: worktree.path,
+      worktreeName: worktree.name,
+    };
+
+    set((state) => {
+      const newTerminals = [...state.currentTerminals, terminal];
+      return {
+        currentTerminals: newTerminals,
+        currentActiveTerminalId: terminal.id,
+        terminalsByWorktree: {
+          ...state.terminalsByWorktree,
+          [worktree.path]: {
+            terminals: newTerminals,
+            activeTerminalId: terminal.id,
+          },
+        },
+      };
+    });
+
+    return terminal.id;
+  },
+
+  addTerminalWithCommand: async (command: string) => {
+    const state = get();
+    const worktree = state.selectedWorktree;
+    if (!worktree) return null;
+
+    // Use spawn_terminal_with_command to avoid race condition
+    // The command is executed as part of shell initialization, eliminating
+    // the timing issue with writing to a terminal before the shell is ready
+    const result = await invoke<{ terminal_id: string }>('spawn_terminal_with_command', {
+      cwd: worktree.path,
+      command,
+      args: [],
       cols: 80,
       rows: 24,
       isDarkMode: getThemeMode() === 'dark',
