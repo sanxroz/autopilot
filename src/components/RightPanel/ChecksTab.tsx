@@ -172,7 +172,7 @@ export function ChecksTab({
       >
         <span className="text-center">{error}</span>
         <button
-          onClick={fetchData}
+          onClick={() => fetchData()}
           className="px-3 py-1 rounded text-xs"
           style={{ background: theme.bg.tertiary, color: theme.text.primary }}
         >
