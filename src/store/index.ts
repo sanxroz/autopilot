@@ -39,6 +39,7 @@ interface AppStore {
   updateWorktreeBranch: (worktreePath: string) => Promise<void>;
   selectWorktree: (worktree: WorktreeInfo) => Promise<void>;
   addTerminal: () => Promise<string | null>;
+  addTerminalWithCommand: (command: string) => Promise<string | null>;
   removeTerminal: (terminalId: string) => void;
   setActiveTerminal: (terminalId: string) => void;
   toggleRepoCollapsed: (path: string) => void;
@@ -264,6 +265,50 @@ export const useAppStore = create<AppStore>((set, get) => ({
         },
       };
     });
+
+    return terminal.id;
+  },
+
+  addTerminalWithCommand: async (command: string) => {
+    const state = get();
+    const worktree = state.selectedWorktree;
+    if (!worktree) return null;
+
+    const result = await invoke<{ terminal_id: string }>('spawn_terminal', {
+      cwd: worktree.path,
+      cols: 80,
+      rows: 24,
+      isDarkMode: getThemeMode() === 'dark',
+    });
+
+    const terminal: TerminalInstance = {
+      id: result.terminal_id,
+      worktreePath: worktree.path,
+      worktreeName: worktree.name,
+    };
+
+    set((state) => {
+      const newTerminals = [...state.currentTerminals, terminal];
+      return {
+        currentTerminals: newTerminals,
+        currentActiveTerminalId: terminal.id,
+        terminalsByWorktree: {
+          ...state.terminalsByWorktree,
+          [worktree.path]: {
+            terminals: newTerminals,
+            activeTerminalId: terminal.id,
+          },
+        },
+      };
+    });
+
+    // Send command after a short delay to ensure terminal is ready
+    setTimeout(() => {
+      invoke('write_to_terminal', {
+        terminalId: terminal.id,
+        data: `${command}\n`,
+      }).catch(console.error);
+    }, 100);
 
     return terminal.id;
   },

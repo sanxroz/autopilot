@@ -7,20 +7,27 @@ import {
   ExternalLink,
   ListTodo,
   MessageCircle,
-  Eye,
   type LucideIcon,
   Diff,
+  Play,
+  GitBranch,
+  MessageSquare,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTheme } from "../../hooks/useTheme";
 import { usePRStatusForBranch } from "../../hooks/usePRStatus";
 import { useAppStore } from "../../store";
 import { ChecksTab } from "./ChecksTab";
-import { ReviewTab } from "./ReviewTab";
 import { CommentsTab } from "./CommentsTab";
 import { DiffTab } from "./DiffTab";
 import { Tabs, TabsList, TabsTrigger } from "../ui/segmented-control";
 import * as Tooltip from "../ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 import type { CreatePRResult } from "../../types/github";
 
 interface RightPanelProps {
@@ -28,11 +35,13 @@ interface RightPanelProps {
   onClose: () => void;
 }
 
-type TabId = "checks" | "comments" | "code-review" | "changes";
+type TabId = "checks" | "comments" | "changes";
 
 const MIN_WIDTH = 300;
 const MAX_WIDTH = 800;
 const DEFAULT_WIDTH = 450;
+
+type ReviewMode = "uncommitted" | "base" | "custom";
 
 export function RightPanel({ worktreePath }: RightPanelProps) {
   const theme = useTheme();
@@ -41,9 +50,13 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>("checks");
   const [showPRDropdown, setShowPRDropdown] = useState(false);
   const [isCreatingPR, setIsCreatingPR] = useState(false);
+  const [showCustomPromptInput, setShowCustomPromptInput] = useState(false);
+  const [customPrompt, setCustomPrompt] = useState("");
+  const customPromptInputRef = useRef<HTMLTextAreaElement>(null);
 
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
   const repositories = useAppStore((state) => state.repositories);
+  const addTerminalWithCommand = useAppStore((state) => state.addTerminalWithCommand);
 
   const repoPath =
     repositories.find((r) => r.worktrees.some((w) => w.path === worktreePath))
@@ -107,6 +120,40 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
     return theme.text.secondary;
   };
 
+  const handleRunReview = useCallback(
+    (mode: ReviewMode, prompt?: string) => {
+      setShowCustomPromptInput(false);
+
+      let command = "cubic review";
+      if (mode === "base") {
+        command = "cubic review --base";
+      } else if (mode === "custom" && prompt) {
+        command = `cubic review --prompt "${prompt}"`;
+      }
+
+      addTerminalWithCommand(command);
+    },
+    [addTerminalWithCommand],
+  );
+
+  const handleCustomPromptSubmit = useCallback(() => {
+    if (customPrompt.trim()) {
+      handleRunReview("custom", customPrompt.trim());
+      setCustomPrompt("");
+    }
+  }, [customPrompt, handleRunReview]);
+
+  const handleCustomPromptCancel = useCallback(() => {
+    setShowCustomPromptInput(false);
+    setCustomPrompt("");
+  }, []);
+
+  useEffect(() => {
+    if (showCustomPromptInput && customPromptInputRef.current) {
+      customPromptInputRef.current.focus();
+    }
+  }, [showCustomPromptInput]);
+
   const isReadyToMerge =
     prStatus &&
     !prStatus.merged &&
@@ -140,7 +187,6 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         color: getChecksColor(),
       },
       { id: "comments", label: "Comments", icon: MessageCircle },
-      { id: "code-review", label: "Code Review", icon: Eye },
       ...(showChangesTab
         ? [{ id: "changes" as TabId, label: "Changes", icon: Diff }]
         : []),
@@ -233,6 +279,98 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         </Tooltip.Provider>
 
         <div className="flex-1" />
+
+        {worktreePath && (
+        <DropdownMenu
+          onOpenChange={(open) => {
+            if (!open) {
+              setShowCustomPromptInput(false);
+              setCustomPrompt("");
+            }
+          }}
+        >
+          <DropdownMenuTrigger asChild>
+            <button
+              className="flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium transition-colors hover:bg-opacity-80"
+              style={{
+                color: theme.text.primary,
+              }}
+            >
+              <Play className="w-3.5 h-3.5" />
+              Review
+              <ChevronDown className="w-3.5 h-3.5 opacity-50" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className={showCustomPromptInput ? "w-[280px]" : ""}>
+            {showCustomPromptInput ? (
+              <div className="p-1">
+                <textarea
+                  ref={customPromptInputRef}
+                  value={customPrompt}
+                  onChange={(e) => setCustomPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      handleCustomPromptSubmit();
+                    }
+                    if (e.key === "Escape") {
+                      handleCustomPromptCancel();
+                    }
+                  }}
+                  placeholder="Enter review prompt..."
+                  className="w-full px-2 py-1.5 text-sm rounded outline-none resize-none"
+                  style={{
+                    background: "transparent",
+                    minHeight: "56px",
+                  }}
+                  autoFocus
+                />
+                <div className="flex items-center justify-end gap-1 px-1 pb-0.5">
+                  <button
+                    onClick={handleCustomPromptCancel}
+                    className="px-2 py-1 text-xs rounded transition-colors"
+                    style={{ color: theme.text.tertiary }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCustomPromptSubmit}
+                    disabled={!customPrompt.trim()}
+                    className="px-2 py-1 text-xs rounded transition-colors flex items-center gap-1"
+                    style={{
+                      background: customPrompt.trim() ? theme.accent.primary : "transparent",
+                      color: customPrompt.trim() ? "white" : theme.text.muted,
+                    }}
+                  >
+                    <Play className="w-3 h-3" />
+                    Run
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <DropdownMenuItem onClick={() => handleRunReview("uncommitted")}>
+                  <Play className="w-3.5 h-3.5" />
+                  <span>Uncommitted changes</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleRunReview("base")}>
+                  <GitBranch className="w-3.5 h-3.5" />
+                  <span>Against base branch</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setShowCustomPromptInput(true);
+                  }}
+                >
+                  <MessageSquare className="w-3.5 h-3.5" />
+                  <span>With custom prompt...</span>
+                </DropdownMenuItem>
+              </>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+        )}
 
         {isReadyToMerge && (
           <button
@@ -341,7 +479,6 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
             prStatus={prStatus}
           />
         )}
-        {activeTab === "code-review" && <ReviewTab repoPath={worktreePath} />}
         {activeTab === "changes" && <DiffTab worktreePath={worktreePath} />}
       </div>
     </div>
