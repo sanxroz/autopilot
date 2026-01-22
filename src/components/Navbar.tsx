@@ -1,6 +1,15 @@
-import { GitBranch, Diff, ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { motion } from "framer-motion";
+import {
+  GitBranch,
+  Diff,
+  ChevronsLeft,
+  ChevronsRight,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { useAppStore } from "../store";
 import { useTheme } from "../hooks/useTheme";
+import { useReducedMotion } from "../lib/animations";
 
 interface NavbarProps {
   sidebarOpen: boolean;
@@ -15,6 +24,7 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
   const codeReviewOpen = useAppStore((state) => state.codeReviewOpen);
   const setCodeReviewOpen = useAppStore((state) => state.setCodeReviewOpen);
   const theme = useTheme();
+  const reducedMotion = useReducedMotion();
 
   const handleToggleRightPanel = () => {
     setCodeReviewOpen(!codeReviewOpen);
@@ -58,10 +68,9 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
         )}
       </button>
 
-      {/* Center content - branch info */}
       <div
         data-tauri-drag-region
-        className="flex items-center gap-2 text-sm absolute left-1/2 transform -translate-x-1/2"
+        className="flex items-center gap-2 text-sm absolute left-1/2 transform -translate-x-1/2 max-w-[50%] overflow-hidden"
         style={{ color: theme.text.secondary }}
       >
         {branchName && (
@@ -70,11 +79,21 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
               className="w-3.5 h-3.5 flex-shrink-0"
               style={{ color: theme.text.tertiary }}
             />
-            <span style={{ color: theme.text.primary }}>{branchName}</span>
+            <span className="truncate" style={{ color: theme.text.primary }}>
+              {branchName}
+            </span>
             {worktreeName && worktreeName !== branchName && (
               <>
-                <span style={{ color: theme.text.tertiary }}>/</span>
-                <span style={{ color: theme.text.secondary }}>
+                <span
+                  className="flex-shrink-0"
+                  style={{ color: theme.text.tertiary }}
+                >
+                  /
+                </span>
+                <span
+                  className="truncate"
+                  style={{ color: theme.text.secondary }}
+                >
                   {worktreeName}
                 </span>
               </>
@@ -85,48 +104,68 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
 
       {/* Right controls */}
       <div className="flex items-center gap-1 ml-auto">
-        {diffViewMode === 'overlay' && (
-          <button
+        {diffViewMode === "overlay" && (
+          <motion.button
             onClick={toggleDiffOverlay}
-            className="py-1.5 px-2 transition-colors rounded-md"
+            className="py-1.5 px-2 rounded-md"
+            whileHover={reducedMotion ? {} : { scale: 1.05 }}
+            whileTap={reducedMotion ? {} : { scale: 0.95 }}
+            transition={{ duration: 0.15 }}
             style={{
               background: "transparent",
-              color: diffOverlayOpen ? theme.accent.primary : theme.text.tertiary,
+              color: diffOverlayOpen
+                ? theme.accent.primary
+                : theme.text.tertiary,
+              border: "none",
+              cursor: "pointer",
             }}
             onMouseEnter={(e) => {
               if (!diffOverlayOpen) {
-                e.currentTarget.style.background = theme.bg.hover;
-                e.currentTarget.style.color = theme.text.primary;
+                (e.currentTarget as HTMLButtonElement).style.background =
+                  theme.bg.hover;
+                (e.currentTarget as HTMLButtonElement).style.color =
+                  theme.text.primary;
               }
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.background = "transparent";
+              (e.currentTarget as HTMLButtonElement).style.background =
+                "transparent";
               if (!diffOverlayOpen) {
-                e.currentTarget.style.color = theme.text.tertiary;
+                (e.currentTarget as HTMLButtonElement).style.color =
+                  theme.text.tertiary;
               }
             }}
             title="Diff"
           >
             <Diff className="w-3.5 h-3.5" />
-          </button>
+          </motion.button>
         )}
-        <button
+        <motion.button
           onClick={handleToggleRightPanel}
-          className="py-1.5 px-2 transition-colors rounded-md"
+          className="py-1.5 px-2 rounded-md"
+          whileHover={reducedMotion ? {} : { scale: 1.05 }}
+          whileTap={reducedMotion ? {} : { scale: 0.95 }}
+          transition={{ duration: 0.15 }}
           style={{
             background: "transparent",
             color: codeReviewOpen ? theme.accent.primary : theme.text.tertiary,
+            border: "none",
+            cursor: "pointer",
           }}
           onMouseEnter={(e) => {
             if (!codeReviewOpen) {
-              e.currentTarget.style.background = theme.bg.hover;
-              e.currentTarget.style.color = theme.text.primary;
+              (e.currentTarget as HTMLButtonElement).style.background =
+                theme.bg.hover;
+              (e.currentTarget as HTMLButtonElement).style.color =
+                theme.text.primary;
             }
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.style.background = "transparent";
+            (e.currentTarget as HTMLButtonElement).style.background =
+              "transparent";
             if (!codeReviewOpen) {
-              e.currentTarget.style.color = theme.text.tertiary;
+              (e.currentTarget as HTMLButtonElement).style.color =
+                theme.text.tertiary;
             }
           }}
           title="Checks & Review"
@@ -136,7 +175,7 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
           ) : (
             <ChevronsLeft className="w-3.5 h-3.5" />
           )}
-        </button>
+        </motion.button>
       </div>
     </div>
   );

@@ -1,11 +1,32 @@
 import { useEffect, useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Loader, MessageSquare, Copy, Check, X, CheckCircle2, XCircle, MessageCircle, Code2 } from "lucide-react";
+import { Loader, MessageSquare, Copy, Check, X, CheckCircle2, XCircle, Code2, ChevronDown } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { useTheme } from "../../hooks/useTheme";
 import type { PRDetailedInfo, PRStatus, PRComment } from "../../types/github";
+
+const AVATAR_COLORS = [
+  '#6366F1', '#8B5CF6', '#EC4899', '#F97316', '#14B8A6',
+  '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#06B6D4',
+];
+
+function stringToColor(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+function getInitials(name: string): string {
+  const parts = name.split(/[\s-_]+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return name.slice(0, 2).toUpperCase();
+}
 
 interface CommentsTabProps {
   repoPath: string | null;
@@ -22,10 +43,10 @@ function formatDate(dateStr: string): string {
   const diffDays = Math.floor(diffMs / 86400000);
 
   if (diffMins < 1) return "just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
+  if (diffMins < 60) return `${diffMins}m`;
+  if (diffHours < 24) return `${diffHours}h`;
+  if (diffDays < 7) return `${diffDays}d`;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 function CopyButton({ text }: { text: string }) {
@@ -41,14 +62,14 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="absolute top-1 right-1 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-      style={{ background: theme.bg.secondary }}
+      className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+      style={{ background: theme.bg.hover }}
       title="Copy code"
     >
       {copied ? (
-        <Check className="w-3.5 h-3.5" style={{ color: "#22C55E" }} />
+        <Check className="w-3 h-3" style={{ color: theme.semantic.success }} />
       ) : (
-        <Copy className="w-3.5 h-3.5" style={{ color: theme.text.tertiary }} />
+        <Copy className="w-3 h-3" style={{ color: theme.text.tertiary }} />
       )}
     </button>
   );
@@ -72,114 +93,24 @@ function ImageModal({ src, alt, onClose }: { src: string; alt: string; onClose: 
       <img
         src={src}
         alt={alt}
-        className="max-w-[90vw] max-h-[90vh] object-contain rounded"
+        className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg"
         onClick={(e) => e.stopPropagation()}
       />
     </div>
   );
 }
 
-function CommentTypeBadge({ comment }: { comment: PRComment }) {
-  const theme = useTheme();
-
-  if (comment.comment_type === 'review') {
-    const state = comment.state;
-    if (state === 'APPROVED') {
-      return (
-        <span 
-          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium"
-          style={{ 
-            background: theme.semantic.successMuted, 
-            color: theme.semantic.success 
-          }}
-        >
-          <CheckCircle2 className="w-3.5 h-3.5" />
-          Approved
-        </span>
-      );
-    }
-    if (state === 'CHANGES_REQUESTED') {
-      return (
-        <span 
-          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium"
-          style={{ 
-            background: theme.semantic.errorMuted, 
-            color: theme.semantic.error 
-          }}
-        >
-          <XCircle className="w-3.5 h-3.5" />
-          Changes requested
-        </span>
-      );
-    }
-    return (
-      <span 
-        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-xs font-medium"
-        style={{ 
-          background: theme.bg.tertiary, 
-          color: theme.text.secondary 
-        }}
-      >
-        <MessageCircle className="w-3.5 h-3.5" />
-        Reviewed
-      </span>
-    );
-  }
-
-  if (comment.comment_type === 'review_thread') {
-    return (
-      <span 
-        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium"
-        style={{ 
-          background: theme.semantic.infoMuted, 
-          color: theme.semantic.info 
-        }}
-      >
-        <Code2 className="w-3.5 h-3.5" />
-        Code comment
-      </span>
-    );
-  }
-
-  return null;
-}
-
-function FilePathBadge({ path, line }: { path?: string; line?: number }) {
-  const theme = useTheme();
-  
-  if (!path) return null;
-  
-  const displayPath = path.length > 40 
-    ? '...' + path.slice(-37) 
-    : path;
+function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
+  const bgColor = stringToColor(name);
+  const initials = getInitials(name);
+  const sizeClasses = size === 'sm' ? 'w-5 h-5 text-[8px]' : 'w-6 h-6 text-[9px]';
   
   return (
-    <div 
-      className="flex items-center gap-2 mt-2 mb-1 px-2 py-1.5 rounded text-xs"
-      style={{ 
-        background: theme.bg.tertiary, 
-        borderLeft: `2px solid ${theme.semantic.info}` 
-      }}
+    <div
+      className={`${sizeClasses} rounded-full flex items-center justify-center font-medium text-white shrink-0`}
+      style={{ background: bgColor }}
     >
-      <Code2 className="w-3.5 h-3.5 shrink-0" style={{ color: theme.text.tertiary }} />
-      <code 
-        className="font-mono truncate" 
-        style={{ color: theme.text.secondary }}
-        title={path}
-      >
-        {displayPath}
-      </code>
-      {line && (
-        <span 
-          className="shrink-0 px-1.5 py-0.5 rounded font-mono"
-          style={{ 
-            background: theme.bg.hover, 
-            color: theme.text.tertiary 
-          }}
-        >
-          L{line}
-        </span>
-      )}
+      {initials}
     </div>
   );
 }
@@ -190,6 +121,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedImage, setExpandedImage] = useState<{ src: string; alt: string } | null>(null);
+  const [collapsedReviews, setCollapsedReviews] = useState<Set<string>>(new Set());
 
   const fetchData = useCallback(async () => {
     if (!repoPath || !prNumber) {
@@ -221,11 +153,23 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
     }
   }, [prStatus, fetchData]);
 
+  const toggleReviewCollapse = (reviewId: string) => {
+    setCollapsedReviews(prev => {
+      const next = new Set(prev);
+      if (next.has(reviewId)) {
+        next.delete(reviewId);
+      } else {
+        next.add(reviewId);
+      }
+      return next;
+    });
+  };
+
   if (!prNumber) {
     return (
       <div
         className="flex-1 flex items-center justify-center text-sm"
-        style={{ color: theme.text.secondary }}
+        style={{ color: theme.text.tertiary }}
       >
         No PR found for this branch
       </div>
@@ -235,11 +179,11 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
   if (isLoading) {
     return (
       <div
-        className="flex-1 flex items-center justify-center text-sm"
-        style={{ color: theme.text.secondary }}
+        className="flex-1 flex items-center justify-center gap-2 text-sm"
+        style={{ color: theme.text.tertiary }}
       >
-        <Loader className="w-3.5 h-3.5 animate-spin mr-2" />
-        Loading...
+        <Loader className="w-4 h-4 animate-spin" />
+        <span>Loading comments...</span>
       </div>
     );
   }
@@ -247,16 +191,20 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
   if (error) {
     return (
       <div
-        className="flex-1 flex flex-col items-center justify-center text-sm gap-2 p-4"
-        style={{ color: theme.semantic.error }}
+        className="flex-1 flex flex-col items-center justify-center gap-3 p-6"
       >
-        <span className="text-center">{error}</span>
+        <span className="text-sm text-center" style={{ color: theme.text.tertiary }}>{error}</span>
         <button
           onClick={fetchData}
-          className="px-3 py-1 rounded text-xs"
-          style={{ background: theme.bg.tertiary, color: theme.text.primary }}
+          className="px-3 py-1.5 rounded text-xs font-medium transition-colors"
+          style={{ 
+            background: theme.bg.tertiary, 
+            color: theme.text.secondary,
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.background = theme.bg.hover}
+          onMouseLeave={(e) => e.currentTarget.style.background = theme.bg.tertiary}
         >
-          Retry
+          Try again
         </button>
       </div>
     );
@@ -320,7 +268,8 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
         href={href} 
         target="_blank" 
         rel="noopener noreferrer"
-        className="text-blue-400 hover:underline"
+        style={{ color: theme.semantic.info }}
+        className="hover:underline"
       >
         {children}
       </a>
@@ -329,8 +278,8 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
       const isInline = !className;
       return isInline ? (
         <code 
-          className="px-1 py-0.5 rounded text-xs"
-          style={{ background: theme.bg.tertiary }}
+          className="px-1 py-0.5 rounded text-[13px]"
+          style={{ background: theme.bg.tertiary, color: theme.text.primary }}
           {...props}
         >
           {children}
@@ -354,7 +303,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
       return (
         <div className="relative group my-2">
           <pre 
-            className="p-2 rounded text-xs overflow-x-auto"
+            className="p-3 rounded text-[13px] overflow-x-auto"
             style={{ background: theme.bg.tertiary }}
           >
             {children}
@@ -367,26 +316,26 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
       <img
         src={src}
         alt={alt || ""}
-        className="max-w-full rounded my-2 cursor-pointer hover:opacity-80 transition-opacity"
+        className="max-w-full rounded my-2 cursor-pointer hover:opacity-90 transition-opacity"
         onClick={() => src && setExpandedImage({ src, alt: alt || "" })}
       />
     ),
     ul: ({ children }: { children?: React.ReactNode }) => (
-      <ul className="list-disc pl-4 my-1">{children}</ul>
+      <ul className="list-disc pl-4 my-1.5 space-y-0.5">{children}</ul>
     ),
     ol: ({ children }: { children?: React.ReactNode }) => (
-      <ol className="list-decimal pl-4 my-1">{children}</ol>
+      <ol className="list-decimal pl-4 my-1.5 space-y-0.5">{children}</ol>
     ),
     li: ({ children }: { children?: React.ReactNode }) => (
-      <li className="my-0.5">{children}</li>
+      <li>{children}</li>
     ),
     p: ({ children }: { children?: React.ReactNode }) => (
-      <p className="my-1">{children}</p>
+      <p className="my-1.5 first:mt-0 last:mb-0">{children}</p>
     ),
     blockquote: ({ children }: { children?: React.ReactNode }) => (
       <blockquote 
-        className="border-l-2 pl-2 my-1 italic"
-        style={{ borderColor: theme.border.default, color: theme.text.tertiary }}
+        className="border-l-2 pl-3 my-2"
+        style={{ borderColor: theme.border.default, color: theme.text.secondary }}
       >
         {children}
       </blockquote>
@@ -395,15 +344,8 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
 
   const renderCommentBody = (body: string) => (
     <div
-      className="text-sm prose prose-sm prose-invert max-w-none"
-      style={{ 
-        color: theme.text.secondary,
-        ['--tw-prose-body' as string]: theme.text.secondary,
-        ['--tw-prose-headings' as string]: theme.text.primary,
-        ['--tw-prose-links' as string]: '#3B82F6',
-        ['--tw-prose-code' as string]: theme.text.primary,
-        ['--tw-prose-pre-bg' as string]: theme.bg.tertiary,
-      }}
+      className="text-[13px] leading-relaxed"
+      style={{ color: theme.text.primary }}
     >
       <ReactMarkdown 
         remarkPlugins={[remarkGfm]}
@@ -415,49 +357,153 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
     </div>
   );
 
-  const renderNestedThreadComments = (threadComments: PRComment[]) => {
-    const sorted = [...threadComments].sort((a, b) => 
-      new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    );
+  const renderReviewEvent = (comment: PRComment, nestedThreads: PRComment[]) => {
+    const hasBody = comment.body && comment.body.trim().length > 0;
+    const hasThreads = nestedThreads.length > 0;
+    const isCollapsed = comment.review_id ? collapsedReviews.has(comment.review_id) : false;
     
+    let actionText = 'reviewed';
+    let ActionIcon: typeof CheckCircle2 | typeof XCircle | null = null;
+    let iconColor: string = theme.text.tertiary;
+    
+    if (comment.state === 'APPROVED') {
+      actionText = 'approved';
+      ActionIcon = CheckCircle2;
+      iconColor = theme.semantic.success;
+    } else if (comment.state === 'CHANGES_REQUESTED') {
+      actionText = 'requested changes';
+      ActionIcon = XCircle;
+      iconColor = theme.semantic.error;
+    }
+
+    return (
+      <div className="py-2.5">
+        <div className="flex items-center gap-2">
+          <Avatar name={comment.author} size="sm" />
+          <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <span className="text-[13px] font-medium" style={{ color: theme.text.primary }}>
+              {comment.author}
+            </span>
+            <span className="text-[13px]" style={{ color: theme.text.tertiary }}>
+              {actionText}
+            </span>
+            {ActionIcon && (
+              <ActionIcon className="w-3.5 h-3.5 shrink-0" style={{ color: iconColor }} />
+            )}
+            <span className="text-[13px]" style={{ color: theme.text.muted }}>
+              · {formatDate(comment.created_at)}
+            </span>
+          </div>
+        </div>
+
+        {hasBody && (
+          <div className="mt-2 ml-7">
+            {renderCommentBody(comment.body)}
+          </div>
+        )}
+
+        {hasThreads && comment.review_id && (
+          <div className="mt-2 ml-7">
+            <button
+              onClick={() => toggleReviewCollapse(comment.review_id!)}
+              className="flex items-center gap-1.5 text-[12px] py-1 transition-colors"
+              style={{ color: theme.text.secondary }}
+              onMouseEnter={(e) => e.currentTarget.style.color = theme.text.primary}
+              onMouseLeave={(e) => e.currentTarget.style.color = theme.text.secondary}
+            >
+              <ChevronDown 
+                className={`w-3.5 h-3.5 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} 
+              />
+              <Code2 className="w-3.5 h-3.5" style={{ color: theme.text.tertiary }} />
+              <span>{nestedThreads.length} code comment{nestedThreads.length !== 1 ? 's' : ''}</span>
+            </button>
+            
+            {!isCollapsed && (
+              <div 
+                className="mt-2 rounded-lg overflow-hidden"
+                style={{ background: theme.bg.secondary }}
+              >
+                {nestedThreads
+                  .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+                  .map((thread, idx) => (
+                    <div 
+                      key={idx}
+                      className="px-3 py-2.5"
+                      style={{ 
+                        borderTop: idx > 0 ? `1px solid ${theme.border.subtle}` : undefined 
+                      }}
+                    >
+                      {thread.path && (
+                        <div 
+                          className="flex items-center gap-1.5 mb-2 text-[11px] font-mono"
+                          style={{ color: theme.text.tertiary }}
+                        >
+                          <span className="truncate">{thread.path}</span>
+                          {thread.line && (
+                            <span style={{ color: theme.text.muted }}>:{thread.line}</span>
+                          )}
+                        </div>
+                      )}
+                      <div className="flex items-start gap-2">
+                        <Avatar name={thread.author} size="sm" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className="text-[12px] font-medium" style={{ color: theme.text.primary }}>
+                              {thread.author}
+                            </span>
+                            <span className="text-[11px]" style={{ color: theme.text.muted }}>
+                              {formatDate(thread.created_at)}
+                            </span>
+                          </div>
+                          {renderCommentBody(thread.body)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderComment = (comment: PRComment) => {
+    const hasBody = comment.body && comment.body.trim().length > 0;
+
     return (
       <div 
-        className="mt-3 pl-4"
-        style={{ 
-          borderLeft: `2px solid ${theme.border.default}80` 
-        }}
+        className="py-3 rounded-lg px-3"
+        style={{ background: theme.bg.secondary }}
       >
-        {sorted.map((thread, idx) => (
-          <div
-            key={`thread-${idx}`}
-            className="py-3 first:pt-0"
-            style={{ 
-              borderBottom: idx < sorted.length - 1 ? `1px solid ${theme.border.default}40` : 'none'
-            }}
-          >
-            <div className="flex items-start justify-between gap-2 mb-2">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span
-                  className="text-sm font-medium"
-                  style={{ color: theme.text.primary }}
-                >
-                  {thread.author}
-                </span>
-                <CommentTypeBadge comment={thread} />
-              </div>
-              <span
-                className="text-xs shrink-0"
-                style={{ color: theme.text.tertiary }}
-              >
-                {formatDate(thread.created_at)}
+        <div className="flex items-start gap-2.5">
+          <Avatar name={comment.author} />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 mb-1">
+              <span className="text-[13px] font-medium" style={{ color: theme.text.primary }}>
+                {comment.author}
+              </span>
+              <span className="text-[12px]" style={{ color: theme.text.muted }}>
+                {formatDate(comment.created_at)}
               </span>
             </div>
             
-            <FilePathBadge path={thread.path} line={thread.line} />
+            {comment.comment_type === 'review_thread' && comment.path && (
+              <div 
+                className="flex items-center gap-1.5 mb-2 text-[11px] font-mono"
+                style={{ color: theme.text.tertiary }}
+              >
+                <Code2 className="w-3 h-3 shrink-0" />
+                <span className="truncate">{comment.path}</span>
+                {comment.line && (
+                  <span style={{ color: theme.text.muted }}>:{comment.line}</span>
+                )}
+              </div>
+            )}
             
-            {renderCommentBody(thread.body)}
+            {hasBody && renderCommentBody(comment.body)}
           </div>
-        ))}
+        </div>
       </div>
     );
   };
@@ -465,11 +511,11 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
   if (comments.length === 0) {
     return (
       <div
-        className="flex-1 flex flex-col items-center justify-center text-sm gap-2"
-        style={{ color: theme.text.secondary }}
+        className="flex-1 flex flex-col items-center justify-center gap-2 p-8"
+        style={{ color: theme.text.tertiary }}
       >
-        <MessageSquare className="w-8 h-8" style={{ color: theme.text.tertiary }} />
-        No comments yet
+        <MessageSquare className="w-8 h-8" style={{ color: theme.text.muted }} />
+        <span className="text-sm">No comments yet</span>
       </div>
     );
   }
@@ -484,64 +530,28 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
         />
       )}
       <div className="flex flex-col h-full overflow-auto">
-        <div className="px-3 py-2">
+        <div className="px-3 py-2 space-y-1">
           {topLevelComments.map((comment, index) => {
             const nestedThreads = comment.comment_type === 'review' && comment.review_id 
               ? threadsByReviewId.get(comment.review_id) || []
               : [];
-            const hasBody = comment.body && comment.body.trim().length > 0;
-            const hasNestedThreads = nestedThreads.length > 0;
             
             if (comment.comment_type === 'review') {
               console.log('[CommentsTab] Rendering review:', {
                 author: comment.author,
                 review_id: comment.review_id,
-                hasBody,
-                hasNestedThreads,
+                hasBody: !!(comment.body && comment.body.trim().length > 0),
+                hasNestedThreads: nestedThreads.length > 0,
                 nestedCount: nestedThreads.length
               });
             }
             
             return (
-              <div
-                key={index}
-                className="py-4 border-b last:border-b-0"
-                style={{ borderColor: theme.border.default }}
-              >
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span
-                      className="text-sm font-semibold"
-                      style={{ color: theme.text.primary }}
-                    >
-                      {comment.author}
-                    </span>
-                    <CommentTypeBadge comment={comment} />
-                  </div>
-                  <span
-                    className="text-xs shrink-0"
-                    style={{ color: theme.text.tertiary }}
-                  >
-                    {formatDate(comment.created_at)}
-                  </span>
-                </div>
-                
-                {comment.comment_type === 'review_thread' && (
-                  <FilePathBadge path={comment.path} line={comment.line} />
-                )}
-                
-                {hasBody && renderCommentBody(comment.body)}
-                
-                {!hasBody && comment.comment_type === 'review' && hasNestedThreads && (
-                  <span 
-                    className="text-xs italic"
-                    style={{ color: theme.text.tertiary }}
-                  >
-                    Left code comments
-                  </span>
-                )}
-                
-                {hasNestedThreads && renderNestedThreadComments(nestedThreads)}
+              <div key={index}>
+                {comment.comment_type === 'review' 
+                  ? renderReviewEvent(comment, nestedThreads)
+                  : renderComment(comment)
+                }
               </div>
             );
           })}
