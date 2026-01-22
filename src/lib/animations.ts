@@ -105,15 +105,7 @@ export const ANIMATION = {
   },
 } as const;
 
-/**
- * Hook to respect user's motion preferences
- * Returns false if user has prefers-reduced-motion enabled
- */
-export function useReducedMotion() {
-  if (typeof window === "undefined") return false;
 
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
 
 /**
  * Get animation config that respects reduced motion preference

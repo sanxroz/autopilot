@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useRef } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   GitPullRequest,
   GitMerge,
@@ -16,7 +16,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useTheme } from "../../hooks/useTheme";
 import { usePRStatusForBranch } from "../../hooks/usePRStatus";
 import { useAppStore } from "../../store";
-import { useReducedMotion } from "../../lib/animations";
+
 import { ChecksTab } from "./ChecksTab";
 import { ReviewTab } from "./ReviewTab";
 import { CommentsTab } from "./CommentsTab";

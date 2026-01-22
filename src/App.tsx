@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { AnimatePresence } from "framer-motion";
 import { Navbar } from "./components/Navbar";
 import { Sidebar } from "./components/Sidebar";
 import { TerminalGrid } from "./components/TerminalGrid";
@@ -81,9 +80,7 @@ function App() {
           color: theme.text.primary,
         }}
       >
-        <AnimatePresence mode="wait">
-          {sidebarOpen && <Sidebar key="sidebar" />}
-        </AnimatePresence>
+        <Sidebar isOpen={sidebarOpen} />
         <div className="flex flex-col flex-1 overflow-hidden relative">
           <Navbar sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
           <TerminalGrid />

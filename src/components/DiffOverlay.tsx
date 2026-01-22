@@ -7,8 +7,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { motion } from "framer-motion";
-import { useReducedMotion } from "../lib/animations";
+import { motion, useReducedMotion } from "framer-motion";
 import {
   FilePlus,
   FileMinus,

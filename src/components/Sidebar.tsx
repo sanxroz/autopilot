@@ -1,7 +1,7 @@
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { motion } from "framer-motion";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useReducedMotion } from "../lib/animations";
+import { useReducedMotion } from "framer-motion";
 import {
   Plus,
   PackagePlus,
@@ -28,7 +28,11 @@ function basename(path: string): string {
   return parts[parts.length - 1] || cleaned;
 }
 
-export function Sidebar() {
+interface SidebarProps {
+  isOpen: boolean;
+}
+
+export function Sidebar({ isOpen }: SidebarProps) {
   const {
     repositories,
     addRepository,
@@ -154,19 +158,23 @@ export function Sidebar() {
 
   return (
     <motion.div
-      initial={reducedMotion ? { opacity: 1 } : { x: -width, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
+      initial={false}
+      animate={{
+        x: isOpen ? 0 : -width,
+        opacity: isOpen ? 1 : 0,
+        width: isOpen ? width : 0,
+      }}
       transition={{
         duration: reducedMotion ? 0 : 0.25,
         ease: [0.215, 0.61, 0.355, 1], // cubic-out
       }}
-      className="relative flex flex-col h-full pt-8 select-none"
+      className="relative flex flex-col h-full pt-8 select-none overflow-hidden"
       style={{
-        width: `${width}px`,
-        minWidth: `${MIN_WIDTH}px`,
+        minWidth: isOpen ? `${MIN_WIDTH}px` : 0,
         maxWidth: `${MAX_WIDTH}px`,
         background: theme.bg.secondary,
-        borderRight: `1px solid ${theme.border.default}`,
+        borderRight: isOpen ? `1px solid ${theme.border.default}` : "none",
+        pointerEvents: isOpen ? "auto" : "none",
       }}
     >
       <div
