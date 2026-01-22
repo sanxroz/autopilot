@@ -31,17 +31,17 @@ function getCheckIcon(status: string, conclusion: string | null) {
   return Circle;
 }
 
-function getCheckColor(status: string, conclusion: string | null) {
+function getCheckColor(status: string, conclusion: string | null, theme: ReturnType<typeof useTheme>) {
   if (status !== "completed") {
-    return "#F59E0B";
+    return theme.semantic.warning;
   }
   if (conclusion === "success") {
-    return "#22C55E";
+    return theme.semantic.success;
   }
   if (conclusion === "failure" || conclusion === "cancelled") {
-    return "#EF4444";
+    return theme.semantic.error;
   }
-  return "#6B7280";
+  return theme.text.tertiary;
 }
 
 function formatDuration(
@@ -78,18 +78,18 @@ function getMergeStatusText(status: string): string {
   }
 }
 
-function getMergeStatusColor(status: string): string {
+function getMergeStatusColor(status: string, theme: ReturnType<typeof useTheme>): string {
   switch (status) {
     case "CLEAN":
-      return "#22C55E";
+      return theme.semantic.success;
     case "UNSTABLE":
     case "BEHIND":
-      return "#F59E0B";
+      return theme.semantic.warning;
     case "DIRTY":
     case "BLOCKED":
-      return "#EF4444";
+      return theme.semantic.error;
     default:
-      return "#6B7280";
+      return theme.text.tertiary;
   }
 }
 
@@ -216,7 +216,7 @@ export function ChecksTab({
               <Circle
                 className="w-3.5 h-3.5"
                 style={{
-                  color: getMergeStatusColor(prDetails.merge_state_status),
+                  color: getMergeStatusColor(prDetails.merge_state_status, theme),
                 }}
               />
               <span className="text-sm" style={{ color: theme.text.primary }}>
@@ -255,7 +255,7 @@ export function ChecksTab({
           </div>
           {deployments.map((check, index) => {
             const Icon = getCheckIcon(check.status, check.conclusion);
-            const color = getCheckColor(check.status, check.conclusion);
+            const color = getCheckColor(check.status, check.conclusion, theme);
 
             return (
               <div key={index} className="flex items-center gap-2 py-1.5">
@@ -299,7 +299,7 @@ export function ChecksTab({
           </div>
           {regularChecks.map((check, index) => {
             const Icon = getCheckIcon(check.status, check.conclusion);
-            const color = getCheckColor(check.status, check.conclusion);
+            const color = getCheckColor(check.status, check.conclusion, theme);
             const duration = formatDuration(
               check.started_at,
               check.completed_at,

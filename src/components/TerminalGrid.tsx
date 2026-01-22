@@ -1,4 +1,6 @@
 import { useEffect, useCallback } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
+import { PackagePlus } from "lucide-react";
 import { useAppStore } from "../store";
 import { Terminal } from "./Terminal";
 import { useTheme } from "../hooks/useTheme";
@@ -14,8 +16,24 @@ export function TerminalGrid() {
   const setActiveTerminal = useAppStore((state) => state.setActiveTerminal);
   const addTerminal = useAppStore((state) => state.addTerminal);
   const removeTerminal = useAppStore((state) => state.removeTerminal);
+  const addRepository = useAppStore((state) => state.addRepository);
 
   const theme = useTheme();
+
+  const handleAddRepository = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "Select Repository",
+      });
+      if (selected) {
+        await addRepository(selected as string);
+      }
+    } catch (e) {
+      console.error("Failed to add repository:", e);
+    }
+  };
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -51,16 +69,33 @@ export function TerminalGrid() {
             <TerminalAnimation color={theme.text.muted} />
           </div>
           <h1
-            className="mb-6 select-none text-2xl font-bold tracking-tight md:hidden"
+            className="mb-6 select-none text-2xl font-bold tracking-tight text-balance md:hidden"
             style={{ color: theme.text.muted }}
           >
             autopilot
           </h1>
-          <p className="text-sm" style={{ color: theme.text.secondary }}>
+          <p className="text-sm text-pretty" style={{ color: theme.text.secondary }}>
             Select a workspace from the sidebar to start
           </p>
+          <button
+            onClick={handleAddRepository}
+            className="mt-6 px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 mx-auto"
+            style={{
+              background: theme.accent.primary,
+              color: theme.bg.primary,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = theme.accent.hover;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = theme.accent.primary;
+            }}
+          >
+            <PackagePlus className="w-4 h-4" />
+            Add Repository
+          </button>
           <div
-            className="mt-8 text-xs space-y-1"
+            className="mt-6 text-xs space-y-1"
             style={{ color: theme.text.tertiary }}
           >
             <p>
@@ -147,12 +182,12 @@ export function TerminalGrid() {
               <TerminalAnimation color={theme.text.muted} />
             </div>
             <h1
-              className="mb-6 select-none text-2xl font-bold tracking-tight md:hidden"
+              className="mb-6 select-none text-2xl font-bold tracking-tight text-balance md:hidden"
               style={{ color: theme.text.muted }}
             >
               autopilot
             </h1>
-            <p className="text-sm" style={{ color: theme.text.secondary }}>
+            <p className="text-sm text-pretty" style={{ color: theme.text.secondary }}>
               Select a workspace from the sidebar to start
             </p>
           </div>
