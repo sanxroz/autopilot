@@ -754,3 +754,291 @@ pub async fn get_file_content(
     .await
     .map_err(|e| e.to_string())?
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GitStatusFile {
+    pub path: String,
+    pub status: String,
+    pub staged: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GitStatus {
+    pub staged: Vec<GitStatusFile>,
+    pub unstaged: Vec<GitStatusFile>,
+    pub branch: Option<String>,
+    pub ahead: usize,
+    pub behind: usize,
+}
+
+#[tauri::command]
+pub async fn get_git_status(worktree_path: String) -> Result<GitStatus, String> {
+    tokio::task::spawn_blocking(move || {
+        let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
+        
+        let mut staged: Vec<GitStatusFile> = Vec::new();
+        let mut unstaged: Vec<GitStatusFile> = Vec::new();
+        
+        // Get status
+        let statuses = repo
+            .statuses(Some(
+                git2::StatusOptions::new()
+                    .include_untracked(true)
+                    .recurse_untracked_dirs(true)
+                    .include_ignored(false),
+            ))
+            .map_err(|e| e.message().to_string())?;
+        
+        for entry in statuses.iter() {
+            let path = entry.path().unwrap_or("").to_string();
+            let status = entry.status();
+            
+            // Check staged changes (index)
+            if status.intersects(
+                git2::Status::INDEX_NEW
+                    | git2::Status::INDEX_MODIFIED
+                    | git2::Status::INDEX_DELETED
+                    | git2::Status::INDEX_RENAMED
+                    | git2::Status::INDEX_TYPECHANGE,
+            ) {
+                let status_str = if status.contains(git2::Status::INDEX_NEW) {
+                    "added"
+                } else if status.contains(git2::Status::INDEX_DELETED) {
+                    "deleted"
+                } else if status.contains(git2::Status::INDEX_RENAMED) {
+                    "renamed"
+                } else {
+                    "modified"
+                };
+                staged.push(GitStatusFile {
+                    path: path.clone(),
+                    status: status_str.to_string(),
+                    staged: true,
+                });
+            }
+            
+            // Check unstaged changes (worktree)
+            if status.intersects(
+                git2::Status::WT_NEW
+                    | git2::Status::WT_MODIFIED
+                    | git2::Status::WT_DELETED
+                    | git2::Status::WT_RENAMED
+                    | git2::Status::WT_TYPECHANGE,
+            ) {
+                let status_str = if status.contains(git2::Status::WT_NEW) {
+                    "untracked"
+                } else if status.contains(git2::Status::WT_DELETED) {
+                    "deleted"
+                } else if status.contains(git2::Status::WT_RENAMED) {
+                    "renamed"
+                } else {
+                    "modified"
+                };
+                unstaged.push(GitStatusFile {
+                    path,
+                    status: status_str.to_string(),
+                    staged: false,
+                });
+            }
+        }
+        
+        // Get branch info
+        let branch = repo.head().ok().and_then(|h| h.shorthand().map(String::from));
+        
+        // Get ahead/behind counts
+        let (ahead, behind) = get_ahead_behind(&repo).unwrap_or((0, 0));
+        
+        Ok::<GitStatus, String>(GitStatus {
+            staged,
+            unstaged,
+            branch,
+            ahead,
+            behind,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn get_ahead_behind(repo: &Repository) -> Option<(usize, usize)> {
+    let head = repo.head().ok()?;
+    let local_oid = head.target()?;
+    
+    let branch_name = head.shorthand()?;
+    let upstream_name = format!("origin/{}", branch_name);
+    
+    let upstream_ref = repo
+        .find_branch(&upstream_name, BranchType::Remote)
+        .ok()?;
+    let upstream_oid = upstream_ref.get().target()?;
+    
+    repo.graph_ahead_behind(local_oid, upstream_oid).ok()
+}
+
+#[tauri::command]
+pub async fn git_stage_files(worktree_path: String, files: Vec<String>) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
+        let mut index = repo.index().map_err(|e| e.message().to_string())?;
+        
+        for file in files {
+            // Check if file exists - if not, it's a deletion
+            let full_path = PathBuf::from(&worktree_path).join(&file);
+            if full_path.exists() {
+                index
+                    .add_path(std::path::Path::new(&file))
+                    .map_err(|e| format!("Failed to stage {}: {}", file, e.message()))?;
+            } else {
+                index
+                    .remove_path(std::path::Path::new(&file))
+                    .map_err(|e| format!("Failed to stage deletion {}: {}", file, e.message()))?;
+            }
+        }
+        
+        index.write().map_err(|e| e.message().to_string())?;
+        
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_unstage_files(worktree_path: String, files: Vec<String>) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
+        
+        let head = repo.head().map_err(|e| e.message().to_string())?;
+        let head_commit = head.peel_to_commit().map_err(|e| e.message().to_string())?;
+        let head_tree = head_commit.tree().map_err(|e| e.message().to_string())?;
+        
+        let mut index = repo.index().map_err(|e| e.message().to_string())?;
+        
+        for file in files {
+            let path = std::path::Path::new(&file);
+            
+            // Check if file exists in HEAD
+            if let Ok(entry) = head_tree.get_path(path) {
+                // File exists in HEAD, restore it from HEAD
+                let blob = repo.find_blob(entry.id()).map_err(|e| e.message().to_string())?;
+                index
+                    .add(&git2::IndexEntry {
+                        ctime: git2::IndexTime::new(0, 0),
+                        mtime: git2::IndexTime::new(0, 0),
+                        dev: 0,
+                        ino: 0,
+                        mode: entry.filemode() as u32,
+                        uid: 0,
+                        gid: 0,
+                        file_size: blob.size() as u32,
+                        id: entry.id(),
+                        flags: 0,
+                        flags_extended: 0,
+                        path: file.as_bytes().to_vec(),
+                    })
+                    .map_err(|e| format!("Failed to unstage {}: {}", file, e.message()))?;
+            } else {
+                // File doesn't exist in HEAD (was newly added), remove from index
+                index
+                    .remove_path(path)
+                    .map_err(|e| format!("Failed to unstage {}: {}", file, e.message()))?;
+            }
+        }
+        
+        index.write().map_err(|e| e.message().to_string())?;
+        
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_commit(worktree_path: String, message: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
+        
+        let mut index = repo.index().map_err(|e| e.message().to_string())?;
+        let tree_oid = index.write_tree().map_err(|e| e.message().to_string())?;
+        let tree = repo.find_tree(tree_oid).map_err(|e| e.message().to_string())?;
+        
+        let signature = repo.signature().map_err(|e| e.message().to_string())?;
+        
+        let head = repo.head().map_err(|e| e.message().to_string())?;
+        let parent_commit = head.peel_to_commit().map_err(|e| e.message().to_string())?;
+        
+        let commit_oid = repo
+            .commit(
+                Some("HEAD"),
+                &signature,
+                &signature,
+                &message,
+                &tree,
+                &[&parent_commit],
+            )
+            .map_err(|e| e.message().to_string())?;
+        
+        Ok::<String, String>(commit_oid.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_push(worktree_path: String) -> Result<(), String> {
+    use std::process::Command;
+    
+    let output = Command::new("git")
+        .args(["push"])
+        .current_dir(&worktree_path)
+        .output()
+        .map_err(|e| format!("Failed to run git push: {}", e))?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git push failed: {}", stderr));
+    }
+    
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn git_stage_all(worktree_path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
+        let mut index = repo.index().map_err(|e| e.message().to_string())?;
+        
+        index
+            .add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
+            .map_err(|e| e.message().to_string())?;
+        
+        // Also handle deletions
+        index
+            .update_all(["*"].iter(), None)
+            .map_err(|e| e.message().to_string())?;
+        
+        index.write().map_err(|e| e.message().to_string())?;
+        
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_unstage_all(worktree_path: String) -> Result<(), String> {
+    use std::process::Command;
+    
+    let output = Command::new("git")
+        .args(["reset", "HEAD"])
+        .current_dir(&worktree_path)
+        .output()
+        .map_err(|e| format!("Failed to run git reset: {}", e))?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("git reset failed: {}", stderr));
+    }
+    
+    Ok(())
+}

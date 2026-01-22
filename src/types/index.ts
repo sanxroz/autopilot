@@ -57,3 +57,17 @@ export interface FileDiffData {
   path: string;
   patch: string;
 }
+
+export interface GitStatusFile {
+  path: string;
+  status: string;
+  staged: boolean;
+}
+
+export interface GitStatus {
+  staged: GitStatusFile[];
+  unstaged: GitStatusFile[];
+  branch: string | null;
+  ahead: number;
+  behind: number;
+}
