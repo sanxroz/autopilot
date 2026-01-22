@@ -226,14 +226,15 @@ pub fn spawn_terminal_with_command(
         format!("{} {}", command, args.join(" "))
     };
 
-    // Use -c to run command, then exec $SHELL to keep terminal open
     if cfg!(target_os = "windows") {
-        cmd.arg("/c");
+        // Use /k to keep the terminal open after command completes
+        cmd.arg("/k");
         cmd.arg(&full_command);
     } else {
         cmd.arg("-c");
         // Run command, then start interactive shell so user can continue working
-        cmd.arg(format!("{}; exec $SHELL", full_command));
+        // Use ${SHELL:-/bin/bash} as fallback if $SHELL is unset
+        cmd.arg(format!("{}; exec ${{SHELL:-/bin/bash}}", full_command));
     }
 
     cmd.cwd(&cwd);
