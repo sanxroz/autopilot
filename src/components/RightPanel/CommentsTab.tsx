@@ -21,11 +21,14 @@ function stringToColor(str: string): string {
 }
 
 function getInitials(name: string): string {
-  const parts = name.split(/[\s-_]+/);
+  const parts = name.split(/[\s-_]+/).filter(p => p.length > 0);
   if (parts.length >= 2) {
     return (parts[0][0] + parts[1][0]).toUpperCase();
   }
-  return name.slice(0, 2).toUpperCase();
+  if (parts.length === 1 && parts[0].length >= 1) {
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  return '??';
 }
 
 interface CommentsTabProps {

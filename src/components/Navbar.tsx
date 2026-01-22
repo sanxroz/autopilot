@@ -79,7 +79,7 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
               className="w-3.5 h-3.5 flex-shrink-0"
               style={{ color: theme.text.tertiary }}
             />
-            <span className="truncate" style={{ color: theme.text.primary }}>
+            <span className="truncate min-w-0" style={{ color: theme.text.primary }}>
               {branchName}
             </span>
             {worktreeName && worktreeName !== branchName && (
@@ -91,7 +91,7 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
                   /
                 </span>
                 <span
-                  className="truncate"
+                  className="truncate min-w-0"
                   style={{ color: theme.text.secondary }}
                 >
                   {worktreeName}
