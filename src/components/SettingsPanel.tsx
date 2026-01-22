@@ -157,6 +157,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = "transparent";
               }}
+              aria-label="Close settings"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -215,7 +216,7 @@ function AccountSection({
     <div className="space-y-6">
       <div>
         <h4
-          className="text-xs font-medium uppercase tracking-wider mb-4"
+          className="text-xs font-medium uppercase mb-4"
           style={{ color: theme.text.tertiary }}
         >
           GitHub Account
@@ -312,7 +313,7 @@ function DebugSection({
     <div className="space-y-6">
       <div>
         <h4
-          className="text-xs font-medium uppercase tracking-wider mb-4"
+          className="text-xs font-medium uppercase mb-4"
           style={{ color: theme.text.tertiary }}
         >
           GitHub Integration

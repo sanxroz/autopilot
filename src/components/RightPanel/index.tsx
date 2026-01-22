@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, useRef } from "react";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   GitPullRequest,
   GitMerge,
@@ -17,6 +18,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useTheme } from "../../hooks/useTheme";
 import { usePRStatusForBranch } from "../../hooks/usePRStatus";
 import { useAppStore } from "../../store";
+
 import { ChecksTab } from "./ChecksTab";
 import { CommentsTab } from "./CommentsTab";
 import { DiffTab } from "./DiffTab";
@@ -45,6 +47,7 @@ type ReviewMode = "uncommitted" | "base" | "custom";
 
 export function RightPanel({ worktreePath }: RightPanelProps) {
   const theme = useTheme();
+  const reducedMotion = useReducedMotion();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>("checks");
@@ -196,7 +199,14 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
     ];
 
   return (
-    <div
+    <motion.div
+      initial={reducedMotion ? false : { x: 400, opacity: 0 }}
+      animate={{ x: 0, opacity: 1 }}
+      exit={reducedMotion ? { opacity: 0 } : { x: 400, opacity: 0 }}
+      transition={{
+        duration: reducedMotion ? 0 : 0.25,
+        ease: [0.215, 0.61, 0.355, 1], // cubic-out
+      }}
       className="relative flex flex-col h-full select-none"
       style={{
         width: `${width}px`,
@@ -426,11 +436,19 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
                   className="fixed inset-0 z-10"
                   onClick={() => setShowPRDropdown(false)}
                 />
-                <div
+                <motion.div
+                  initial={reducedMotion ? false : { opacity: 0, scale: 0.95, y: -8 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95, y: -8 }}
+                  transition={{
+                    duration: reducedMotion ? 0 : 0.15,
+                    ease: [0.215, 0.61, 0.355, 1],
+                  }}
                   className="absolute right-0 top-full mt-1 rounded shadow-lg z-20 py-1 min-w-[140px]"
                   style={{
                     background: theme.bg.secondary,
                     border: `1px solid ${theme.border.default}`,
+                    transformOrigin: "top right",
                   }}
                 >
                   <button
@@ -459,7 +477,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
                   >
                     Create draft PR
                   </button>
-                </div>
+                </motion.div>
               </>
             )}
           </div>
@@ -467,23 +485,64 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
       </div>
 
       <div className="flex-1 overflow-hidden flex flex-col">
-        {activeTab === "checks" && (
-          <ChecksTab
-            repoPath={repoPath}
-            prNumber={prStatus?.number ?? null}
-            prUrl={prStatus?.url ?? null}
-            prStatus={prStatus}
-          />
-        )}
-        {activeTab === "comments" && (
-          <CommentsTab
-            repoPath={repoPath}
-            prNumber={prStatus?.number ?? null}
-            prStatus={prStatus}
-          />
-        )}
-        {activeTab === "changes" && <DiffTab worktreePath={worktreePath} />}
+        <AnimatePresence mode="wait">
+          {activeTab === "checks" && (
+            <motion.div
+              key="checks"
+              initial={reducedMotion ? { opacity: 1 } : { opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: -10 }}
+              transition={{
+                duration: reducedMotion ? 0 : 0.15,
+                ease: [0.215, 0.61, 0.355, 1],
+              }}
+              className="h-full overflow-hidden flex flex-col"
+            >
+              <ChecksTab
+                repoPath={repoPath}
+                prNumber={prStatus?.number ?? null}
+                prUrl={prStatus?.url ?? null}
+                prStatus={prStatus}
+              />
+            </motion.div>
+          )}
+          {activeTab === "comments" && (
+            <motion.div
+              key="comments"
+              initial={reducedMotion ? { opacity: 1 } : { opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: -10 }}
+              transition={{
+                duration: reducedMotion ? 0 : 0.15,
+                ease: [0.215, 0.61, 0.355, 1],
+              }}
+              className="h-full overflow-hidden flex flex-col"
+            >
+              <CommentsTab
+                repoPath={repoPath}
+                prNumber={prStatus?.number ?? null}
+                prStatus={prStatus}
+              />
+            </motion.div>
+          )}
+
+          {activeTab === "changes" && (
+            <motion.div
+              key="changes"
+              initial={reducedMotion ? { opacity: 1 } : { opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: -10 }}
+              transition={{
+                duration: reducedMotion ? 0 : 0.15,
+                ease: [0.215, 0.61, 0.355, 1],
+              }}
+              className="h-full overflow-hidden flex flex-col"
+            >
+              <DiffTab worktreePath={worktreePath} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
-    </div>
+    </motion.div>
   );
 }
