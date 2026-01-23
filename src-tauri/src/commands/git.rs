@@ -1056,7 +1056,7 @@ pub async fn git_stage_all(worktree_path: String) -> Result<(), String> {
 pub async fn git_unstage_all(worktree_path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let output = Command::new("git")
-            .args(["reset", "HEAD"])
+            .args(["reset"])
             .current_dir(&worktree_path)
             .output()
             .map_err(|e| format!("Failed to run git reset: {}", e))?;
