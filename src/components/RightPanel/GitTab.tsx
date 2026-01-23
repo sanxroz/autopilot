@@ -249,7 +249,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
         <button
           onClick={() => fetchStatus()}
           className="px-3 py-1.5 rounded text-xs font-medium transition-colors"
-          style={{ background: theme.bg.tertiary, color: theme.text.secondary }}
+          style={{ background: theme.bg.tertiary, color: theme.text.primary }}
         >
           Try again
         </button>
@@ -303,7 +303,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
       <div
         className="flex items-center justify-between px-3 py-2"
       >
-        <span className="text-[13px]" style={{ color: theme.text.secondary }}>
+        <span className="text-[13px]" style={{ color: theme.text.primary }}>
           {totalChanges} Change{totalChanges !== 1 ? "s" : ""}
         </span>
         <div className="flex items-center gap-1">
@@ -312,14 +312,14 @@ export function GitTab({ worktreePath }: GitTabProps) {
               onClick={handleStageAll}
               disabled={isOperationInProgress}
               className="text-[12px] px-2 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ color: theme.text.secondary }}
+              style={{ color: theme.text.primary }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = theme.bg.hover;
                 e.currentTarget.style.color = theme.text.primary;
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = "transparent";
-                e.currentTarget.style.color = theme.text.secondary;
+                e.currentTarget.style.color = theme.text.primary;
               }}
             >
               {isStaging ? "Staging..." : "Stage All"}
@@ -329,14 +329,14 @@ export function GitTab({ worktreePath }: GitTabProps) {
               onClick={handleUnstageAll}
               disabled={isOperationInProgress}
               className="text-[12px] px-2 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ color: theme.text.secondary }}
+              style={{ color: theme.text.primary }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = theme.bg.hover;
                 e.currentTarget.style.color = theme.text.primary;
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = "transparent";
-                e.currentTarget.style.color = theme.text.secondary;
+                e.currentTarget.style.color = theme.text.primary;
               }}
             >
               {isStaging ? "Unstaging..." : "Unstage All"}
@@ -383,7 +383,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
         style={{ borderTop: `1px solid ${theme.border.subtle}` }}
       >
         <GitBranch className="w-3.5 h-3.5" style={{ color: theme.text.muted }} />
-        <span className="text-[12px]" style={{ color: theme.text.secondary }}>
+        <span className="text-[12px]" style={{ color: theme.text.primary }}>
           {gitStatus?.branch || "unknown"}
         </span>
         {gitStatus?.upstream_branch && (
@@ -398,15 +398,13 @@ export function GitTab({ worktreePath }: GitTabProps) {
           <button
             onClick={handlePush}
             disabled={isPushing}
-            className="ml-auto flex items-center gap-1.5 px-2 py-1 rounded text-[12px] transition-colors"
-            style={{ background: theme.bg.tertiary, color: theme.text.secondary }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = theme.bg.hover)}
-            onMouseLeave={(e) => (e.currentTarget.style.background = theme.bg.tertiary)}
+            className="ml-auto flex items-center hover:bg-neutral-100 gap-1.5 px-1.5 py-0.5 rounded text-[11px] transition-colors"
+            style={{ color: theme.text.primary }}
           >
             {isPushing ? (
-              <Loader className="w-3.5 h-3.5 animate-spin" />
+              <Loader className="w-3 h-3 animate-spin" />
             ) : (
-              <Upload className="w-3.5 h-3.5" />
+              <Upload className="w-3 h-3" />
             )}
             Publish
           </button>
@@ -467,12 +465,6 @@ export function GitTab({ worktreePath }: GitTabProps) {
                 style={{
                   color: canCommit ? theme.text.primary : theme.text.muted,
                   cursor: canCommit ? "pointer" : "not-allowed",
-                }}
-                onMouseEnter={(e) => {
-                  if (canCommit) e.currentTarget.style.background = theme.bg.hover;
-                }}
-                onMouseLeave={(e) => {
-                  if (canCommit) e.currentTarget.style.background = theme.bg.tertiary;
                 }}
                 onClick={(e) => {
                   if (canCommit) {
