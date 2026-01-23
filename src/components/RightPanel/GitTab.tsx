@@ -465,7 +465,6 @@ export function GitTab({ worktreePath }: GitTabProps) {
                 disabled={!canCommit}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-medium transition-colors"
                 style={{
-                  background: canCommit ? theme.bg.tertiary : "transparent",
                   color: canCommit ? theme.text.primary : theme.text.muted,
                   cursor: canCommit ? "pointer" : "not-allowed",
                 }}
