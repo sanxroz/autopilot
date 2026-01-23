@@ -136,6 +136,8 @@ pub fn run() {
             watcher::start_watching_repository,
             watcher::stop_watching_repository,
             watcher::stop_all_watchers,
+            watcher::start_watching_worktree_files,
+            watcher::stop_watching_worktree_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

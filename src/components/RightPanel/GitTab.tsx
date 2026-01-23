@@ -1,21 +1,28 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   Plus,
   Minus,
   GitCommit,
   Upload,
-  Check,
   FilePlus,
   FileEdit,
   FileMinus,
   ChevronDown,
-  ChevronRight,
   Loader,
   GitBranch,
+  MoreHorizontal,
+  Square,
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
 import type { GitStatus, GitStatusFile } from "../../types";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 
 interface GitTabProps {
   worktreePath: string | null;
@@ -23,7 +30,7 @@ interface GitTabProps {
 
 function getFileIcon(status: string) {
   const statusLower = status.toLowerCase();
-  if (statusLower === "added" || statusLower === "untracked" || statusLower === "new file") {
+  if (statusLower === "added" || statusLower === "untracked") {
     return FilePlus;
   }
   if (statusLower === "deleted") {
@@ -34,7 +41,7 @@ function getFileIcon(status: string) {
 
 function getFileColor(status: string): string {
   const statusLower = status.toLowerCase();
-  if (statusLower === "added" || statusLower === "untracked" || statusLower === "new file") {
+  if (statusLower === "added" || statusLower === "untracked") {
     return "#22C55E";
   }
   if (statusLower === "deleted") {
@@ -48,12 +55,6 @@ function getFileName(path: string): string {
   return parts[parts.length - 1];
 }
 
-function getFileDir(path: string): string {
-  const parts = path.split("/");
-  if (parts.length <= 1) return "";
-  return parts.slice(0, -1).join("/");
-}
-
 export function GitTab({ worktreePath }: GitTabProps) {
   const theme = useTheme();
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
@@ -61,10 +62,8 @@ export function GitTab({ worktreePath }: GitTabProps) {
   const [commitMessage, setCommitMessage] = useState("");
   const [isCommitting, setIsCommitting] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
-  const [stagedExpanded, setStagedExpanded] = useState(true);
-  const [unstagedExpanded, setUnstagedExpanded] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const fetchStatus = useCallback(async () => {
     if (!worktreePath) {
@@ -90,13 +89,35 @@ export function GitTab({ worktreePath }: GitTabProps) {
     fetchStatus();
   }, [fetchStatus]);
 
+  useEffect(() => {
+    if (!worktreePath) return;
+
+    invoke("start_watching_worktree_files", { worktreePath }).catch(console.error);
+
+    const unlistenFileChanged = listen<{ worktree_path: string }>("file-changed", (event) => {
+      if (event.payload.worktree_path === worktreePath) {
+        fetchStatus();
+      }
+    });
+
+    const unlistenIndexChanged = listen<{ worktree_path: string }>("git-index-changed", (event) => {
+      if (event.payload.worktree_path === worktreePath) {
+        fetchStatus();
+      }
+    });
+
+    return () => {
+      invoke("stop_watching_worktree_files", { worktreePath }).catch(console.error);
+      unlistenFileChanged.then((fn) => fn());
+      unlistenIndexChanged.then((fn) => fn());
+    };
+  }, [worktreePath, fetchStatus]);
+
   const handleStageFiles = useCallback(async (files: string[]) => {
     if (!worktreePath || files.length === 0) return;
-    
     try {
       await invoke("git_stage_files", { worktreePath, files });
       await fetchStatus();
-      setSelectedFiles(new Set());
     } catch (e) {
       setError(String(e));
     }
@@ -104,11 +125,9 @@ export function GitTab({ worktreePath }: GitTabProps) {
 
   const handleUnstageFiles = useCallback(async (files: string[]) => {
     if (!worktreePath || files.length === 0) return;
-    
     try {
       await invoke("git_unstage_files", { worktreePath, files });
       await fetchStatus();
-      setSelectedFiles(new Set());
     } catch (e) {
       setError(String(e));
     }
@@ -116,11 +135,9 @@ export function GitTab({ worktreePath }: GitTabProps) {
 
   const handleStageAll = useCallback(async () => {
     if (!worktreePath) return;
-    
     try {
       await invoke("git_stage_all", { worktreePath });
       await fetchStatus();
-      setSelectedFiles(new Set());
     } catch (e) {
       setError(String(e));
     }
@@ -128,11 +145,9 @@ export function GitTab({ worktreePath }: GitTabProps) {
 
   const handleUnstageAll = useCallback(async () => {
     if (!worktreePath) return;
-    
     try {
       await invoke("git_unstage_all", { worktreePath });
       await fetchStatus();
-      setSelectedFiles(new Set());
     } catch (e) {
       setError(String(e));
     }
@@ -140,10 +155,8 @@ export function GitTab({ worktreePath }: GitTabProps) {
 
   const handleCommit = useCallback(async () => {
     if (!worktreePath || !commitMessage.trim()) return;
-    
     setIsCommitting(true);
     setError(null);
-    
     try {
       await invoke<string>("git_commit", { worktreePath, message: commitMessage.trim() });
       setCommitMessage("");
@@ -157,10 +170,8 @@ export function GitTab({ worktreePath }: GitTabProps) {
 
   const handlePush = useCallback(async () => {
     if (!worktreePath) return;
-    
     setIsPushing(true);
     setError(null);
-    
     try {
       await invoke("git_push", { worktreePath });
       await fetchStatus();
@@ -170,18 +181,6 @@ export function GitTab({ worktreePath }: GitTabProps) {
       setIsPushing(false);
     }
   }, [worktreePath, fetchStatus]);
-
-  const toggleFileSelection = useCallback((path: string) => {
-    setSelectedFiles(prev => {
-      const next = new Set(prev);
-      if (next.has(path)) {
-        next.delete(path);
-      } else {
-        next.add(path);
-      }
-      return next;
-    });
-  }, []);
 
   if (!worktreePath) {
     return (
@@ -194,19 +193,19 @@ export function GitTab({ worktreePath }: GitTabProps) {
     );
   }
 
-  if (isLoading) {
+  if (isLoading && !gitStatus) {
     return (
       <div
         className="flex-1 flex items-center justify-center gap-2 text-sm"
         style={{ color: theme.text.tertiary }}
       >
         <Loader className="w-4 h-4 animate-spin" />
-        <span>Loading status...</span>
+        <span>Loading...</span>
       </div>
     );
   }
 
-  if (error) {
+  if (error && !gitStatus) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6">
         <span className="text-sm text-center" style={{ color: theme.text.tertiary }}>
@@ -215,12 +214,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
         <button
           onClick={() => fetchStatus()}
           className="px-3 py-1.5 rounded text-xs font-medium transition-colors"
-          style={{
-            background: theme.bg.tertiary,
-            color: theme.text.secondary,
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.background = theme.bg.hover)}
-          onMouseLeave={(e) => (e.currentTarget.style.background = theme.bg.tertiary)}
+          style={{ background: theme.bg.tertiary, color: theme.text.secondary }}
         >
           Try again
         </button>
@@ -230,45 +224,26 @@ export function GitTab({ worktreePath }: GitTabProps) {
 
   const staged = gitStatus?.staged || [];
   const unstaged = gitStatus?.unstaged || [];
-  const hasChanges = staged.length > 0 || unstaged.length > 0;
+  const totalChanges = staged.length + unstaged.length;
   const canCommit = staged.length > 0 && commitMessage.trim().length > 0 && !isCommitting;
-  const canPush = gitStatus && gitStatus.ahead > 0 && !isPushing;
 
   const renderFileItem = (file: GitStatusFile, isStaged: boolean) => {
     const Icon = getFileIcon(file.status);
     const color = getFileColor(file.status);
     const fileName = getFileName(file.path);
-    const fileDir = getFileDir(file.path);
-    const isSelected = selectedFiles.has(file.path);
 
     return (
       <div
         key={file.path}
-        className="flex items-center gap-2 py-1.5 px-2 rounded cursor-pointer transition-colors group"
-        style={{
-          background: isSelected ? theme.bg.active : "transparent",
-        }}
-        onClick={() => toggleFileSelection(file.path)}
-        onMouseEnter={(e) => {
-          if (!isSelected) e.currentTarget.style.background = theme.bg.hover;
-        }}
-        onMouseLeave={(e) => {
-          if (!isSelected) e.currentTarget.style.background = "transparent";
-        }}
+        className="flex items-center gap-2 py-1 px-3 transition-colors group"
+        style={{ color: theme.text.primary }}
+        onMouseEnter={(e) => (e.currentTarget.style.background = theme.bg.hover)}
+        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
       >
-        <Icon className="w-3.5 h-3.5 flex-shrink-0" style={{ color }} />
-        <div className="flex-1 min-w-0 flex items-baseline gap-1.5">
-          <span className="text-[13px] truncate" style={{ color: theme.text.primary }}>
-            {fileName}
-          </span>
-          {fileDir && (
-            <span className="text-[11px] truncate" style={{ color: theme.text.muted }}>
-              {fileDir}
-            </span>
-          )}
-        </div>
+        <Icon className="w-4 h-4 flex-shrink-0" style={{ color }} />
+        <span className="text-[13px] flex-1 truncate">{fileName}</span>
         <button
-          className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+          className="p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
           style={{ color: theme.text.tertiary }}
           onClick={(e) => {
             e.stopPropagation();
@@ -278,222 +253,218 @@ export function GitTab({ worktreePath }: GitTabProps) {
               handleStageFiles([file.path]);
             }
           }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = theme.bg.active;
-            e.currentTarget.style.color = theme.text.primary;
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "transparent";
-            e.currentTarget.style.color = theme.text.tertiary;
-          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = theme.text.primary)}
+          onMouseLeave={(e) => (e.currentTarget.style.color = theme.text.tertiary)}
         >
-          {isStaged ? <Minus className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+          {isStaged ? <Minus className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
         </button>
+        <Square
+          className="w-3.5 h-3.5 flex-shrink-0"
+          style={{ color }}
+          fill={color}
+        />
       </div>
     );
   };
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {gitStatus?.branch && (
-        <div
-          className="px-3 py-2.5 flex items-center gap-2"
-          style={{ borderBottom: `1px solid ${theme.border.subtle}` }}
-        >
-          <GitBranch className="w-3.5 h-3.5" style={{ color: theme.text.tertiary }} />
-          <span className="text-[13px] font-medium" style={{ color: theme.text.primary }}>
-            {gitStatus.branch}
-          </span>
-          {(gitStatus.ahead > 0 || gitStatus.behind > 0) && (
-            <div className="flex items-center gap-1.5 ml-auto">
-              {gitStatus.ahead > 0 && (
-                <span
-                  className="text-[11px] px-1.5 py-0.5 rounded"
-                  style={{ background: theme.semantic.successMuted, color: theme.semantic.success }}
-                >
-                  ↑{gitStatus.ahead}
-                </span>
-              )}
-              {gitStatus.behind > 0 && (
-                <span
-                  className="text-[11px] px-1.5 py-0.5 rounded"
-                  style={{ background: theme.semantic.warningMuted, color: theme.semantic.warning }}
-                >
-                  ↓{gitStatus.behind}
-                </span>
-              )}
-            </div>
+      <div
+        className="flex items-center justify-between px-3 py-2"
+        style={{ borderBottom: `1px solid ${theme.border.subtle}` }}
+      >
+        <span className="text-[13px]" style={{ color: theme.text.secondary }}>
+          {totalChanges} Change{totalChanges !== 1 ? "s" : ""}
+        </span>
+        <div className="flex items-center gap-1">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="p-1 rounded transition-colors"
+                style={{ color: theme.text.tertiary }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = theme.bg.hover;
+                  e.currentTarget.style.color = theme.text.primary;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "transparent";
+                  e.currentTarget.style.color = theme.text.tertiary;
+                }}
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={handleStageAll} disabled={unstaged.length === 0}>
+                <Plus className="w-3.5 h-3.5" />
+                <span>Stage All</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={handleUnstageAll} disabled={staged.length === 0}>
+                <Minus className="w-3.5 h-3.5" />
+                <span>Unstage All</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          {unstaged.length > 0 && (
+            <button
+              onClick={handleStageAll}
+              className="text-[12px] px-2 py-1 rounded transition-colors"
+              style={{ color: theme.text.secondary }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = theme.bg.hover;
+                e.currentTarget.style.color = theme.text.primary;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.color = theme.text.secondary;
+              }}
+            >
+              Stage All
+            </button>
           )}
+        </div>
+      </div>
+
+      {staged.length > 0 && (
+        <div style={{ borderBottom: `1px solid ${theme.border.subtle}` }}>
+          <div
+            className="px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide"
+            style={{ color: theme.text.muted }}
+          >
+            Staged
+          </div>
+          {staged.map((file) => renderFileItem(file, true))}
         </div>
       )}
 
-      <div className="flex-1 overflow-auto">
-        {!hasChanges ? (
+      {unstaged.length > 0 && (
+        <div className="flex-1 overflow-auto">
           <div
-            className="flex flex-col items-center justify-center h-full gap-2 p-8"
-            style={{ color: theme.text.tertiary }}
+            className="px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide"
+            style={{ color: theme.text.muted }}
           >
-            <Check className="w-8 h-8" style={{ color: theme.text.muted }} />
-            <span className="text-sm">Working tree clean</span>
+            Changes
           </div>
-        ) : (
-          <>
-            {staged.length > 0 && (
-              <div className="py-2">
-                <button
-                  className="w-full px-3 py-1.5 flex items-center gap-2 transition-colors"
-                  style={{ color: theme.text.secondary }}
-                  onClick={() => setStagedExpanded(!stagedExpanded)}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = theme.bg.hover)}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                >
-                  {stagedExpanded ? (
-                    <ChevronDown className="w-3.5 h-3.5" />
-                  ) : (
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  )}
-                  <span className="text-xs font-medium uppercase tracking-wide">
-                    Staged Changes
-                  </span>
-                  <span
-                    className="text-[11px] px-1.5 py-0.5 rounded"
-                    style={{ background: theme.bg.tertiary, color: theme.text.tertiary }}
-                  >
-                    {staged.length}
-                  </span>
-                  <div className="flex-1" />
-                  <span
-                    className="text-[11px] opacity-0 group-hover:opacity-100"
-                    style={{ color: theme.text.muted }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleUnstageAll();
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = theme.text.secondary)}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = theme.text.muted)}
-                  >
-                    Unstage All
-                  </span>
-                </button>
-                {stagedExpanded && (
-                  <div className="px-1">
-                    {staged.map((file) => renderFileItem(file, true))}
-                  </div>
-                )}
-              </div>
-            )}
+          {unstaged.map((file) => renderFileItem(file, false))}
+        </div>
+      )}
 
-            {unstaged.length > 0 && (
-              <div className="py-2">
-                <button
-                  className="w-full px-3 py-1.5 flex items-center gap-2 transition-colors"
-                  style={{ color: theme.text.secondary }}
-                  onClick={() => setUnstagedExpanded(!unstagedExpanded)}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = theme.bg.hover)}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                >
-                  {unstagedExpanded ? (
-                    <ChevronDown className="w-3.5 h-3.5" />
-                  ) : (
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  )}
-                  <span className="text-xs font-medium uppercase tracking-wide">Changes</span>
-                  <span
-                    className="text-[11px] px-1.5 py-0.5 rounded"
-                    style={{ background: theme.bg.tertiary, color: theme.text.tertiary }}
-                  >
-                    {unstaged.length}
-                  </span>
-                  <div className="flex-1" />
-                  <span
-                    className="text-[11px] opacity-0 group-hover:opacity-100"
-                    style={{ color: theme.text.muted }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleStageAll();
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = theme.text.secondary)}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = theme.text.muted)}
-                  >
-                    Stage All
-                  </span>
-                </button>
-                {unstagedExpanded && (
-                  <div className="px-1">
-                    {unstaged.map((file) => renderFileItem(file, false))}
-                  </div>
-                )}
-              </div>
+      {totalChanges === 0 && (
+        <div
+          className="flex-1 flex items-center justify-center text-sm"
+          style={{ color: theme.text.tertiary }}
+        >
+          No changes
+        </div>
+      )}
+
+      <div
+        className="px-3 py-2 flex items-center gap-2"
+        style={{ borderTop: `1px solid ${theme.border.subtle}` }}
+      >
+        <GitBranch className="w-3.5 h-3.5" style={{ color: theme.text.muted }} />
+        <span className="text-[12px]" style={{ color: theme.text.secondary }}>
+          {gitStatus?.branch || "unknown"}
+        </span>
+        <span className="text-[12px]" style={{ color: theme.text.muted }}>/</span>
+        <span className="text-[12px]" style={{ color: theme.text.secondary }}>
+          {gitStatus?.branch || "unknown"}
+        </span>
+        {gitStatus && gitStatus.ahead > 0 && (
+          <button
+            onClick={handlePush}
+            disabled={isPushing}
+            className="ml-auto flex items-center gap-1.5 px-2 py-1 rounded text-[12px] transition-colors"
+            style={{ background: theme.bg.tertiary, color: theme.text.secondary }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = theme.bg.hover)}
+            onMouseLeave={(e) => (e.currentTarget.style.background = theme.bg.tertiary)}
+          >
+            {isPushing ? (
+              <Loader className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Upload className="w-3.5 h-3.5" />
             )}
-          </>
+            Publish
+          </button>
         )}
       </div>
 
       <div
-        className="p-3 flex flex-col gap-2"
+        className="px-3 py-2"
         style={{ borderTop: `1px solid ${theme.border.subtle}` }}
       >
         <textarea
+          ref={textareaRef}
           value={commitMessage}
           onChange={(e) => setCommitMessage(e.target.value)}
-          placeholder="Commit message..."
-          rows={3}
-          className="w-full px-3 py-2 rounded text-[13px] resize-none outline-none transition-colors"
-          style={{
-            background: theme.bg.secondary,
-            color: theme.text.primary,
-            border: `1px solid ${theme.border.default}`,
+          placeholder={staged.length > 0 ? `Update ${getFileName(staged[0].path)}` : "Message"}
+          rows={1}
+          className="w-full px-0 py-1 text-[13px] resize-none outline-none bg-transparent"
+          style={{ color: theme.text.primary }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && canCommit) {
+              e.preventDefault();
+              handleCommit();
+            }
           }}
-          onFocus={(e) => (e.currentTarget.style.borderColor = theme.accent.primary)}
-          onBlur={(e) => (e.currentTarget.style.borderColor = theme.border.default)}
         />
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleCommit}
-            disabled={!canCommit}
-            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded text-[13px] font-medium transition-all"
-            style={{
-              background: canCommit ? theme.accent.primary : theme.bg.tertiary,
-              color: canCommit ? theme.bg.primary : theme.text.muted,
-              opacity: canCommit ? 1 : 0.6,
-              cursor: canCommit ? "pointer" : "not-allowed",
-            }}
-            onMouseEnter={(e) => {
-              if (canCommit) e.currentTarget.style.background = theme.accent.hover;
-            }}
-            onMouseLeave={(e) => {
-              if (canCommit) e.currentTarget.style.background = theme.accent.primary;
-            }}
-          >
-            {isCommitting ? (
-              <Loader className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <GitCommit className="w-3.5 h-3.5" />
-            )}
-            <span>Commit</span>
-          </button>
-          {canPush && (
+      </div>
+
+      <div
+        className="px-3 py-2 flex items-center gap-2"
+        style={{ borderTop: `1px solid ${theme.border.subtle}` }}
+      >
+        <div className="flex-1" />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
             <button
-              onClick={handlePush}
-              disabled={isPushing}
-              className="flex items-center justify-center gap-2 px-3 py-2 rounded text-[13px] font-medium transition-colors"
+              disabled={!canCommit}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-medium transition-colors"
               style={{
-                background: theme.bg.tertiary,
-                color: theme.text.secondary,
-                cursor: isPushing ? "not-allowed" : "pointer",
+                background: canCommit ? theme.bg.tertiary : theme.bg.secondary,
+                color: canCommit ? theme.text.primary : theme.text.muted,
+                cursor: canCommit ? "pointer" : "not-allowed",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = theme.bg.hover)}
-              onMouseLeave={(e) => (e.currentTarget.style.background = theme.bg.tertiary)}
+              onMouseEnter={(e) => {
+                if (canCommit) e.currentTarget.style.background = theme.bg.hover;
+              }}
+              onMouseLeave={(e) => {
+                if (canCommit) e.currentTarget.style.background = theme.bg.tertiary;
+              }}
+              onClick={(e) => {
+                if (canCommit) {
+                  e.preventDefault();
+                  handleCommit();
+                }
+              }}
             >
-              {isPushing ? (
+              {isCommitting ? (
                 <Loader className="w-3.5 h-3.5 animate-spin" />
               ) : (
-                <Upload className="w-3.5 h-3.5" />
+                <GitCommit className="w-3.5 h-3.5" />
               )}
-              <span>Push</span>
+              Commit {staged.length > 0 ? "Staged" : ""}
+              <ChevronDown className="w-3.5 h-3.5 opacity-50" />
             </button>
-          )}
-        </div>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={handleCommit} disabled={!canCommit}>
+              <GitCommit className="w-3.5 h-3.5" />
+              <span>Commit Staged</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={async () => {
+                if (!worktreePath || !commitMessage.trim()) return;
+                await handleStageAll();
+                await handleCommit();
+              }}
+              disabled={totalChanges === 0 || !commitMessage.trim()}
+            >
+              <GitCommit className="w-3.5 h-3.5" />
+              <span>Commit All</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
   );
