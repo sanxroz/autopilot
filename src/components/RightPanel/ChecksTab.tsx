@@ -104,9 +104,8 @@ export function ChecksTab({
   const getPRDataCache = useAppStore((state) => state.getPRDataCache);
   const setPRDataCache = useAppStore((state) => state.setPRDataCache);
   
-  const cachedData = repoPath && prNumber ? getPRDataCache(repoPath, prNumber) : null;
-  const [checksResult, setChecksResult] = useState<PRChecksResult | null>(cachedData?.checksResult ?? null);
-  const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(cachedData?.prDetails ?? null);
+  const [checksResult, setChecksResult] = useState<PRChecksResult | null>(null);
+  const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const lastPrStatusRef = useRef<PRStatus | null>(null);
@@ -154,13 +153,24 @@ export function ChecksTab({
     if (cached?.checksResult && cached?.prDetails) {
       setChecksResult(cached.checksResult);
       setPrDetails(cached.prDetails);
+      setError(null);
     } else {
       fetchData();
     }
   }, [repoPath, prNumber, getPRDataCache, fetchData]);
 
   useEffect(() => {
-    if (prStatus && prStatus !== lastPrStatusRef.current) {
+    if (!prStatus) return;
+    
+    const prev = lastPrStatusRef.current;
+    const hasChanged = !prev || 
+      prStatus.checks_status !== prev.checks_status ||
+      prStatus.review_decision !== prev.review_decision ||
+      prStatus.state !== prev.state ||
+      prStatus.merged !== prev.merged ||
+      prStatus.draft !== prev.draft;
+    
+    if (hasChanged) {
       lastPrStatusRef.current = prStatus;
       fetchData(true);
     }

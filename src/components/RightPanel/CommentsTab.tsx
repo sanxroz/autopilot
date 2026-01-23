@@ -124,8 +124,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
   const getPRDataCache = useAppStore((state) => state.getPRDataCache);
   const setPRDataCache = useAppStore((state) => state.setPRDataCache);
   
-  const cachedData = repoPath && prNumber ? getPRDataCache(repoPath, prNumber) : null;
-  const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(cachedData?.prDetails ?? null);
+  const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedImage, setExpandedImage] = useState<{ src: string; alt: string } | null>(null);
@@ -168,13 +167,24 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
     const cached = getPRDataCache(repoPath, prNumber);
     if (cached?.prDetails) {
       setPrDetails(cached.prDetails);
+      setError(null);
     } else {
       fetchData();
     }
   }, [repoPath, prNumber, getPRDataCache, fetchData]);
 
   useEffect(() => {
-    if (prStatus && prStatus !== lastPrStatusRef.current) {
+    if (!prStatus) return;
+    
+    const prev = lastPrStatusRef.current;
+    const hasChanged = !prev || 
+      prStatus.checks_status !== prev.checks_status ||
+      prStatus.review_decision !== prev.review_decision ||
+      prStatus.state !== prev.state ||
+      prStatus.merged !== prev.merged ||
+      prStatus.draft !== prev.draft;
+    
+    if (hasChanged) {
       lastPrStatusRef.current = prStatus;
       fetchData(true);
     }

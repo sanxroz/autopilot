@@ -63,6 +63,7 @@ interface AppStore {
   setPRStatusBatch: (batch: Record<string, Record<string, PRStatus>>) => void;
   setPRDataCache: (repoPath: string, prNumber: number, data: { checksResult?: PRChecksResult | null; prDetails?: PRDetailedInfo | null }) => void;
   getPRDataCache: (repoPath: string, prNumber: number) => PRDataCache | null;
+  clearPRDataCacheForRepo: (repoPath: string) => void;
   setPollingInterval: (intervalMs: number) => void;
   checkGitHubCli: () => Promise<void>;
   refreshProcessStatuses: () => Promise<void>;
@@ -459,7 +460,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   getPRDataCache: (repoPath: string, prNumber: number) => {
     const cacheKey = `${repoPath}:${prNumber}`;
-    return get().prDataCache[cacheKey] || null;
+    const cached = get().prDataCache[cacheKey];
+    if (!cached) return null;
+    
+    const CACHE_TTL_MS = 5 * 60 * 1000;
+    if (Date.now() - cached.lastUpdated > CACHE_TTL_MS) return null;
+    
+    return cached;
+  },
+
+  clearPRDataCacheForRepo: (repoPath: string) => {
+    set((state) => {
+      const prefix = `${repoPath}:`;
+      const newCache = Object.fromEntries(
+        Object.entries(state.prDataCache).filter(([key]) => !key.startsWith(prefix))
+      );
+      return { prDataCache: newCache };
+    });
   },
 
   setPollingInterval: (intervalMs: number) => {
