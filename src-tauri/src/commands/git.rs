@@ -771,6 +771,7 @@ pub struct GitStatus {
     pub staged: Vec<GitStatusFile>,
     pub unstaged: Vec<GitStatusFile>,
     pub branch: Option<String>,
+    pub upstream_branch: Option<String>,
     pub ahead: usize,
     pub behind: usize,
 }
@@ -794,7 +795,11 @@ pub async fn get_git_status(worktree_path: String) -> Result<GitStatus, String> 
             .map_err(|e| e.message().to_string())?;
         
         for entry in statuses.iter() {
-            let path = entry.path().unwrap_or("").to_string();
+            // Skip entries with invalid UTF-8 paths
+            let path = match entry.path() {
+                Some(p) if !p.is_empty() => p.to_string(),
+                _ => continue,
+            };
             let status = entry.status();
             
             // Check staged changes (index)
@@ -849,13 +854,15 @@ pub async fn get_git_status(worktree_path: String) -> Result<GitStatus, String> 
         // Get branch info
         let branch = repo.head().ok().and_then(|h| h.shorthand().map(String::from));
         
-        // Get ahead/behind counts
-        let (ahead, behind) = get_ahead_behind(&repo).unwrap_or((0, 0));
+        let (upstream_branch, ahead, behind) = get_upstream_info(&repo)
+            .map(|(name, ahead, behind)| (Some(name), ahead, behind))
+            .unwrap_or((None, 0, 0));
         
         Ok::<GitStatus, String>(GitStatus {
             staged,
             unstaged,
             branch,
+            upstream_branch,
             ahead,
             behind,
         })
@@ -864,19 +871,18 @@ pub async fn get_git_status(worktree_path: String) -> Result<GitStatus, String> 
     .map_err(|e| e.to_string())?
 }
 
-fn get_ahead_behind(repo: &Repository) -> Option<(usize, usize)> {
+fn get_upstream_info(repo: &Repository) -> Option<(String, usize, usize)> {
     let head = repo.head().ok()?;
     let local_oid = head.target()?;
-    
+
     let branch_name = head.shorthand()?;
-    let upstream_name = format!("origin/{}", branch_name);
-    
-    let upstream_ref = repo
-        .find_branch(&upstream_name, BranchType::Remote)
-        .ok()?;
-    let upstream_oid = upstream_ref.get().target()?;
-    
-    repo.graph_ahead_behind(local_oid, upstream_oid).ok()
+    let local_branch = repo.find_branch(branch_name, BranchType::Local).ok()?;
+    let upstream_branch = local_branch.upstream().ok()?;
+    let upstream_name = upstream_branch.name().ok()??;
+    let upstream_oid = upstream_branch.get().target()?;
+
+    let (ahead, behind) = repo.graph_ahead_behind(local_oid, upstream_oid).ok()?;
+    Some((upstream_name.to_string(), ahead, behind))
 }
 
 #[tauri::command]
@@ -968,19 +974,34 @@ pub async fn git_commit(worktree_path: String, message: String) -> Result<String
         
         let signature = repo.signature().map_err(|e| e.message().to_string())?;
         
-        let head = repo.head().map_err(|e| e.message().to_string())?;
-        let parent_commit = head.peel_to_commit().map_err(|e| e.message().to_string())?;
-        
-        let commit_oid = repo
-            .commit(
-                Some("HEAD"),
-                &signature,
-                &signature,
-                &message,
-                &tree,
-                &[&parent_commit],
-            )
-            .map_err(|e| e.message().to_string())?;
+        // Handle initial commit (unborn HEAD) vs normal commit
+        let commit_oid = match repo.head() {
+            Ok(head) => {
+                let parent_commit = head.peel_to_commit().map_err(|e| e.message().to_string())?;
+                repo.commit(
+                    Some("HEAD"),
+                    &signature,
+                    &signature,
+                    &message,
+                    &tree,
+                    &[&parent_commit],
+                )
+                .map_err(|e| e.message().to_string())?
+            }
+            Err(e) if e.code() == git2::ErrorCode::UnbornBranch => {
+                // Initial commit - no parent
+                repo.commit(
+                    Some("HEAD"),
+                    &signature,
+                    &signature,
+                    &message,
+                    &tree,
+                    &[],
+                )
+                .map_err(|e| e.message().to_string())?
+            }
+            Err(e) => return Err(e.message().to_string()),
+        };
         
         Ok::<String, String>(commit_oid.to_string())
     })
@@ -990,20 +1011,22 @@ pub async fn git_commit(worktree_path: String, message: String) -> Result<String
 
 #[tauri::command]
 pub async fn git_push(worktree_path: String) -> Result<(), String> {
-    use std::process::Command;
-    
-    let output = Command::new("git")
-        .args(["push"])
-        .current_dir(&worktree_path)
-        .output()
-        .map_err(|e| format!("Failed to run git push: {}", e))?;
-    
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git push failed: {}", stderr));
-    }
-    
-    Ok(())
+    tokio::task::spawn_blocking(move || {
+        let output = Command::new("git")
+            .args(["push"])
+            .current_dir(&worktree_path)
+            .output()
+            .map_err(|e| format!("Failed to run git push: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("git push failed: {}", stderr));
+        }
+
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1031,18 +1054,22 @@ pub async fn git_stage_all(worktree_path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn git_unstage_all(worktree_path: String) -> Result<(), String> {
-    let output = Command::new("git")
-        .args(["reset", "HEAD"])
-        .current_dir(&worktree_path)
-        .output()
-        .map_err(|e| format!("Failed to run git reset: {}", e))?;
-    
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("git reset failed: {}", stderr));
-    }
-    
-    Ok(())
+    tokio::task::spawn_blocking(move || {
+        let output = Command::new("git")
+            .args(["reset", "HEAD"])
+            .current_dir(&worktree_path)
+            .output()
+            .map_err(|e| format!("Failed to run git reset: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("git reset failed: {}", stderr));
+        }
+
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -1051,64 +1078,84 @@ pub async fn generate_commit_message(
     agent: String,
 ) -> Result<String, String> {
     let agent_cmd = find_cli_tool(&agent)?;
-    
-    let prompt = "Look at my staged changes (use git diff --cached) and generate a concise commit message. Return ONLY the commit message wrapped in square brackets like [commit message here]. No other text.";
-    
-    let output = match agent.as_str() {
-        "opencode" => {
-            Command::new(&agent_cmd)
-                .args(["run", prompt])
-                .current_dir(&worktree_path)
-                .output()
-                .map_err(|e| format!("Failed to run {}: {}", agent, e))?
+
+    tokio::task::spawn_blocking(move || {
+        let prompt = "Look at my staged changes (use git diff --cached) and generate a concise commit message. Return ONLY the commit message wrapped in XML tags like <commit_message>your message here</commit_message>. No other text.";
+
+        let output = match agent.as_str() {
+            "opencode" => {
+                Command::new(&agent_cmd)
+                    .args(["run", prompt])
+                    .current_dir(&worktree_path)
+                    .output()
+                    .map_err(|e| format!("Failed to run {}: {}", agent, e))?
+            }
+            "claude" => {
+                Command::new(&agent_cmd)
+                    .args([
+                        "-p", prompt,
+                        "--allowedTools", "Bash(git diff:*),Bash(git status:*)"
+                    ])
+                    .current_dir(&worktree_path)
+                    .output()
+                    .map_err(|e| format!("Failed to run {}: {}", agent, e))?
+            }
+            "aider" => {
+                Command::new(&agent_cmd)
+                    .args(["--message", prompt, "--yes"])
+                    .current_dir(&worktree_path)
+                    .output()
+                    .map_err(|e| format!("Failed to run {}: {}", agent, e))?
+            }
+            _ => {
+                Command::new(&agent_cmd)
+                    .args(["run", prompt])
+                    .current_dir(&worktree_path)
+                    .output()
+                    .map_err(|e| format!("Failed to run {}: {}", agent, e))?
+            }
+        };
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("{} failed: {}", agent, stderr));
         }
-        "claude" => {
-            Command::new(&agent_cmd)
-                .args([
-                    "-p", prompt,
-                    "--allowedTools", "Bash(git diff:*),Bash(git status:*)"
-                ])
-                .current_dir(&worktree_path)
-                .output()
-                .map_err(|e| format!("Failed to run {}: {}", agent, e))?
+
+        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+
+        // Primary: XML tags (most reliable)
+        let xml_re = Regex::new(r"(?s)<commit_message>\s*(.*?)\s*</commit_message>").map_err(|e| e.to_string())?;
+        if let Some(captures) = xml_re.captures(&stdout) {
+            if let Some(message) = captures.get(1) {
+                let msg = message.as_str().trim();
+                if !msg.is_empty() {
+                    return Ok(msg.to_string());
+                }
+            }
         }
-        "aider" => {
-            Command::new(&agent_cmd)
-                .args(["--message", prompt, "--yes"])
-                .current_dir(&worktree_path)
-                .output()
-                .map_err(|e| format!("Failed to run {}: {}", agent, e))?
+
+        // Fallback: square brackets (legacy compatibility)
+        let bracket_re = Regex::new(r"\[([^\]]+)\]").map_err(|e| e.to_string())?;
+        if let Some(captures) = bracket_re.captures(&stdout) {
+            if let Some(message) = captures.get(1) {
+                let msg = message.as_str().trim();
+                if !msg.is_empty() {
+                    return Ok(msg.to_string());
+                }
+            }
         }
-        _ => {
-            Command::new(&agent_cmd)
-                .args(["run", prompt])
-                .current_dir(&worktree_path)
-                .output()
-                .map_err(|e| format!("Failed to run {}: {}", agent, e))?
+
+        // Last resort: last non-empty line
+        let lines: Vec<&str> = stdout.lines()
+            .filter(|l| !l.trim().is_empty())
+            .collect();
+
+        if let Some(last_line) = lines.last() {
+            return Ok(last_line.trim().to_string());
         }
-    };
-    
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("{} failed: {}", agent, stderr));
-    }
-    
-    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    
-    let re = Regex::new(r"\[([^\]]+)\]").map_err(|e| e.to_string())?;
-    if let Some(captures) = re.captures(&stdout) {
-        if let Some(message) = captures.get(1) {
-            return Ok(message.as_str().to_string());
-        }
-    }
-    
-    let lines: Vec<&str> = stdout.lines()
-        .filter(|l| !l.trim().is_empty())
-        .collect();
-    
-    if let Some(last_line) = lines.last() {
-        return Ok(last_line.trim().to_string());
-    }
-    
-    Err("Could not extract commit message from AI response".to_string())
+
+        Err("Could not extract commit message from AI response".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

@@ -245,8 +245,6 @@ impl GitWatcher {
     pub fn unwatch_repository(&self, repo_path: &str) {
         let mut watchers = self.watchers.lock();
         watchers.remove(repo_path);
-        let mut file_watchers = self.file_watchers.lock();
-        file_watchers.remove(repo_path);
     }
 
     pub fn unwatch_all(&self) {

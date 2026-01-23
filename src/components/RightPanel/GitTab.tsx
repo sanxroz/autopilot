@@ -65,8 +65,11 @@ export function GitTab({ worktreePath }: GitTabProps) {
   const [isPushing, setIsPushing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isStaging, setIsStaging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const defaultAIAgent = useAppStore((state) => state.defaultAIAgent);
+
+  const isOperationInProgress = isStaging || isCommitting || isPushing || isGenerating;
 
   const fetchStatus = useCallback(async () => {
     if (!worktreePath) {
@@ -117,44 +120,56 @@ export function GitTab({ worktreePath }: GitTabProps) {
   }, [worktreePath, fetchStatus]);
 
   const handleStageFiles = useCallback(async (files: string[]) => {
-    if (!worktreePath || files.length === 0) return;
+    if (!worktreePath || files.length === 0 || isOperationInProgress) return;
+    setIsStaging(true);
     try {
       await invoke("git_stage_files", { worktreePath, files });
       await fetchStatus();
     } catch (e) {
       setError(String(e));
+    } finally {
+      setIsStaging(false);
     }
-  }, [worktreePath, fetchStatus]);
+  }, [worktreePath, fetchStatus, isOperationInProgress]);
 
   const handleUnstageFiles = useCallback(async (files: string[]) => {
-    if (!worktreePath || files.length === 0) return;
+    if (!worktreePath || files.length === 0 || isOperationInProgress) return;
+    setIsStaging(true);
     try {
       await invoke("git_unstage_files", { worktreePath, files });
       await fetchStatus();
     } catch (e) {
       setError(String(e));
+    } finally {
+      setIsStaging(false);
     }
-  }, [worktreePath, fetchStatus]);
+  }, [worktreePath, fetchStatus, isOperationInProgress]);
 
   const handleStageAll = useCallback(async () => {
-    if (!worktreePath) return;
+    if (!worktreePath || isOperationInProgress) return;
+    setIsStaging(true);
     try {
       await invoke("git_stage_all", { worktreePath });
       await fetchStatus();
     } catch (e) {
       setError(String(e));
+    } finally {
+      setIsStaging(false);
     }
-  }, [worktreePath, fetchStatus]);
+  }, [worktreePath, fetchStatus, isOperationInProgress]);
 
   const handleUnstageAll = useCallback(async () => {
-    if (!worktreePath) return;
+    if (!worktreePath || isOperationInProgress) return;
+    setIsStaging(true);
     try {
       await invoke("git_unstage_all", { worktreePath });
       await fetchStatus();
     } catch (e) {
       setError(String(e));
+    } finally {
+      setIsStaging(false);
     }
-  }, [worktreePath, fetchStatus]);
+  }, [worktreePath, fetchStatus, isOperationInProgress]);
 
   const handleCommit = useCallback(async () => {
     if (!worktreePath || !commitMessage.trim()) return;
@@ -263,8 +278,9 @@ export function GitTab({ worktreePath }: GitTabProps) {
         <Icon className="w-4 h-4 flex-shrink-0" style={{ color }} />
         <span className="text-[13px] flex-1 truncate">{fileName}</span>
         <button
-          className="p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+          className="p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
           style={{ color: theme.text.tertiary }}
+          disabled={isOperationInProgress}
           onClick={(e) => {
             e.stopPropagation();
             if (isStaged) {
@@ -276,7 +292,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
           onMouseEnter={(e) => (e.currentTarget.style.color = theme.text.primary)}
           onMouseLeave={(e) => (e.currentTarget.style.color = theme.text.tertiary)}
         >
-          {isStaged ? <Minus className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+          {isStaging ? <Loader className="w-4 h-4 animate-spin" /> : isStaged ? <Minus className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
         </button>
       </div>
     );
@@ -294,7 +310,8 @@ export function GitTab({ worktreePath }: GitTabProps) {
           {unstaged.length > 0 ? (
             <button
               onClick={handleStageAll}
-              className="text-[12px] px-2 py-1 rounded transition-colors"
+              disabled={isOperationInProgress}
+              className="text-[12px] px-2 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ color: theme.text.secondary }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = theme.bg.hover;
@@ -305,12 +322,13 @@ export function GitTab({ worktreePath }: GitTabProps) {
                 e.currentTarget.style.color = theme.text.secondary;
               }}
             >
-              Stage All
+              {isStaging ? "Staging..." : "Stage All"}
             </button>
           ) : staged.length > 0 ? (
             <button
               onClick={handleUnstageAll}
-              className="text-[12px] px-2 py-1 rounded transition-colors"
+              disabled={isOperationInProgress}
+              className="text-[12px] px-2 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ color: theme.text.secondary }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.background = theme.bg.hover;
@@ -321,7 +339,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
                 e.currentTarget.style.color = theme.text.secondary;
               }}
             >
-              Unstage All
+              {isStaging ? "Unstaging..." : "Unstage All"}
             </button>
           ) : null}
         </div>
@@ -368,10 +386,14 @@ export function GitTab({ worktreePath }: GitTabProps) {
         <span className="text-[12px]" style={{ color: theme.text.secondary }}>
           {gitStatus?.branch || "unknown"}
         </span>
-        <span className="text-[12px]" style={{ color: theme.text.muted }}>/</span>
-        <span className="text-[12px]" style={{ color: theme.text.secondary }}>
-          {gitStatus?.branch || "unknown"}
-        </span>
+        {gitStatus?.upstream_branch && (
+          <>
+            <span className="text-[12px]" style={{ color: theme.text.muted }}>/</span>
+            <span className="text-[12px]" style={{ color: theme.text.tertiary }}>
+              {gitStatus.upstream_branch}
+            </span>
+          </>
+        )}
         {gitStatus && gitStatus.ahead > 0 && (
           <button
             onClick={handlePush}
@@ -430,9 +452,9 @@ export function GitTab({ worktreePath }: GitTabProps) {
             title="Generate commit message with AI"
           >
             {isGenerating ? (
-              <Loader className="w-4 h-4 animate-spin" />
+              <Loader className="w-3.5 h-3.5 animate-spin" />
             ) : (
-              <Sparkles className="w-4 h-4" />
+              <Sparkles className="w-3.5 h-3.5" />
             )}
           </button>
         </div>

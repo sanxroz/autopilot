@@ -68,6 +68,7 @@ export interface GitStatus {
   staged: GitStatusFile[];
   unstaged: GitStatusFile[];
   branch: string | null;
+  upstream_branch: string | null;
   ahead: number;
   behind: number;
 }
