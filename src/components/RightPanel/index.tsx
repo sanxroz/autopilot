@@ -7,13 +7,12 @@ import {
   Loader,
   ExternalLink,
   ListTodo,
-  MessageCircle,
+  ClipboardList,
   type LucideIcon,
   Diff,
-  Play,
+  ScanSearch,
   GitBranch,
   MessageSquare,
-  GitCommitHorizontal,
 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTheme } from "../../hooks/useTheme";
@@ -194,11 +193,11 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         icon: ListTodo,
         color: getChecksColor(),
       },
-      { id: "comments", label: "Comments", icon: MessageCircle },
+      { id: "comments", label: "Comments", icon: ClipboardList },
       ...(showChangesTab
         ? [{ id: "changes" as TabId, label: "Changes", icon: Diff }]
         : []),
-      { id: "git", label: "Git", icon: GitCommitHorizontal },
+      { id: "git", label: "Git", icon: GitBranch },
     ];
 
   return (
@@ -312,7 +311,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
                 color: theme.text.primary,
               }}
             >
-              <Play className="w-3.5 h-3.5" />
+              <ScanSearch className="w-3.5 h-3.5" />
               Review
               <ChevronDown className="w-3.5 h-3.5 opacity-50" />
             </button>
@@ -358,7 +357,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
                       color: customPrompt.trim() ? "white" : theme.text.muted,
                     }}
                   >
-                    <Play className="w-3 h-3" />
+                    <ScanSearch className="w-3 h-3" />
                     Run
                   </button>
                 </div>
@@ -366,11 +365,11 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
             ) : (
               <>
                 <DropdownMenuItem onClick={() => handleRunReview("uncommitted")}>
-                  <Play className="w-3.5 h-3.5" />
+                  <ScanSearch className="w-3.5 h-3.5" />
                   <span>Uncommitted changes</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => handleRunReview("base")}>
-                  <GitBranch className="w-3.5 h-3.5" />
+                  <GitPullRequest className="w-3.5 h-3.5" />
                   <span>Against base branch</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem

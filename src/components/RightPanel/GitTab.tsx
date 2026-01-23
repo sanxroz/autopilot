@@ -12,7 +12,6 @@ import {
   ChevronDown,
   Loader,
   GitBranch,
-  MoreHorizontal,
   Sparkles,
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
@@ -24,6 +23,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+import { cn } from "../../utils/cn";
 
 interface GitTabProps {
   worktreePath: string | null;
@@ -291,35 +291,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
           {totalChanges} Change{totalChanges !== 1 ? "s" : ""}
         </span>
         <div className="flex items-center gap-1">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="p-1 rounded transition-colors"
-                style={{ color: theme.text.tertiary }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = theme.bg.hover;
-                  e.currentTarget.style.color = theme.text.primary;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "transparent";
-                  e.currentTarget.style.color = theme.text.tertiary;
-                }}
-              >
-                <MoreHorizontal className="w-4 h-4" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleStageAll} disabled={unstaged.length === 0}>
-                <Plus className="w-3 h-3" />
-                <span>Stage All</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleUnstageAll} disabled={staged.length === 0}>
-                <Minus className="w-3 h-3" />
-                <span>Unstage All</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          {unstaged.length > 0 && (
+          {unstaged.length > 0 ? (
             <button
               onClick={handleStageAll}
               className="text-[12px] px-2 py-1 rounded transition-colors"
@@ -335,14 +307,30 @@ export function GitTab({ worktreePath }: GitTabProps) {
             >
               Stage All
             </button>
-          )}
+          ) : staged.length > 0 ? (
+            <button
+              onClick={handleUnstageAll}
+              className="text-[12px] px-2 py-1 rounded transition-colors"
+              style={{ color: theme.text.secondary }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = theme.bg.hover;
+                e.currentTarget.style.color = theme.text.primary;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.color = theme.text.secondary;
+              }}
+            >
+              Unstage All
+            </button>
+          ) : null}
         </div>
       </div>
 
       {staged.length > 0 && (
-        <div className="flex-1 overflow-auto" style={{ borderBottom: `1px solid ${theme.border.subtle}` }}>
+        <div className={cn("overflow-auto", unstaged.length === 0 && "flex-1")}>
           <div
-            className="px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide"
+            className="px-3 py-1.5 text-[11px] font-medium tracking-wide"
             style={{ color: theme.text.muted }}
           >
             Staged
@@ -354,7 +342,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
       {unstaged.length > 0 && (
         <div className="flex-1 overflow-auto">
           <div
-            className="px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide"
+            className="px-3 py-1.5 text-[11px] font-medium tracking-wide"
             style={{ color: theme.text.muted }}
           >
             Changes
