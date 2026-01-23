@@ -7,10 +7,10 @@ import {
   Loader,
   ExternalLink,
   ListTodo,
-  MessageCircle,
+  ClipboardList,
   type LucideIcon,
   Diff,
-  Play,
+  ScanSearch,
   GitBranch,
   MessageSquare,
 } from "lucide-react";
@@ -22,6 +22,7 @@ import { useAppStore } from "../../store";
 import { ChecksTab } from "./ChecksTab";
 import { CommentsTab } from "./CommentsTab";
 import { DiffTab } from "./DiffTab";
+import { GitTab } from "./GitTab";
 import { Tabs, TabsList, TabsTrigger } from "../ui/segmented-control";
 import * as Tooltip from "../ui/tooltip";
 import {
@@ -37,7 +38,7 @@ interface RightPanelProps {
   onClose: () => void;
 }
 
-type TabId = "checks" | "comments" | "changes";
+type TabId = "checks" | "comments" | "changes" | "git";
 
 const MIN_WIDTH = 300;
 const MAX_WIDTH = 800;
@@ -192,10 +193,11 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         icon: ListTodo,
         color: getChecksColor(),
       },
-      { id: "comments", label: "Comments", icon: MessageCircle },
+      { id: "comments", label: "Comments", icon: ClipboardList },
       ...(showChangesTab
         ? [{ id: "changes" as TabId, label: "Changes", icon: Diff }]
         : []),
+      { id: "git", label: "Git", icon: GitBranch },
     ];
 
   return (
@@ -309,7 +311,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
                 color: theme.text.primary,
               }}
             >
-              <Play className="w-3.5 h-3.5" />
+              <ScanSearch className="w-3.5 h-3.5" />
               Review
               <ChevronDown className="w-3.5 h-3.5 opacity-50" />
             </button>
@@ -374,7 +376,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
                         color: customPrompt.trim() ? "white" : theme.text.muted,
                       }}
                     >
-                      <Play className="w-3 h-3" />
+                      <ScanSearch className="w-3 h-3" />
                       Run
                     </button>
                   </div>
@@ -391,11 +393,11 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
                   }}
                 >
                   <DropdownMenuItem onClick={() => handleRunReview("uncommitted")}>
-                    <Play className="w-3 h-3" />
+                    <ScanSearch className="w-3 h-3" />
                     <span>Uncommitted changes</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => handleRunReview("base")}>
-                    <GitBranch className="w-3 h-3" />
+                    <GitPullRequest className="w-3 h-3" />
                     <span>Against base branch</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem
@@ -569,6 +571,22 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
               className="h-full overflow-hidden flex flex-col"
             >
               <DiffTab worktreePath={worktreePath} />
+            </motion.div>
+          )}
+
+          {activeTab === "git" && (
+            <motion.div
+              key="git"
+              initial={reducedMotion ? { opacity: 1 } : { opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: -10 }}
+              transition={{
+                duration: reducedMotion ? 0 : 0.15,
+                ease: [0.215, 0.61, 0.355, 1],
+              }}
+              className="h-full overflow-hidden flex flex-col"
+            >
+              <GitTab worktreePath={worktreePath} />
             </motion.div>
           )}
         </AnimatePresence>

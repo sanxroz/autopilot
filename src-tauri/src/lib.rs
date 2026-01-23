@@ -109,6 +109,14 @@ pub fn run() {
             git::get_uncommitted_files,
             git::get_uncommitted_diff,
             git::get_file_content,
+            git::get_git_status,
+            git::git_stage_files,
+            git::git_unstage_files,
+            git::git_commit,
+            git::git_push,
+            git::git_stage_all,
+            git::git_unstage_all,
+            git::generate_commit_message,
             github::check_gh_cli,
             github::check_gh_auth,
             github::get_pr_for_branch,
@@ -129,6 +137,8 @@ pub fn run() {
             watcher::start_watching_repository,
             watcher::stop_watching_repository,
             watcher::stop_all_watchers,
+            watcher::start_watching_worktree_files,
+            watcher::stop_watching_worktree_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

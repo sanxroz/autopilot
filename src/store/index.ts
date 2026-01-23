@@ -1,13 +1,14 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { load } from '@tauri-apps/plugin-store';
-import type { Repository, WorktreeInfo, TerminalInstance, ProcessStatus, DiffViewMode } from '../types';
+import type { Repository, WorktreeInfo, TerminalInstance, ProcessStatus, DiffViewMode, AIAgent } from '../types';
 import type { GitHubSettings, PRStatus, PRChecksResult, PRDetailedInfo } from '../types/github';
 import { DEFAULT_GITHUB_SETTINGS } from '../types/github';
 import { setThemeMode as setGlobalThemeMode, getThemeMode, type ThemeMode } from '../theme';
 
 interface PersistedState {
   repositoryPaths: string[];
+  defaultAIAgent?: AIAgent;
 }
 
 interface WorktreeTerminals {
@@ -37,6 +38,7 @@ interface AppStore {
   diffOverlayOpen: boolean;
   diffViewMode: DiffViewMode;
   processStatusByPath: Record<string, ProcessStatus>;
+  defaultAIAgent: AIAgent;
 
   initialize: () => Promise<void>;
   addRepository: (path: string) => Promise<void>;
@@ -68,6 +70,7 @@ interface AppStore {
   checkGitHubCli: () => Promise<void>;
   refreshProcessStatuses: () => Promise<void>;
   getProcessStatus: (worktreePath: string) => ProcessStatus;
+  setDefaultAIAgent: (agent: AIAgent) => Promise<void>;
 }
 
 const STORE_PATH = 'autopilot-settings.json';
@@ -77,7 +80,8 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
     const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
     const paths = await store.get<string[]>('repositoryPaths');
     const themeMode = await store.get<ThemeMode>('themeMode');
-    return { repositoryPaths: paths || [], themeMode };
+    const defaultAIAgent = await store.get<AIAgent>('defaultAIAgent');
+    return { repositoryPaths: paths || [], themeMode, defaultAIAgent };
   } catch {
     return { repositoryPaths: [] };
   }
@@ -109,6 +113,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   diffOverlayOpen: false,
   diffViewMode: 'overlay',
   processStatusByPath: {},
+  defaultAIAgent: 'opencode',
 
   initialize: async () => {
     if (get().isInitialized) return;
@@ -117,6 +122,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     
     if (persisted.themeMode) {
       setGlobalThemeMode(persisted.themeMode);
+    }
+
+    if (persisted.defaultAIAgent) {
+      set({ defaultAIAgent: persisted.defaultAIAgent });
     }
     
     for (const path of persisted.repositoryPaths) {
@@ -521,5 +530,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   getProcessStatus: (worktreePath: string): ProcessStatus => {
     return get().processStatusByPath[worktreePath] || 'none';
+  },
+
+  setDefaultAIAgent: async (agent: AIAgent) => {
+    set({ defaultAIAgent: agent });
+    try {
+      const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
+      await store.set('defaultAIAgent', agent);
+      await store.save();
+    } catch (e) {
+      console.error('Failed to save default AI agent:', e);
+    }
   },
 }));

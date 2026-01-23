@@ -26,8 +26,14 @@ pub struct GitIndexChangeEvent {
     pub worktree_path: String,
 }
 
+#[derive(Clone, serde::Serialize)]
+pub struct FileChangeEvent {
+    pub worktree_path: String,
+}
+
 pub struct GitWatcher {
     watchers: Arc<Mutex<HashMap<String, RecommendedWatcher>>>,
+    file_watchers: Arc<Mutex<HashMap<String, RecommendedWatcher>>>,
     app_handle: AppHandle,
 }
 
@@ -39,6 +45,7 @@ impl GitWatcher {
     pub fn new(app_handle: AppHandle) -> Self {
         Self {
             watchers: Arc::new(Mutex::new(HashMap::new())),
+            file_watchers: Arc::new(Mutex::new(HashMap::new())),
             app_handle,
         }
     }
@@ -243,6 +250,70 @@ impl GitWatcher {
     pub fn unwatch_all(&self) {
         let mut watchers = self.watchers.lock();
         watchers.clear();
+        let mut file_watchers = self.file_watchers.lock();
+        file_watchers.clear();
+    }
+
+    pub fn watch_worktree_files(&self, worktree_path: String) -> Result<(), String> {
+        let mut file_watchers = self.file_watchers.lock();
+        file_watchers.remove(&worktree_path);
+
+        let app_handle = self.app_handle.clone();
+        let worktree_path_clone = worktree_path.clone();
+        let worktree_pathbuf = PathBuf::from(&worktree_path);
+
+        if !worktree_pathbuf.exists() {
+            return Err("Worktree path does not exist".to_string());
+        }
+
+        let last_emit = Arc::new(Mutex::new(std::time::Instant::now()));
+        let debounce_ms = 300;
+
+        let watcher = RecommendedWatcher::new(
+            move |res: Result<Event, notify::Error>| {
+                if let Ok(event) = res {
+                    let dominated_by_git = event.paths.iter().any(|p| {
+                        p.to_string_lossy().contains("/.git/")
+                            || p.to_string_lossy().contains("\\.git\\")
+                    });
+                    if dominated_by_git {
+                        return;
+                    }
+
+                    match event.kind {
+                        EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
+                            let mut last = last_emit.lock();
+                            let now = std::time::Instant::now();
+                            if now.duration_since(*last).as_millis() > debounce_ms {
+                                *last = now;
+                                let _ = app_handle.emit(
+                                    "file-changed",
+                                    FileChangeEvent {
+                                        worktree_path: worktree_path_clone.clone(),
+                                    },
+                                );
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            },
+            Config::default().with_poll_interval(Duration::from_millis(500)),
+        )
+        .map_err(|e| e.to_string())?;
+
+        let mut watcher = watcher;
+        watcher
+            .watch(&worktree_pathbuf, RecursiveMode::Recursive)
+            .map_err(|e| e.to_string())?;
+
+        file_watchers.insert(worktree_path, watcher);
+        Ok(())
+    }
+
+    pub fn unwatch_worktree_files(&self, worktree_path: &str) {
+        let mut file_watchers = self.file_watchers.lock();
+        file_watchers.remove(worktree_path);
     }
 }
 
@@ -298,6 +369,39 @@ pub fn stop_all_watchers(state: tauri::State<'_, WatcherState>) -> Result<(), St
 
     if let Some(ref watcher) = *watcher_guard {
         watcher.unwatch_all();
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn start_watching_worktree_files(
+    app_handle: AppHandle,
+    state: tauri::State<'_, WatcherState>,
+    worktree_path: String,
+) -> Result<(), String> {
+    let mut watcher_guard = state.watcher.lock();
+
+    if watcher_guard.is_none() {
+        *watcher_guard = Some(GitWatcher::new(app_handle));
+    }
+
+    if let Some(ref watcher) = *watcher_guard {
+        watcher.watch_worktree_files(worktree_path)?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn stop_watching_worktree_files(
+    state: tauri::State<'_, WatcherState>,
+    worktree_path: String,
+) -> Result<(), String> {
+    let watcher_guard = state.watcher.lock();
+
+    if let Some(ref watcher) = *watcher_guard {
+        watcher.unwatch_worktree_files(&worktree_path);
     }
 
     Ok(())

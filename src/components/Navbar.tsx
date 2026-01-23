@@ -79,7 +79,10 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
               className="w-3.5 h-3.5 flex-shrink-0"
               style={{ color: theme.text.tertiary }}
             />
-            <span className="truncate min-w-0" style={{ color: theme.text.primary }}>
+            <span
+              className="truncate min-w-0"
+              style={{ color: theme.text.primary }}
+            >
               {branchName}
             </span>
             {worktreeName && worktreeName !== branchName && (
@@ -170,7 +173,11 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
             }
           }}
           title="Checks & Review"
-          aria-label={codeReviewOpen ? "Close checks and review panel" : "Open checks and review panel"}
+          aria-label={
+            codeReviewOpen
+              ? "Close checks and review panel"
+              : "Open checks and review panel"
+          }
         >
           {codeReviewOpen ? (
             <ChevronsRight className="w-3.5 h-3.5" />
