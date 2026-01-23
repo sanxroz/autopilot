@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { load } from '@tauri-apps/plugin-store';
 import type { Repository, WorktreeInfo, TerminalInstance, ProcessStatus, DiffViewMode } from '../types';
-import type { GitHubSettings, PRStatus } from '../types/github';
+import type { GitHubSettings, PRStatus, PRChecksResult, PRDetailedInfo } from '../types/github';
 import { DEFAULT_GITHUB_SETTINGS } from '../types/github';
 import { setThemeMode as setGlobalThemeMode, getThemeMode, type ThemeMode } from '../theme';
 
@@ -15,6 +15,12 @@ interface WorktreeTerminals {
   activeTerminalId: string | null;
 }
 
+interface PRDataCache {
+  checksResult: PRChecksResult | null;
+  prDetails: PRDetailedInfo | null;
+  lastUpdated: number;
+}
+
 interface AppStore {
   repositories: Repository[];
   selectedWorktree: WorktreeInfo | null;
@@ -24,6 +30,7 @@ interface AppStore {
   isInitialized: boolean;
   githubSettings: GitHubSettings;
   prStatusByBranch: Record<string, Record<string, PRStatus>>;
+  prDataCache: Record<string, PRDataCache>;
   collapsedRepos: Set<string>;
   settingsOpen: boolean;
   codeReviewOpen: boolean;
@@ -54,6 +61,9 @@ interface AppStore {
   createWorktreeAuto: (repoPath: string) => Promise<WorktreeInfo | null>;
   deleteWorktree: (repoPath: string, worktreeName: string) => Promise<void>;
   setPRStatusBatch: (batch: Record<string, Record<string, PRStatus>>) => void;
+  setPRDataCache: (repoPath: string, prNumber: number, data: { checksResult?: PRChecksResult | null; prDetails?: PRDetailedInfo | null }) => void;
+  getPRDataCache: (repoPath: string, prNumber: number) => PRDataCache | null;
+  clearPRDataCacheForRepo: (repoPath: string) => void;
   setPollingInterval: (intervalMs: number) => void;
   checkGitHubCli: () => Promise<void>;
   refreshProcessStatuses: () => Promise<void>;
@@ -92,6 +102,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   isInitialized: false,
   githubSettings: DEFAULT_GITHUB_SETTINGS,
   prStatusByBranch: {},
+  prDataCache: {},
   collapsedRepos: new Set<string>(),
   settingsOpen: false,
   codeReviewOpen: false,
@@ -428,6 +439,44 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setPRStatusBatch: (batch: Record<string, Record<string, PRStatus>>) => {
     set({ prStatusByBranch: batch });
+  },
+
+  setPRDataCache: (repoPath: string, prNumber: number, data: { checksResult?: PRChecksResult | null; prDetails?: PRDetailedInfo | null }) => {
+    const cacheKey = `${repoPath}:${prNumber}`;
+    set((state) => {
+      const existing = state.prDataCache[cacheKey] || { checksResult: null, prDetails: null, lastUpdated: 0 };
+      return {
+        prDataCache: {
+          ...state.prDataCache,
+          [cacheKey]: {
+            checksResult: data.checksResult !== undefined ? data.checksResult : existing.checksResult,
+            prDetails: data.prDetails !== undefined ? data.prDetails : existing.prDetails,
+            lastUpdated: Date.now(),
+          },
+        },
+      };
+    });
+  },
+
+  getPRDataCache: (repoPath: string, prNumber: number) => {
+    const cacheKey = `${repoPath}:${prNumber}`;
+    const cached = get().prDataCache[cacheKey];
+    if (!cached) return null;
+    
+    const CACHE_TTL_MS = 5 * 60 * 1000;
+    if (Date.now() - cached.lastUpdated > CACHE_TTL_MS) return null;
+    
+    return cached;
+  },
+
+  clearPRDataCacheForRepo: (repoPath: string) => {
+    set((state) => {
+      const prefix = `${repoPath}:`;
+      const newCache = Object.fromEntries(
+        Object.entries(state.prDataCache).filter(([key]) => !key.startsWith(prefix))
+      );
+      return { prDataCache: newCache };
+    });
   },
 
   setPollingInterval: (intervalMs: number) => {

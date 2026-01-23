@@ -14,7 +14,7 @@ const dropdownMenuVariants = tv({
       "dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-50",
     ],
     item: [
-      "relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none transition-colors",
+      "relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none transition-colors",
       "focus:bg-neutral-100 focus:text-neutral-900",
       "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       "dark:focus:bg-neutral-800 dark:focus:text-neutral-50",

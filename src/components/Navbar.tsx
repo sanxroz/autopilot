@@ -1,4 +1,4 @@
-import { motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import {
   GitBranch,
   Diff,
@@ -9,7 +9,6 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../store";
 import { useTheme } from "../hooks/useTheme";
-import { useReducedMotion } from "../lib/animations";
 
 interface NavbarProps {
   sidebarOpen: boolean;
