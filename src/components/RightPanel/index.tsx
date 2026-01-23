@@ -316,73 +316,103 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
               <ChevronDown className="w-3.5 h-3.5 opacity-50" />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className={showCustomPromptInput ? "w-[280px]" : ""}>
-            {showCustomPromptInput ? (
-              <div className="p-1">
-                <textarea
-                  ref={customPromptInputRef}
-                  value={customPrompt}
-                  onChange={(e) => setCustomPrompt(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleCustomPromptSubmit();
-                    }
-                    if (e.key === "Escape") {
-                      handleCustomPromptCancel();
-                    }
+          <DropdownMenuContent align="end">
+            <motion.div
+              animate={{ width: showCustomPromptInput ? 280 : "auto" }}
+              transition={{
+                duration: reducedMotion ? 0 : 0.2,
+                ease: [0.215, 0.61, 0.355, 1], // cubic-out
+              }}
+              style={{ overflow: "hidden" }}
+            >
+              <AnimatePresence mode="wait">
+                {showCustomPromptInput ? (
+                <motion.div
+                  key="custom-prompt"
+                  initial={reducedMotion ? false : { opacity: 0, scale: 0.95, y: -8, x: 12 }}
+                  animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
+                  exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95, x: -12 }}
+                  transition={{
+                    duration: reducedMotion ? 0 : 0.2,
+                    ease: [0.215, 0.61, 0.355, 1], // cubic-out
                   }}
-                  placeholder="Enter review prompt..."
-                  className="w-full px-2 py-1.5 text-sm rounded outline-none resize-none"
-                  style={{
-                    background: "transparent",
-                    minHeight: "56px",
-                  }}
-                  autoFocus
-                />
-                <div className="flex items-center justify-end gap-1 px-1 pb-0.5">
-                  <button
-                    onClick={handleCustomPromptCancel}
-                    className="px-2 py-1 text-xs rounded transition-colors"
-                    style={{ color: theme.text.tertiary }}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleCustomPromptSubmit}
-                    disabled={!customPrompt.trim()}
-                    className="px-2 py-1 text-xs rounded transition-colors flex items-center gap-1"
-                    style={{
-                      background: customPrompt.trim() ? theme.accent.primary : "transparent",
-                      color: customPrompt.trim() ? "white" : theme.text.muted,
+                  className="p-1"
+                >
+                  <textarea
+                    ref={customPromptInputRef}
+                    value={customPrompt}
+                    onChange={(e) => setCustomPrompt(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleCustomPromptSubmit();
+                      }
+                      if (e.key === "Escape") {
+                        handleCustomPromptCancel();
+                      }
                     }}
-                  >
-                    <ScanSearch className="w-3 h-3" />
-                    Run
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <>
-                <DropdownMenuItem onClick={() => handleRunReview("uncommitted")}>
-                  <ScanSearch className="w-3.5 h-3.5" />
-                  <span>Uncommitted changes</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleRunReview("base")}>
-                  <GitPullRequest className="w-3.5 h-3.5" />
-                  <span>Against base branch</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setShowCustomPromptInput(true);
+                    placeholder="Enter review prompt..."
+                    className="w-full px-2 py-1.5 text-sm rounded outline-none resize-none"
+                    style={{
+                      background: "transparent",
+                      minHeight: "56px",
+                    }}
+                    autoFocus
+                  />
+                  <div className="flex items-center justify-end gap-1 px-1 pb-0.5">
+                    <button
+                      onClick={handleCustomPromptCancel}
+                      className="px-2 py-1 text-xs rounded transition-colors"
+                      style={{ color: theme.text.tertiary }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleCustomPromptSubmit}
+                      disabled={!customPrompt.trim()}
+                      className="px-2 py-1 text-xs rounded transition-colors flex items-center gap-1"
+                      style={{
+                        background: customPrompt.trim() ? theme.accent.primary : "transparent",
+                        color: customPrompt.trim() ? "white" : theme.text.muted,
+                      }}
+                    >
+                      <ScanSearch className="w-3 h-3" />
+                      Run
+                    </button>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="menu-items"
+                  initial={reducedMotion ? false : { opacity: 0, scale: 0.95, y: -8 }}
+                  animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
+                  exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95, x: -12 }}
+                  transition={{
+                    duration: reducedMotion ? 0 : 0.2,
+                    ease: [0.215, 0.61, 0.355, 1], // cubic-out
                   }}
                 >
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  <span>With custom prompt...</span>
-                </DropdownMenuItem>
-              </>
-            )}
+                  <DropdownMenuItem onClick={() => handleRunReview("uncommitted")}>
+                    <ScanSearch className="w-3 h-3" />
+                    <span>Uncommitted changes</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleRunReview("base")}>
+                    <GitPullRequest className="w-3 h-3" />
+                    <span>Against base branch</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setShowCustomPromptInput(true);
+                    }}
+                  >
+                    <MessageSquare className="w-3 h-3" />
+                    <span>With custom prompt...</span>
+                  </DropdownMenuItem>
+                </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
           </DropdownMenuContent>
         </DropdownMenu>
         )}

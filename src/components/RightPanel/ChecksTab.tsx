@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   Check,
@@ -9,6 +9,7 @@ import {
   Circle,
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
+import { useAppStore } from "../../store";
 import type { PRChecksResult, PRDetailedInfo, PRStatus } from "../../types/github";
 
 interface ChecksTabProps {
@@ -100,20 +101,35 @@ export function ChecksTab({
   prStatus,
 }: ChecksTabProps) {
   const theme = useTheme();
-  const [checksResult, setChecksResult] = useState<PRChecksResult | null>(null);
-  const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(null);
+  const getPRDataCache = useAppStore((state) => state.getPRDataCache);
+  const setPRDataCache = useAppStore((state) => state.setPRDataCache);
+  
+  // Initialize state from the cache (via a lazy initializer) to avoid the initial render
+  // briefly showing "No checks" even when cached data exists.
+  const [checksResult, setChecksResult] = useState<PRChecksResult | null>(() => {
+    const cached = repoPath && prNumber ? getPRDataCache(repoPath, prNumber) : null;
+    return cached?.checksResult ?? null;
+  });
+  const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(() => {
+    const cached = repoPath && prNumber ? getPRDataCache(repoPath, prNumber) : null;
+    return cached?.prDetails ?? null;
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const lastPrStatusRef = useRef<PRStatus | null>(null);
+  const initialFetchDoneRef = useRef(false);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (isPolling = false) => {
     if (!repoPath || !prNumber) {
       setChecksResult(null);
       setPrDetails(null);
       return;
     }
 
-    setIsLoading(true);
-    setError(null);
+    if (!isPolling) {
+      setIsLoading(true);
+      setError(null);
+    }
 
     try {
       const [checks, details] = await Promise.all([
@@ -122,22 +138,54 @@ export function ChecksTab({
       ]);
       setChecksResult(checks);
       setPrDetails(details);
+      setPRDataCache(repoPath, prNumber, { checksResult: checks, prDetails: details });
+      if (isPolling) {
+        setError(null);
+      }
     } catch (e) {
-      setError(String(e));
-      setChecksResult(null);
-      setPrDetails(null);
+      if (!isPolling) {
+        setError(String(e));
+        setChecksResult(null);
+        setPrDetails(null);
+      }
     } finally {
-      setIsLoading(false);
+      if (!isPolling) {
+        setIsLoading(false);
+      }
     }
-  }, [repoPath, prNumber]);
+  }, [repoPath, prNumber, setPRDataCache]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  useEffect(() => {
-    if (prStatus) {
+    if (!repoPath || !prNumber) return;
+    
+    const cached = getPRDataCache(repoPath, prNumber);
+    if (cached?.checksResult && cached?.prDetails) {
+      setChecksResult(cached.checksResult);
+      setPrDetails(cached.prDetails);
+      setError(null);
+    } else {
       fetchData();
+    }
+    initialFetchDoneRef.current = true;
+  }, [repoPath, prNumber, getPRDataCache, fetchData]);
+
+  useEffect(() => {
+    if (!prStatus) return;
+    
+    const prev = lastPrStatusRef.current;
+    const hasChanged = !prev || 
+      prStatus.checks_status !== prev.checks_status ||
+      prStatus.review_decision !== prev.review_decision ||
+      prStatus.state !== prev.state ||
+      prStatus.merged !== prev.merged ||
+      prStatus.draft !== prev.draft;
+    
+    if (hasChanged) {
+      lastPrStatusRef.current = prStatus;
+      // Only fetch if initial load has completed (prevents double fetch on mount)
+      if (initialFetchDoneRef.current) {
+        fetchData(true);
+      }
     }
   }, [prStatus, fetchData]);
 

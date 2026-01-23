@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Loader, MessageSquare, Copy, Check, X, CheckCircle2, XCircle, Code2, ChevronDown } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { useTheme } from "../../hooks/useTheme";
+import { useAppStore } from "../../store";
 import type { PRDetailedInfo, PRStatus, PRComment } from "../../types/github";
 
 const AVATAR_COLORS = [
@@ -120,11 +121,16 @@ function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
 
 export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) {
   const theme = useTheme();
+  const getPRDataCache = useAppStore((state) => state.getPRDataCache);
+  const setPRDataCache = useAppStore((state) => state.setPRDataCache);
+  
   const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedImage, setExpandedImage] = useState<{ src: string; alt: string } | null>(null);
   const [collapsedReviews, setCollapsedReviews] = useState<Set<string>>(new Set());
+  const lastPrStatusRef = useRef<PRStatus | null>(null);
+  const initialFetchDoneRef = useRef(false);
 
   const fetchData = useCallback(async (isPolling = false) => {
     if (!repoPath || !prNumber) {
@@ -140,6 +146,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
     try {
       const details = await invoke<PRDetailedInfo>("get_pr_details", { repoPath, prNumber });
       setPrDetails(details);
+      setPRDataCache(repoPath, prNumber, { prDetails: details });
       if (isPolling) {
         setError(null);
       }
@@ -153,15 +160,38 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
         setIsLoading(false);
       }
     }
-  }, [repoPath, prNumber]);
+  }, [repoPath, prNumber, setPRDataCache]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (!repoPath || !prNumber) return;
+    
+    const cached = getPRDataCache(repoPath, prNumber);
+    if (cached?.prDetails) {
+      setPrDetails(cached.prDetails);
+      setError(null);
+    } else {
+      fetchData();
+    }
+    initialFetchDoneRef.current = true;
+  }, [repoPath, prNumber, getPRDataCache, fetchData]);
 
   useEffect(() => {
-    if (prStatus) {
-      fetchData(true);
+    if (!prStatus) return;
+    
+    const prev = lastPrStatusRef.current;
+    const hasChanged = !prev || 
+      prStatus.checks_status !== prev.checks_status ||
+      prStatus.review_decision !== prev.review_decision ||
+      prStatus.state !== prev.state ||
+      prStatus.merged !== prev.merged ||
+      prStatus.draft !== prev.draft;
+    
+    if (hasChanged) {
+      lastPrStatusRef.current = prStatus;
+      // Only fetch if initial load has completed (prevents double fetch on mount)
+      if (initialFetchDoneRef.current) {
+        fetchData(true);
+      }
     }
   }, [prStatus, fetchData]);
 
@@ -207,7 +237,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
       >
         <span className="text-sm text-center" style={{ color: theme.text.tertiary }}>{error}</span>
         <button
-          onClick={fetchData}
+          onClick={() => fetchData()}
           className="px-3 py-1.5 rounded text-xs font-medium transition-colors"
           style={{ 
             background: theme.bg.tertiary, 
@@ -369,10 +399,58 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
     </div>
   );
 
+  const formatReviewForCopy = (review: PRComment, threads: PRComment[]): string => {
+    const lines: string[] = [];
+    
+    let action = 'reviewed';
+    if (review.state === 'APPROVED') action = 'approved';
+    else if (review.state === 'CHANGES_REQUESTED') action = 'requested changes';
+    
+    lines.push(`## ${review.author} ${action}`);
+    lines.push(`*${new Date(review.created_at).toLocaleString()}*`);
+    lines.push('');
+    
+    if (review.body && review.body.trim()) {
+      lines.push(review.body.trim());
+      lines.push('');
+    }
+    
+    if (threads.length > 0) {
+      lines.push('### Code Comments');
+      lines.push('');
+      
+      for (const thread of threads) {
+        if (thread.path) {
+          const location = thread.line ? `${thread.path}:${thread.line}` : thread.path;
+          lines.push(`**\`${location}\`**`);
+        }
+        lines.push(`> **${thread.author}** *(${new Date(thread.created_at).toLocaleString()})*`);
+        lines.push('>');
+        const bodyLines = thread.body.split('\n');
+        for (const bodyLine of bodyLines) {
+          lines.push(`> ${bodyLine}`);
+        }
+        lines.push('');
+      }
+    }
+    
+    return lines.join('\n');
+  };
+
+  const [copiedReviewId, setCopiedReviewId] = useState<string | null>(null);
+
+  const handleCopyReview = async (review: PRComment, threads: PRComment[]) => {
+    const formatted = formatReviewForCopy(review, threads);
+    await navigator.clipboard.writeText(formatted);
+    setCopiedReviewId(review.review_id || null);
+    setTimeout(() => setCopiedReviewId(null), 2000);
+  };
+
   const renderReviewEvent = (comment: PRComment, nestedThreads: PRComment[]) => {
     const hasBody = comment.body && comment.body.trim().length > 0;
     const hasThreads = nestedThreads.length > 0;
     const isCollapsed = comment.review_id ? collapsedReviews.has(comment.review_id) : false;
+    const isCopied = copiedReviewId === comment.review_id;
     
     let actionText = 'reviewed';
     let ActionIcon: typeof CheckCircle2 | typeof XCircle | null = null;
@@ -389,7 +467,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
     }
 
     return (
-      <div className="py-2.5">
+      <div className="py-2.5 group/review">
         <div className="flex items-center gap-2">
           <Avatar name={comment.author} size="sm" />
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -406,6 +484,18 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
               · {formatDate(comment.created_at)}
             </span>
           </div>
+          <button
+            onClick={() => handleCopyReview(comment, nestedThreads)}
+            className="p-1 rounded opacity-0 group-hover/review:opacity-100 transition-opacity"
+            style={{ background: theme.bg.hover }}
+            title="Copy review"
+          >
+            {isCopied ? (
+              <Check className="w-3.5 h-3.5" style={{ color: theme.semantic.success }} />
+            ) : (
+              <Copy className="w-3.5 h-3.5" style={{ color: theme.text.tertiary }} />
+            )}
+          </button>
         </div>
 
         {hasBody && (
