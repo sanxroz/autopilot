@@ -2,6 +2,10 @@ use chrono::{DateTime, Utc};
 use git2::{BranchType, Delta, DiffOptions, Repository, WorktreeAddOptions};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::process::Command;
+use regex::Regex;
+
+use super::cli_tools::find_cli_tool;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RepoInfo {
@@ -1027,8 +1031,6 @@ pub async fn git_stage_all(worktree_path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn git_unstage_all(worktree_path: String) -> Result<(), String> {
-    use std::process::Command;
-    
     let output = Command::new("git")
         .args(["reset", "HEAD"])
         .current_dir(&worktree_path)
@@ -1041,4 +1043,72 @@ pub async fn git_unstage_all(worktree_path: String) -> Result<(), String> {
     }
     
     Ok(())
+}
+
+#[tauri::command]
+pub async fn generate_commit_message(
+    worktree_path: String,
+    agent: String,
+) -> Result<String, String> {
+    let agent_cmd = find_cli_tool(&agent)?;
+    
+    let prompt = "Look at my staged changes (use git diff --cached) and generate a concise commit message. Return ONLY the commit message wrapped in square brackets like [commit message here]. No other text.";
+    
+    let output = match agent.as_str() {
+        "opencode" => {
+            Command::new(&agent_cmd)
+                .args(["run", prompt])
+                .current_dir(&worktree_path)
+                .output()
+                .map_err(|e| format!("Failed to run {}: {}", agent, e))?
+        }
+        "claude" => {
+            Command::new(&agent_cmd)
+                .args([
+                    "-p", prompt,
+                    "--allowedTools", "Bash(git diff:*),Bash(git status:*)"
+                ])
+                .current_dir(&worktree_path)
+                .output()
+                .map_err(|e| format!("Failed to run {}: {}", agent, e))?
+        }
+        "aider" => {
+            Command::new(&agent_cmd)
+                .args(["--message", prompt, "--yes"])
+                .current_dir(&worktree_path)
+                .output()
+                .map_err(|e| format!("Failed to run {}: {}", agent, e))?
+        }
+        _ => {
+            Command::new(&agent_cmd)
+                .args(["run", prompt])
+                .current_dir(&worktree_path)
+                .output()
+                .map_err(|e| format!("Failed to run {}: {}", agent, e))?
+        }
+    };
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("{} failed: {}", agent, stderr));
+    }
+    
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    
+    let re = Regex::new(r"\[([^\]]+)\]").map_err(|e| e.to_string())?;
+    if let Some(captures) = re.captures(&stdout) {
+        if let Some(message) = captures.get(1) {
+            return Ok(message.as_str().to_string());
+        }
+    }
+    
+    let lines: Vec<&str> = stdout.lines()
+        .filter(|l| !l.trim().is_empty())
+        .collect();
+    
+    if let Some(last_line) = lines.last() {
+        return Ok(last_line.trim().to_string());
+    }
+    
+    Err("Could not extract commit message from AI response".to_string())
 }

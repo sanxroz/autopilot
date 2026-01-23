@@ -11,9 +11,11 @@ import {
   Bot,
   Server,
   Bug,
+  ChevronDown,
 } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
 import { useAppStore } from "../store";
+import { AI_AGENTS, type AIAgent } from "../types";
 
 
 interface SettingsPanelProps {
@@ -38,7 +40,7 @@ interface NavItem {
 
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const theme = useTheme();
-  const { githubSettings } = useAppStore();
+  const { githubSettings, defaultAIAgent, setDefaultAIAgent } = useAppStore();
   const [activeSection, setActiveSection] = useState<NavSection>("account");
 
   const navItems: NavItem[] = [
@@ -166,7 +168,13 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           <div className="flex-1 overflow-y-auto px-6 py-5">
             {activeSection === "account" && <AccountSection theme={theme} githubSettings={githubSettings} />}
             {activeSection === "appearance" && <PlaceholderSection theme={theme} title="Appearance" description="Customize the look and feel of the application." />}
-            {activeSection === "preferences" && <PlaceholderSection theme={theme} title="Preferences" description="Configure your general preferences." />}
+            {activeSection === "preferences" && (
+              <PreferencesSection
+                theme={theme}
+                defaultAIAgent={defaultAIAgent}
+                setDefaultAIAgent={setDefaultAIAgent}
+              />
+            )}
             {activeSection === "skills" && <PlaceholderSection theme={theme} title="Skills" description="Manage your AI skills and capabilities." />}
             {activeSection === "agents" && <PlaceholderSection theme={theme} title="Custom Agents" description="Create and manage custom AI agents." />}
             {activeSection === "mcp" && <PlaceholderSection theme={theme} title="MCP Servers" description="Configure Model Context Protocol servers." />}
@@ -370,6 +378,107 @@ function DebugSection({
               </a>
             </p>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PreferencesSection({
+  theme,
+  defaultAIAgent,
+  setDefaultAIAgent,
+}: {
+  theme: ReturnType<typeof useTheme>;
+  defaultAIAgent: AIAgent;
+  setDefaultAIAgent: (agent: AIAgent) => Promise<void>;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedAgent = AI_AGENTS.find((a) => a.id === defaultAIAgent) || AI_AGENTS[0];
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h4
+          className="text-xs font-medium uppercase mb-4"
+          style={{ color: theme.text.tertiary }}
+        >
+          AI Integration
+        </h4>
+
+        <div className="space-y-4">
+          <div>
+            <label
+              className="block text-sm font-medium mb-2"
+              style={{ color: theme.text.primary }}
+            >
+              Default AI Agent
+            </label>
+            <p className="text-xs mb-3" style={{ color: theme.text.tertiary }}>
+              Choose the AI agent to use for generating commit messages and other tasks.
+            </p>
+            <div className="relative">
+              <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-sm transition-colors"
+                style={{
+                  background: theme.bg.primary,
+                  border: `1px solid ${theme.border.default}`,
+                  color: theme.text.primary,
+                }}
+              >
+                <span>{selectedAgent.name}</span>
+                <ChevronDown
+                  className={`w-4 h-4 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                  style={{ color: theme.text.tertiary }}
+                />
+              </button>
+              {isOpen && (
+                <div
+                  className="absolute top-full left-0 right-0 mt-1 rounded-lg shadow-lg z-10 py-1"
+                  style={{
+                    background: theme.bg.secondary,
+                    border: `1px solid ${theme.border.default}`,
+                  }}
+                >
+                  {AI_AGENTS.map((agent) => (
+                    <button
+                      key={agent.id}
+                      onClick={() => {
+                        setDefaultAIAgent(agent.id);
+                        setIsOpen(false);
+                      }}
+                      className="w-full flex items-center justify-between px-3 py-2 text-sm transition-colors"
+                      style={{
+                        color: agent.id === defaultAIAgent ? theme.text.primary : theme.text.secondary,
+                        background: agent.id === defaultAIAgent ? theme.bg.active : "transparent",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (agent.id !== defaultAIAgent) {
+                          e.currentTarget.style.background = theme.bg.hover;
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (agent.id !== defaultAIAgent) {
+                          e.currentTarget.style.background = "transparent";
+                        }
+                      }}
+                    >
+                      <div className="flex flex-col items-start">
+                        <span>{agent.name}</span>
+                        <span className="text-xs" style={{ color: theme.text.muted }}>
+                          {agent.command}
+                        </span>
+                      </div>
+                      {agent.id === defaultAIAgent && (
+                        <Check className="w-4 h-4" style={{ color: theme.semantic.success }} />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

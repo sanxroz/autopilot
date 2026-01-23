@@ -13,9 +13,10 @@ import {
   Loader,
   GitBranch,
   MoreHorizontal,
-  Square,
+  Sparkles,
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
+import { useAppStore } from "../../store";
 import type { GitStatus, GitStatusFile } from "../../types";
 import {
   DropdownMenu,
@@ -63,7 +64,9 @@ export function GitTab({ worktreePath }: GitTabProps) {
   const [isCommitting, setIsCommitting] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const defaultAIAgent = useAppStore((state) => state.defaultAIAgent);
 
   const fetchStatus = useCallback(async () => {
     if (!worktreePath) {
@@ -182,6 +185,23 @@ export function GitTab({ worktreePath }: GitTabProps) {
     }
   }, [worktreePath, fetchStatus]);
 
+  const handleGenerateMessage = useCallback(async () => {
+    if (!worktreePath) return;
+    setIsGenerating(true);
+    setError(null);
+    try {
+      const message = await invoke<string>("generate_commit_message", {
+        worktreePath,
+        agent: defaultAIAgent,
+      });
+      setCommitMessage(message);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setIsGenerating(false);
+    }
+  }, [worktreePath, defaultAIAgent]);
+
   if (!worktreePath) {
     return (
       <div
@@ -258,11 +278,6 @@ export function GitTab({ worktreePath }: GitTabProps) {
         >
           {isStaged ? <Minus className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
         </button>
-        <Square
-          className="w-3.5 h-3.5 flex-shrink-0"
-          style={{ color }}
-          fill={color}
-        />
       </div>
     );
   };
@@ -271,7 +286,6 @@ export function GitTab({ worktreePath }: GitTabProps) {
     <div className="flex flex-col h-full overflow-hidden">
       <div
         className="flex items-center justify-between px-3 py-2"
-        style={{ borderBottom: `1px solid ${theme.border.subtle}` }}
       >
         <span className="text-[13px]" style={{ color: theme.text.secondary }}>
           {totalChanges} Change{totalChanges !== 1 ? "s" : ""}
@@ -296,11 +310,11 @@ export function GitTab({ worktreePath }: GitTabProps) {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={handleStageAll} disabled={unstaged.length === 0}>
-                <Plus className="w-3.5 h-3.5" />
+                <Plus className="w-3 h-3" />
                 <span>Stage All</span>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={handleUnstageAll} disabled={staged.length === 0}>
-                <Minus className="w-3.5 h-3.5" />
+                <Minus className="w-3 h-3" />
                 <span>Unstage All</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -326,7 +340,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
       </div>
 
       {staged.length > 0 && (
-        <div style={{ borderBottom: `1px solid ${theme.border.subtle}` }}>
+        <div className="flex-1 overflow-auto" style={{ borderBottom: `1px solid ${theme.border.subtle}` }}>
           <div
             className="px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide"
             style={{ color: theme.text.muted }}
@@ -393,78 +407,99 @@ export function GitTab({ worktreePath }: GitTabProps) {
         className="px-3 py-2"
         style={{ borderTop: `1px solid ${theme.border.subtle}` }}
       >
-        <textarea
-          ref={textareaRef}
-          value={commitMessage}
-          onChange={(e) => setCommitMessage(e.target.value)}
-          placeholder={staged.length > 0 ? `Update ${getFileName(staged[0].path)}` : "Message"}
-          rows={1}
-          className="w-full px-0 py-1 text-[13px] resize-none outline-none bg-transparent"
-          style={{ color: theme.text.primary }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && canCommit) {
-              e.preventDefault();
-              handleCommit();
-            }
-          }}
-        />
-      </div>
-
-      <div
-        className="px-3 py-2 flex items-center gap-2"
-        style={{ borderTop: `1px solid ${theme.border.subtle}` }}
-      >
-        <div className="flex-1" />
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              disabled={!canCommit}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-medium transition-colors"
-              style={{
-                background: canCommit ? theme.bg.tertiary : theme.bg.secondary,
-                color: canCommit ? theme.text.primary : theme.text.muted,
-                cursor: canCommit ? "pointer" : "not-allowed",
-              }}
-              onMouseEnter={(e) => {
-                if (canCommit) e.currentTarget.style.background = theme.bg.hover;
-              }}
-              onMouseLeave={(e) => {
-                if (canCommit) e.currentTarget.style.background = theme.bg.tertiary;
-              }}
-              onClick={(e) => {
-                if (canCommit) {
-                  e.preventDefault();
-                  handleCommit();
-                }
-              }}
-            >
-              {isCommitting ? (
-                <Loader className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <GitCommit className="w-3.5 h-3.5" />
-              )}
-              Commit {staged.length > 0 ? "Staged" : ""}
-              <ChevronDown className="w-3.5 h-3.5 opacity-50" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={handleCommit} disabled={!canCommit}>
-              <GitCommit className="w-3.5 h-3.5" />
-              <span>Commit Staged</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={async () => {
-                if (!worktreePath || !commitMessage.trim()) return;
-                await handleStageAll();
-                await handleCommit();
-              }}
-              disabled={totalChanges === 0 || !commitMessage.trim()}
-            >
-              <GitCommit className="w-3.5 h-3.5" />
-              <span>Commit All</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="relative">
+          <textarea
+            ref={textareaRef}
+            value={commitMessage}
+            onChange={(e) => setCommitMessage(e.target.value)}
+            placeholder={staged.length > 0 ? `Update ${getFileName(staged[0].path)}` : "Message"}
+            rows={3}
+            className="w-full px-0 py-1 pr-8 text-[13px] resize-none outline-none bg-transparent"
+            style={{ color: theme.text.primary }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && canCommit) {
+                e.preventDefault();
+                handleCommit();
+              }
+            }}
+          />
+          <button
+            onClick={handleGenerateMessage}
+            disabled={isGenerating || staged.length === 0}
+            className="absolute top-1 right-0 p-1 rounded transition-colors"
+            style={{
+              color: isGenerating || staged.length === 0 ? theme.text.muted : theme.text.tertiary,
+              cursor: isGenerating || staged.length === 0 ? "not-allowed" : "pointer",
+            }}
+            onMouseEnter={(e) => {
+              if (!isGenerating && staged.length > 0) {
+                e.currentTarget.style.color = theme.accent.primary;
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = isGenerating || staged.length === 0 ? theme.text.muted : theme.text.tertiary;
+            }}
+            title="Generate commit message with AI"
+          >
+            {isGenerating ? (
+              <Loader className="w-4 h-4 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4" />
+            )}
+          </button>
+        </div>
+        <div className="flex justify-end mt-2">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                disabled={!canCommit}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-medium transition-colors"
+                style={{
+                  background: canCommit ? theme.bg.tertiary : "transparent",
+                  color: canCommit ? theme.text.primary : theme.text.muted,
+                  cursor: canCommit ? "pointer" : "not-allowed",
+                }}
+                onMouseEnter={(e) => {
+                  if (canCommit) e.currentTarget.style.background = theme.bg.hover;
+                }}
+                onMouseLeave={(e) => {
+                  if (canCommit) e.currentTarget.style.background = theme.bg.tertiary;
+                }}
+                onClick={(e) => {
+                  if (canCommit) {
+                    e.preventDefault();
+                    handleCommit();
+                  }
+                }}
+              >
+                {isCommitting ? (
+                  <Loader className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <GitCommit className="w-3.5 h-3.5" />
+                )}
+                Commit
+                <ChevronDown className="w-3.5 h-3.5 opacity-50" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={handleCommit} disabled={!canCommit}>
+                <GitCommit className="w-3 h-3" />
+                <span>Commit</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={async () => {
+                  if (!worktreePath || !commitMessage.trim()) return;
+                  await handleStageAll();
+                  await handleCommit();
+                }}
+                disabled={totalChanges === 0 || !commitMessage.trim()}
+              >
+                <GitCommit className="w-3 h-3" />
+                <span>Commit All</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </div>
   );
