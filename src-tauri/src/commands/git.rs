@@ -918,17 +918,25 @@ pub async fn git_unstage_files(worktree_path: String, files: Vec<String>) -> Res
     tokio::task::spawn_blocking(move || {
         let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
         
-        let head = repo.head().map_err(|e| e.message().to_string())?;
-        let head_commit = head.peel_to_commit().map_err(|e| e.message().to_string())?;
-        let head_tree = head_commit.tree().map_err(|e| e.message().to_string())?;
+        // Try to get HEAD tree, but handle unborn branch (no commits yet)
+        let head_tree = match repo.head() {
+            Ok(head) => {
+                let head_commit = head.peel_to_commit().map_err(|e| e.message().to_string())?;
+                Some(head_commit.tree().map_err(|e| e.message().to_string())?)
+            }
+            Err(e) if e.code() == git2::ErrorCode::UnbornBranch => None,
+            Err(e) => return Err(e.message().to_string()),
+        };
         
         let mut index = repo.index().map_err(|e| e.message().to_string())?;
         
         for file in files {
             let path = std::path::Path::new(&file);
             
-            // Check if file exists in HEAD
-            if let Ok(entry) = head_tree.get_path(path) {
+            // Check if file exists in HEAD (if HEAD exists)
+            let entry_in_head = head_tree.as_ref().and_then(|tree| tree.get_path(path).ok());
+            
+            if let Some(entry) = entry_in_head {
                 // File exists in HEAD, restore it from HEAD
                 let blob = repo.find_blob(entry.id()).map_err(|e| e.message().to_string())?;
                 index
@@ -948,7 +956,7 @@ pub async fn git_unstage_files(worktree_path: String, files: Vec<String>) -> Res
                     })
                     .map_err(|e| format!("Failed to unstage {}: {}", file, e.message()))?;
             } else {
-                // File doesn't exist in HEAD (was newly added), remove from index
+                // File doesn't exist in HEAD (or no HEAD exists), remove from index
                 index
                     .remove_path(path)
                     .map_err(|e| format!("Failed to unstage {}: {}", file, e.message()))?;

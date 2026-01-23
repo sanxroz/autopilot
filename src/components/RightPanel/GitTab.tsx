@@ -490,8 +490,13 @@ export function GitTab({ worktreePath }: GitTabProps) {
               <DropdownMenuItem
                 onClick={async () => {
                   if (!worktreePath || !commitMessage.trim()) return;
-                  await handleStageAll();
-                  await handleCommit();
+                  try {
+                    await invoke("git_stage_all", { worktreePath });
+                    await fetchStatus();
+                    await handleCommit();
+                  } catch (e) {
+                    setError(String(e));
+                  }
                 }}
                 disabled={totalChanges === 0 || !commitMessage.trim()}
               >
