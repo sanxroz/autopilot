@@ -130,6 +130,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
   const [expandedImage, setExpandedImage] = useState<{ src: string; alt: string } | null>(null);
   const [collapsedReviews, setCollapsedReviews] = useState<Set<string>>(new Set());
   const lastPrStatusRef = useRef<PRStatus | null>(null);
+  const initialFetchDoneRef = useRef(false);
 
   const fetchData = useCallback(async (isPolling = false) => {
     if (!repoPath || !prNumber) {
@@ -171,6 +172,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
     } else {
       fetchData();
     }
+    initialFetchDoneRef.current = true;
   }, [repoPath, prNumber, getPRDataCache, fetchData]);
 
   useEffect(() => {
@@ -186,7 +188,10 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
     
     if (hasChanged) {
       lastPrStatusRef.current = prStatus;
-      fetchData(true);
+      // Only fetch if initial load has completed (prevents double fetch on mount)
+      if (initialFetchDoneRef.current) {
+        fetchData(true);
+      }
     }
   }, [prStatus, fetchData]);
 

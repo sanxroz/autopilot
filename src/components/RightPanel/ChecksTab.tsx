@@ -104,11 +104,20 @@ export function ChecksTab({
   const getPRDataCache = useAppStore((state) => state.getPRDataCache);
   const setPRDataCache = useAppStore((state) => state.setPRDataCache);
   
-  const [checksResult, setChecksResult] = useState<PRChecksResult | null>(null);
-  const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(null);
+  // Initialize state from the cache (via a lazy initializer) to avoid the initial render
+  // briefly showing "No checks" even when cached data exists.
+  const [checksResult, setChecksResult] = useState<PRChecksResult | null>(() => {
+    const cached = repoPath && prNumber ? getPRDataCache(repoPath, prNumber) : null;
+    return cached?.checksResult ?? null;
+  });
+  const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(() => {
+    const cached = repoPath && prNumber ? getPRDataCache(repoPath, prNumber) : null;
+    return cached?.prDetails ?? null;
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const lastPrStatusRef = useRef<PRStatus | null>(null);
+  const initialFetchDoneRef = useRef(false);
 
   const fetchData = useCallback(async (isPolling = false) => {
     if (!repoPath || !prNumber) {
@@ -157,6 +166,7 @@ export function ChecksTab({
     } else {
       fetchData();
     }
+    initialFetchDoneRef.current = true;
   }, [repoPath, prNumber, getPRDataCache, fetchData]);
 
   useEffect(() => {
@@ -172,7 +182,10 @@ export function ChecksTab({
     
     if (hasChanged) {
       lastPrStatusRef.current = prStatus;
-      fetchData(true);
+      // Only fetch if initial load has completed (prevents double fetch on mount)
+      if (initialFetchDoneRef.current) {
+        fetchData(true);
+      }
     }
   }, [prStatus, fetchData]);
 
