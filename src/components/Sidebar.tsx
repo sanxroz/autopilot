@@ -161,20 +161,20 @@ export function Sidebar({ isOpen }: SidebarProps) {
       initial={false}
       animate={{
         x: isOpen ? 0 : -width,
-        opacity: isOpen ? 1 : 0,
-        width: isOpen ? width : 0,
       }}
       transition={{
-        duration: reducedMotion ? 0 : 0.25,
-        ease: [0.215, 0.61, 0.355, 1], // cubic-out
+        duration: reducedMotion ? 0 : 0.2,
+        ease: [0.4, 0, 0.2, 1], // easeInOut
       }}
       className="relative flex flex-col h-full pt-8 select-none overflow-hidden"
       style={{
-        minWidth: isOpen ? `${MIN_WIDTH}px` : 0,
+        width: `${width}px`,
+        minWidth: `${MIN_WIDTH}px`,
         maxWidth: `${MAX_WIDTH}px`,
         background: theme.bg.secondary,
-        borderRight: isOpen ? `1px solid ${theme.border.default}` : "none",
+        borderRight: `1px solid ${theme.border.default}`,
         pointerEvents: isOpen ? "auto" : "none",
+        willChange: isOpen ? "transform" : "auto",
       }}
     >
       <div
