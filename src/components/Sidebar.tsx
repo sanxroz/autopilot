@@ -1,5 +1,4 @@
-import { useMemo, useState, useCallback, useEffect } from "react";
-import { motion } from "framer-motion";
+import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useReducedMotion } from "framer-motion";
 import {
@@ -56,22 +55,33 @@ export function Sidebar({ isOpen }: SidebarProps) {
   const [error, setError] = useState<string | null>(null);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
+  const widthRef = useRef(DEFAULT_WIDTH);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    widthRef.current = width;
     setIsResizing(true);
-  }, []);
+  }, [width]);
 
   useEffect(() => {
     if (!isResizing) return;
 
     const handleMouseMove = (e: MouseEvent) => {
       const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, e.clientX));
-      setWidth(newWidth);
+      widthRef.current = newWidth;
+      if (containerRef.current) {
+        containerRef.current.style.width = `${newWidth}px`;
+      }
+      if (innerRef.current) {
+        innerRef.current.style.width = `${newWidth}px`;
+      }
     };
 
     const handleMouseUp = () => {
       setIsResizing(false);
+      setWidth(widthRef.current);
     };
 
     document.addEventListener("mousemove", handleMouseMove);
@@ -157,26 +167,29 @@ export function Sidebar({ isOpen }: SidebarProps) {
   };
 
   return (
-    <motion.div
-      initial={false}
-      animate={{
-        x: isOpen ? 0 : -width,
-      }}
-      transition={{
-        duration: reducedMotion ? 0 : 0.2,
-        ease: [0.4, 0, 0.2, 1], // easeInOut
-      }}
-      className="relative flex flex-col h-full pt-8 select-none overflow-hidden"
+    <div
+      ref={containerRef}
+      className="relative flex-shrink-0 h-full"
       style={{
-        width: `${width}px`,
-        minWidth: `${MIN_WIDTH}px`,
+        width: isOpen ? `${width}px` : 0,
+        minWidth: isOpen ? `${MIN_WIDTH}px` : 0,
         maxWidth: `${MAX_WIDTH}px`,
-        background: theme.bg.secondary,
-        borderRight: `1px solid ${theme.border.default}`,
+        transition: reducedMotion || isResizing ? "none" : "width 0.2s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+        overflow: "hidden",
         pointerEvents: isOpen ? "auto" : "none",
-        willChange: isOpen ? "transform" : "auto",
       }}
     >
+      <div
+        ref={innerRef}
+        className="flex flex-col h-full pt-8 select-none"
+        style={{
+          width: `${width}px`,
+          minWidth: `${MIN_WIDTH}px`,
+          maxWidth: `${MAX_WIDTH}px`,
+          background: theme.bg.secondary,
+          borderRight: `1px solid ${theme.border.default}`,
+        }}
+      >
       <div
         onMouseDown={handleMouseDown}
         className="absolute top-0 right-0 w-1 h-full cursor-col-resize z-10 transition-colors"
@@ -402,6 +415,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
           onClose={() => setShowWorktreeDialog(null)}
         />
       )}
-    </motion.div>
+      </div>
+    </div>
   );
 }

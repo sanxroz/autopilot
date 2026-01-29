@@ -51,6 +51,8 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const reducedMotion = useReducedMotion();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const widthRef = useRef(DEFAULT_WIDTH);
   const [activeTab, setActiveTab] = useState<TabId>("checks");
   const [showPRDropdown, setShowPRDropdown] = useState(false);
   const [isCreatingPR, setIsCreatingPR] = useState(false);
@@ -71,8 +73,9 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    widthRef.current = width;
     setIsResizing(true);
-  }, []);
+  }, [width]);
 
   useEffect(() => {
     if (!isResizing) return;
@@ -83,11 +86,15 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         MAX_WIDTH,
         Math.max(MIN_WIDTH, containerRight - e.clientX),
       );
-      setWidth(newWidth);
+      widthRef.current = newWidth;
+      if (containerRef.current) {
+        containerRef.current.style.width = `${newWidth}px`;
+      }
     };
 
     const handleMouseUp = () => {
       setIsResizing(false);
+      setWidth(widthRef.current);
     };
 
     document.addEventListener("mousemove", handleMouseMove);
@@ -202,6 +209,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
 
   return (
     <motion.div
+      ref={containerRef}
       initial={reducedMotion ? false : { x: 400, opacity: 0 }}
       animate={{ x: 0, opacity: 1 }}
       exit={reducedMotion ? { opacity: 0 } : { x: 400, opacity: 0 }}
