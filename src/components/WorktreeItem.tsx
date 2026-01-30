@@ -1,8 +1,7 @@
+import { memo } from "react";
 import { GitBranch, Trash2 } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
-import { usePRStatusForBranch } from "../hooks/usePRStatus";
-import { useAppStore } from "../store";
-import type { WorktreeInfo, ProcessStatus } from "../types";
+import type { ProcessStatus, DiffStats } from "../types";
 import type { PRStatus } from "../types/github";
 import type { Theme } from "../theme";
 
@@ -57,8 +56,12 @@ function getStatusInfo(prStatus: PRStatus | null, theme: Theme): { label: string
 }
 
 interface WorktreeItemProps {
-  worktree: WorktreeInfo;
-  repoPath: string;
+  name: string;
+  branch: string | null;
+  lastModified: string | null;
+  diffStats: DiffStats | undefined;
+  prStatus: PRStatus | null;
+  processStatus: ProcessStatus;
   isActive: boolean;
   onSelect: () => void;
   onDelete: (e: React.MouseEvent) => void;
@@ -80,21 +83,22 @@ function formatTimeAgo(dateStr: string | null | undefined): string {
   return date.toLocaleDateString();
 }
 
-export function WorktreeItem({
-  worktree,
-  repoPath,
+export const WorktreeItem = memo(function WorktreeItem({
+  name,
+  branch,
+  lastModified,
+  diffStats,
+  prStatus,
+  processStatus,
   isActive,
   onSelect,
   onDelete,
 }: WorktreeItemProps) {
   const theme = useTheme();
-  const wt = worktree;
-  const timeAgo = formatTimeAgo(wt.last_modified);
-  const hasStats = wt.diff_stats && (wt.diff_stats.additions > 0 || wt.diff_stats.deletions > 0);
+  const timeAgo = formatTimeAgo(lastModified);
+  const hasStats = diffStats && (diffStats.additions > 0 || diffStats.deletions > 0);
 
-  const prStatus = usePRStatusForBranch(repoPath, wt.branch);
   const statusInfo = getStatusInfo(prStatus, theme);
-  const processStatus = useAppStore((state) => state.processStatusByPath[wt.path] || 'none');
   const processStatusColor = getProcessStatusColor(processStatus, theme);
   const processStatusLabel = PROCESS_STATUS_LABELS[processStatus];
 
@@ -133,18 +137,18 @@ export function WorktreeItem({
             className="truncate min-w-0 font-medium text-sm flex-1"
             style={{ color: theme.text.primary }}
           >
-            {wt.branch || wt.name}
+            {branch || name}
           </div>
           <div className="relative flex items-center gap-1.5">
             {!prStatus && hasStats && (
               <div
                 className="flex items-center gap-1 font-mono font-medium flex-shrink-0 rounded-sm text-xs py-0.5 px-1 group-hover:opacity-0 transition-opacity"
               >
-                {wt.diff_stats!.additions > 0 && (
-                  <span style={{ color: theme.semantic.success }}>+{wt.diff_stats!.additions}</span>
+                {diffStats!.additions > 0 && (
+                  <span style={{ color: theme.semantic.success }}>+{diffStats!.additions}</span>
                 )}
-                {wt.diff_stats!.deletions > 0 && (
-                  <span style={{ color: theme.semantic.error }}>-{wt.diff_stats!.deletions}</span>
+                {diffStats!.deletions > 0 && (
+                  <span style={{ color: theme.semantic.error }}>-{diffStats!.deletions}</span>
                 )}
               </div>
             )}
@@ -186,7 +190,7 @@ export function WorktreeItem({
               <span className="font-mono text-xs font-bold">·</span>
             </>
           )}
-          <span className="lowercase truncate">{wt.name}</span>
+          <span className="lowercase truncate">{name}</span>
           {!prStatus && timeAgo && (
             <>
               <span className="font-mono text-xs font-bold">·</span>
@@ -197,4 +201,4 @@ export function WorktreeItem({
       </div>
     </div>
   );
-}
+});

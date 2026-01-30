@@ -148,14 +148,13 @@ pub fn list_worktrees(repo_path: String) -> Result<Vec<WorktreeInfo>, String> {
             let wt_path = wt.path().to_path_buf();
             let branch = get_worktree_branch(&wt_path);
             let last_modified = get_last_modified(&wt_path);
-            let diff_stats = get_diff_stats_vs_origin_default(&wt_path);
 
             result.push(WorktreeInfo {
                 name: wt_name.to_string(),
                 path: wt_path.to_string_lossy().to_string(),
                 branch,
                 last_modified,
-                diff_stats,
+                diff_stats: None,
             });
         }
     }
@@ -189,6 +188,36 @@ pub fn get_worktree_info(worktree_path: String) -> Result<WorktreeInfo, String> 
 pub fn get_worktree_branch_name(worktree_path: String) -> Result<Option<String>, String> {
     let path = PathBuf::from(&worktree_path);
     Ok(get_worktree_branch(&path))
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WorktreeDiffStats {
+    pub path: String,
+    pub diff_stats: Option<DiffStats>,
+}
+
+#[tauri::command]
+pub async fn get_worktrees_diff_stats(worktree_paths: Vec<String>) -> Result<Vec<WorktreeDiffStats>, String> {
+    let handles: Vec<_> = worktree_paths
+        .into_iter()
+        .map(|path| {
+            tokio::task::spawn_blocking(move || {
+                let path_buf = PathBuf::from(&path);
+                let diff_stats = get_diff_stats_vs_origin_default(&path_buf);
+                WorktreeDiffStats { path, diff_stats }
+            })
+        })
+        .collect();
+
+    let mut results = Vec::with_capacity(handles.len());
+    for handle in handles {
+        match handle.await {
+            Ok(stats) => results.push(stats),
+            Err(e) => return Err(e.to_string()),
+        }
+    }
+
+    Ok(results)
 }
 
 #[tauri::command]

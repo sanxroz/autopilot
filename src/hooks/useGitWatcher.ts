@@ -23,6 +23,8 @@ export function useGitWatcher() {
   const unlistenWorktreeRef = useRef<UnlistenFn | null>(null);
   const pendingBranchUpdates = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const pendingWorktreeUpdates = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const inFlightRefreshes = useRef<Set<string>>(new Set());
+  const pendingRefreshNeeded = useRef<Set<string>>(new Set());
 
   const repoWorktreeSignature = useMemo(() => {
     return repositories.map(r => ({
@@ -44,13 +46,32 @@ export function useGitWatcher() {
   }, [updateWorktreeBranch]);
 
   const debouncedWorktreeRefresh = useCallback((repoPath: string) => {
+    if (inFlightRefreshes.current.has(repoPath)) {
+      pendingRefreshNeeded.current.add(repoPath);
+      return;
+    }
+
     const existing = pendingWorktreeUpdates.current.get(repoPath);
     if (existing) clearTimeout(existing);
     
-    const timeout = setTimeout(() => {
+    const timeout = setTimeout(async () => {
       pendingWorktreeUpdates.current.delete(repoPath);
-      refreshWorktrees(repoPath);
-    }, 500);
+      if (inFlightRefreshes.current.has(repoPath)) {
+        pendingRefreshNeeded.current.add(repoPath);
+        return;
+      }
+      
+      inFlightRefreshes.current.add(repoPath);
+      try {
+        await refreshWorktrees(repoPath);
+      } finally {
+        inFlightRefreshes.current.delete(repoPath);
+        if (pendingRefreshNeeded.current.has(repoPath)) {
+          pendingRefreshNeeded.current.delete(repoPath);
+          debouncedWorktreeRefresh(repoPath);
+        }
+      }
+    }, 750);
     
     pendingWorktreeUpdates.current.set(repoPath, timeout);
   }, [refreshWorktrees]);
@@ -64,7 +85,6 @@ export function useGitWatcher() {
       if (!unlistenHeadRef.current) {
         unlistenHeadRef.current = await listen<GitChangeEvent>('git-head-changed', (event) => {
           if (!mounted) return;
-          console.log('[GitWatcher] Branch changed:', event.payload);
           debouncedBranchUpdate(event.payload.worktree_path);
         });
       }
@@ -72,7 +92,6 @@ export function useGitWatcher() {
       if (!unlistenWorktreeRef.current) {
         unlistenWorktreeRef.current = await listen<WorktreeChangeEvent>('worktree-changed', (event) => {
           if (!mounted) return;
-          console.log('[GitWatcher] Worktree changed:', event.payload);
           debouncedWorktreeRefresh(event.payload.repo_path);
         });
       }

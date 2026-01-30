@@ -8,6 +8,7 @@ export function usePRStatusPolling() {
     repositories,
     githubSettings,
     setPRStatusBatch,
+    collapsedRepos,
   } = useAppStore();
   
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -21,7 +22,14 @@ export function usePRStatusPolling() {
     isFetchingRef.current = true;
 
     try {
-      const repos: RepoWithBranches[] = repositories.map(r => ({
+      const visibleRepos = repositories.filter(r => !collapsedRepos.has(r.info.path));
+      
+      if (visibleRepos.length === 0) {
+        isFetchingRef.current = false;
+        return;
+      }
+
+      const repos: RepoWithBranches[] = visibleRepos.map(r => ({
         repo_path: r.info.path,
         branches: r.worktrees
           .map(wt => wt.branch)
@@ -45,7 +53,7 @@ export function usePRStatusPolling() {
     } finally {
       isFetchingRef.current = false;
     }
-  }, [repositories, githubSettings.ghCliAvailable, setPRStatusBatch]);
+  }, [repositories, githubSettings.ghCliAvailable, setPRStatusBatch, collapsedRepos]);
 
   useEffect(() => {
     if (!githubSettings.ghCliAvailable) {

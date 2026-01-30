@@ -10,9 +10,9 @@ import { UpdateNotification } from "./components/UpdateNotification";
 import { useAppStore } from "./store";
 import { useTheme } from "./hooks/useTheme";
 import { usePRStatusPolling } from "./hooks/usePRStatus";
-import { useProcessStatusPolling } from "./hooks/useProcessStatus";
 import { useGitWatcher } from "./hooks/useGitWatcher";
 import { useUpdater } from "./hooks/useUpdater";
+import { useDiffStatsLoader } from "./hooks/useDiffStats";
 
 function App() {
   const initialize = useAppStore((state) => state.initialize);
@@ -45,8 +45,8 @@ function App() {
   }, []);
 
   usePRStatusPolling();
-  useProcessStatusPolling();
   useGitWatcher();
+  useDiffStatsLoader();
 
   const {
     status: updateStatus,

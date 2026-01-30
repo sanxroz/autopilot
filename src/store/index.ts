@@ -71,6 +71,7 @@ interface AppStore {
   refreshProcessStatuses: () => Promise<void>;
   getProcessStatus: (worktreePath: string) => ProcessStatus;
   setDefaultAIAgent: (agent: AIAgent) => Promise<void>;
+  updateWorktreeDiffStats: (stats: Array<{ path: string; diff_stats: { additions: number; deletions: number } | null }>) => void;
 }
 
 const STORE_PATH = 'autopilot-settings.json';
@@ -447,7 +448,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   setPRStatusBatch: (batch: Record<string, Record<string, PRStatus>>) => {
-    set({ prStatusByBranch: batch });
+    set((state) => ({
+      prStatusByBranch: { ...state.prStatusByBranch, ...batch },
+    }));
   },
 
   setPRDataCache: (repoPath: string, prNumber: number, data: { checksResult?: PRChecksResult | null; prDetails?: PRDetailedInfo | null }) => {
@@ -541,5 +544,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
     } catch (e) {
       console.error('Failed to save default AI agent:', e);
     }
+  },
+
+  updateWorktreeDiffStats: (stats) => {
+    const statsMap = new Map(stats.map(s => [s.path, s.diff_stats]));
+    set((state) => ({
+      repositories: state.repositories.map((repo) => ({
+        ...repo,
+        worktrees: repo.worktrees.map((wt) => {
+          if (statsMap.has(wt.path)) {
+            return { ...wt, diff_stats: statsMap.get(wt.path) ?? undefined };
+          }
+          return wt;
+        }),
+      })),
+    }));
   },
 }));

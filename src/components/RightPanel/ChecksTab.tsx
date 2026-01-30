@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   Check,
   X,
-  CircleDashed,
   ExternalLink,
   Loader,
   Circle,
@@ -21,7 +20,7 @@ interface ChecksTabProps {
 
 function getCheckIcon(status: string, conclusion: string | null) {
   if (status !== "completed") {
-    return CircleDashed;
+    return Loader;
   }
   if (conclusion === "success") {
     return Check;
@@ -308,7 +307,7 @@ export function ChecksTab({
             return (
               <div key={index} className="flex items-center gap-2 py-1.5">
                 <Icon
-                  className="w-3.5 h-3.5 flex-shrink-0"
+                  className={`w-3.5 h-3.5 flex-shrink-0 ${check.status !== "completed" ? "animate-spin" : ""}`}
                   style={{ color }}
                 />
                 <span
@@ -356,7 +355,7 @@ export function ChecksTab({
             return (
               <div key={index} className="flex items-center gap-2 py-1.5">
                 <Icon
-                  className="w-3.5 h-3.5 flex-shrink-0"
+                  className={`w-3.5 h-3.5 flex-shrink-0 ${check.status !== "completed" ? "animate-spin" : ""}`}
                   style={{ color }}
                 />
                 <span

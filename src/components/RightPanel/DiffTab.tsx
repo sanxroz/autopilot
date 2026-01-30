@@ -190,7 +190,7 @@ function FileSection({
   const diffFileRef = useRef<DiffFile | null>(null);
 
   const diffFile = useMemo(() => {
-    if (!patch || !isExpanded) return null;
+    if (!patch) return null;
 
     const lang = getLangFromPath(file.path);
     try {
@@ -210,7 +210,7 @@ function FileSection({
       console.error("Failed to create diff instance:", e);
       return null;
     }
-  }, [patch, isExpanded, file.path]);
+  }, [patch, file.path]);
 
   useEffect(() => {
     return () => {
