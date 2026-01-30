@@ -46,6 +46,8 @@ export function Sidebar({ isOpen }: SidebarProps) {
     setThemeMode,
     toggleSettings,
     githubSettings,
+    prStatusByBranch,
+    processStatusByPath,
   } = useAppStore();
   const theme = useTheme();
   const themeMode = useThemeMode();
@@ -277,16 +279,24 @@ export function Sidebar({ isOpen }: SidebarProps) {
 
                 {!isCollapsed && (
                    <div className="w-full min-w-0 space-y-1">
-                     {group.worktrees.map((wt) => (
-                      <WorktreeItem
-                        key={wt.path}
-                        worktree={wt}
-                        repoPath={group.repoPath}
-                        isActive={selectedWorktree?.path === wt.path}
-                        onSelect={() => handleWorktreeClick(wt)}
-                        onDelete={(e) => handleDeleteWorktree(e, group.repoPath, wt.name)}
-                      />
-                    ))}
+                     {group.worktrees.map((wt) => {
+                       const prStatus = wt.branch ? prStatusByBranch[group.repoPath]?.[wt.branch] ?? null : null;
+                       const processStatus = processStatusByPath[wt.path] || 'none';
+                       return (
+                         <WorktreeItem
+                           key={wt.path}
+                           name={wt.name}
+                           branch={wt.branch}
+                           lastModified={wt.last_modified}
+                           diffStats={wt.diff_stats}
+                           prStatus={prStatus}
+                           processStatus={processStatus}
+                           isActive={selectedWorktree?.path === wt.path}
+                           onSelect={() => handleWorktreeClick(wt)}
+                           onDelete={(e) => handleDeleteWorktree(e, group.repoPath, wt.name)}
+                         />
+                       );
+                     })}
                   </div>
                 )}
               </div>

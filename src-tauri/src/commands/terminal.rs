@@ -15,12 +15,6 @@ pub struct TerminalSession {
     master: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct TerminalOutput {
-    pub terminal_id: String,
-    pub data: String,
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TerminalSpawnResult {
     pub terminal_id: String,
@@ -98,6 +92,9 @@ pub fn spawn_terminal(
     let app_clone = app.clone();
     let state_terminals = state.terminals.clone();
 
+    let event_name = format!("terminal-output-{}", terminal_id);
+    let close_event_name = format!("terminal-closed-{}", terminal_id);
+
     thread::spawn(move || {
         let mut reader = reader;
         let mut buf = [0u8; 4096];
@@ -107,18 +104,14 @@ pub fn spawn_terminal(
                 Ok(0) => break,
                 Ok(n) => {
                     let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                    let output = TerminalOutput {
-                        terminal_id: tid.clone(),
-                        data,
-                    };
-                    let _ = app_clone.emit("terminal-output", output);
+                    let _ = app_clone.emit(&event_name, data);
                 }
                 Err(_) => break,
             }
         }
 
         state_terminals.lock().remove(&tid);
-        let _ = app_clone.emit("terminal-closed", tid);
+        let _ = app_clone.emit(&close_event_name, ());
     });
 
     Ok(TerminalSpawnResult { terminal_id })
@@ -262,6 +255,8 @@ pub fn spawn_terminal_with_command(
     let tid = terminal_id.clone();
     let app_clone = app.clone();
     let state_terminals = state.terminals.clone();
+    let event_name = format!("terminal-output-{}", terminal_id);
+    let close_event_name = format!("terminal-closed-{}", terminal_id);
 
     thread::spawn(move || {
         let mut reader = reader;
@@ -272,18 +267,14 @@ pub fn spawn_terminal_with_command(
                 Ok(0) => break,
                 Ok(n) => {
                     let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                    let output = TerminalOutput {
-                        terminal_id: tid.clone(),
-                        data,
-                    };
-                    let _ = app_clone.emit("terminal-output", output);
+                    let _ = app_clone.emit(&event_name, data);
                 }
                 Err(_) => break,
             }
         }
 
         state_terminals.lock().remove(&tid);
-        let _ = app_clone.emit("terminal-closed", tid);
+        let _ = app_clone.emit(&close_event_name, ());
     });
 
     Ok(TerminalSpawnResult { terminal_id })

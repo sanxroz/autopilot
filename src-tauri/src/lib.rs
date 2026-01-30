@@ -104,6 +104,7 @@ pub fn run() {
             git::list_branches,
             git::get_worktree_info,
             git::get_worktree_branch_name,
+            git::get_worktrees_diff_stats,
             git::get_changed_files,
             git::get_file_diff,
             git::get_uncommitted_files,

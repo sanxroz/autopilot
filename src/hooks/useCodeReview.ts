@@ -135,7 +135,9 @@ export function useCodeReview(
 
     const unlisten = listen<GitIndexChangeEvent>("git-index-changed", (event) => {
       if (event.payload.worktree_path === worktreePath) {
-        setDiffCache({});
+        if (diffMode === "local") {
+          setDiffCache({});
+        }
         fetchChangedFiles();
       }
     });
@@ -143,7 +145,7 @@ export function useCodeReview(
     return () => {
       unlisten.then((fn) => fn());
     };
-  }, [worktreePath, isInitialized, fetchChangedFiles]);
+  }, [worktreePath, isInitialized, fetchChangedFiles, diffMode]);
 
   const refresh = useCallback(() => {
     setDiffCache({});

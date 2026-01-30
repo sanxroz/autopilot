@@ -6,6 +6,7 @@ import { invoke } from "@tauri-apps/api/core";
 import "@xterm/xterm/css/xterm.css";
 import { useTheme } from "../hooks/useTheme";
 import { getTheme, subscribeTheme } from "../theme";
+import { observeResize } from "../utils/sharedResizeObserver";
 
 interface Props {
   terminalId: string;
@@ -18,7 +19,6 @@ export function Terminal({ terminalId, isActive, isVisible, onFocus }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const prevVisibleRef = useRef(isVisible);
   const theme = useTheme();
 
@@ -124,32 +124,27 @@ export function Terminal({ terminalId, isActive, isVisible, onFocus }: Props) {
       return true;
     });
 
-    const unlisten = listen<{ terminal_id: string; data: string }>(
-      "terminal-output",
+    const unlisten = listen<string>(
+      `terminal-output-${terminalId}`,
       (event) => {
-        if (event.payload.terminal_id === terminalId) {
-          term.write(event.payload.data);
-        }
+        term.write(event.payload);
       }
     );
 
-    const unlistenClose = listen<string>("terminal-closed", (event) => {
-      if (event.payload === terminalId) {
-        term.write("\r\n\x1b[31m[Process exited]\x1b[0m\r\n");
-      }
+    const unlistenClose = listen<void>(`terminal-closed-${terminalId}`, () => {
+      term.write("\r\n\x1b[31m[Process exited]\x1b[0m\r\n");
     });
 
-    resizeObserverRef.current = new ResizeObserver(() => {
+    const unobserve = observeResize(containerRef.current, () => {
       if (isVisible) {
         requestAnimationFrame(fit);
       }
     });
-    resizeObserverRef.current.observe(containerRef.current);
 
     return () => {
       unlisten.then((fn) => fn());
       unlistenClose.then((fn) => fn());
-      resizeObserverRef.current?.disconnect();
+      unobserve();
       term.dispose();
     };
   }, [terminalId]);
