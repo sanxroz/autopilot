@@ -17,8 +17,20 @@ export function useDiffStatsLoader() {
   useEffect(() => {
     if (!isInitialized || repositories.length === 0 || loadingRef.current) return;
 
-    const worktreePaths = repositories
-      .flatMap((repo) => repo.worktrees)
+    const allWorktrees = repositories.flatMap((repo) => repo.worktrees);
+    
+    const clearStaleLoadedPaths = () => {
+      for (const path of loadedPathsRef.current) {
+        const wt = allWorktrees.find((w) => w.path === path);
+        const wasRefreshedWithoutStats = wt && !wt.diff_stats;
+        if (wasRefreshedWithoutStats) {
+          loadedPathsRef.current.delete(path);
+        }
+      }
+    };
+    clearStaleLoadedPaths();
+
+    const worktreePaths = allWorktrees
       .filter((wt) => wt.name !== 'main' && !wt.diff_stats && !loadedPathsRef.current.has(wt.path))
       .map((wt) => wt.path);
 

@@ -20,7 +20,11 @@ export function Terminal({ terminalId, isActive, isVisible, onFocus }: Props) {
   const terminalRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const prevVisibleRef = useRef(isVisible);
+  const isVisibleRef = useRef(isVisible);
   const theme = useTheme();
+
+  // Keep ref in sync with prop to avoid stale closure in resize observer
+  isVisibleRef.current = isVisible;
 
   const fit = useCallback(() => {
     if (fitAddonRef.current && containerRef.current) {
@@ -136,7 +140,7 @@ export function Terminal({ terminalId, isActive, isVisible, onFocus }: Props) {
     });
 
     const unobserve = observeResize(containerRef.current, () => {
-      if (isVisible) {
+      if (isVisibleRef.current) {
         requestAnimationFrame(fit);
       }
     });

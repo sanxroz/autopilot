@@ -448,7 +448,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   setPRStatusBatch: (batch: Record<string, Record<string, PRStatus>>) => {
-    set({ prStatusByBranch: batch });
+    set((state) => ({
+      prStatusByBranch: { ...state.prStatusByBranch, ...batch },
+    }));
   },
 
   setPRDataCache: (repoPath: string, prNumber: number, data: { checksResult?: PRChecksResult | null; prDetails?: PRDetailedInfo | null }) => {
