@@ -386,7 +386,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
         <span className="text-[12px]" style={{ color: theme.text.primary }}>
           {gitStatus?.branch || "unknown"}
         </span>
-        {gitStatus && gitStatus.ahead > 0 && (
+        {gitStatus && (gitStatus.ahead > 0 || !gitStatus.upstream_branch) && (
           <button
             onClick={handlePush}
             disabled={isPushing}
@@ -398,7 +398,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
             ) : (
               <Upload className="w-3 h-3" />
             )}
-            Publish
+            {gitStatus.upstream_branch ? "Push" : "Publish Branch"}
           </button>
         )}
       </div>

@@ -1049,11 +1049,32 @@ pub async fn git_commit(worktree_path: String, message: String) -> Result<String
 #[tauri::command]
 pub async fn git_push(worktree_path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
-        let output = Command::new("git")
-            .args(["push"])
-            .current_dir(&worktree_path)
-            .output()
-            .map_err(|e| format!("Failed to run git push: {}", e))?;
+        let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
+        
+        let head = repo.head().map_err(|e| e.message().to_string())?;
+        let branch_name = head
+            .shorthand()
+            .ok_or_else(|| "Could not get branch name".to_string())?;
+        
+        let has_upstream = repo
+            .find_branch(branch_name, BranchType::Local)
+            .ok()
+            .and_then(|b| b.upstream().ok())
+            .is_some();
+        
+        let output = if has_upstream {
+            Command::new("git")
+                .args(["push"])
+                .current_dir(&worktree_path)
+                .output()
+                .map_err(|e| format!("Failed to run git push: {}", e))?
+        } else {
+            Command::new("git")
+                .args(["push", "--set-upstream", "origin", branch_name])
+                .current_dir(&worktree_path)
+                .output()
+                .map_err(|e| format!("Failed to run git push: {}", e))?
+        };
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
