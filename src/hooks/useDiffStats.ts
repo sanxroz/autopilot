@@ -19,16 +19,15 @@ export function useDiffStatsLoader() {
 
     const allWorktrees = repositories.flatMap((repo) => repo.worktrees);
     
-    const clearStaleLoadedPaths = () => {
-      for (const path of loadedPathsRef.current) {
-        const wt = allWorktrees.find((w) => w.path === path);
-        const wasRefreshedWithoutStats = wt && !wt.diff_stats;
-        if (wasRefreshedWithoutStats) {
-          loadedPathsRef.current.delete(path);
-        }
+    const allWorktreePaths = new Set(allWorktrees.map((w) => w.path));
+    for (const path of loadedPathsRef.current) {
+      const worktreeRemoved = !allWorktreePaths.has(path);
+      const wt = allWorktrees.find((w) => w.path === path);
+      const wasRefreshedWithoutStats = wt && !wt.diff_stats;
+      if (worktreeRemoved || wasRefreshedWithoutStats) {
+        loadedPathsRef.current.delete(path);
       }
-    };
-    clearStaleLoadedPaths();
+    }
 
     const worktreePaths = allWorktrees
       .filter((wt) => wt.name !== 'main' && !wt.diff_stats && !loadedPathsRef.current.has(wt.path))

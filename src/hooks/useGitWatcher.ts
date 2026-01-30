@@ -24,6 +24,7 @@ export function useGitWatcher() {
   const pendingBranchUpdates = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const pendingWorktreeUpdates = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const inFlightRefreshes = useRef<Set<string>>(new Set());
+  const pendingRefreshNeeded = useRef<Set<string>>(new Set());
 
   const repoWorktreeSignature = useMemo(() => {
     return repositories.map(r => ({
@@ -45,20 +46,30 @@ export function useGitWatcher() {
   }, [updateWorktreeBranch]);
 
   const debouncedWorktreeRefresh = useCallback((repoPath: string) => {
-    if (inFlightRefreshes.current.has(repoPath)) return;
+    if (inFlightRefreshes.current.has(repoPath)) {
+      pendingRefreshNeeded.current.add(repoPath);
+      return;
+    }
 
     const existing = pendingWorktreeUpdates.current.get(repoPath);
     if (existing) clearTimeout(existing);
     
     const timeout = setTimeout(async () => {
       pendingWorktreeUpdates.current.delete(repoPath);
-      if (inFlightRefreshes.current.has(repoPath)) return;
+      if (inFlightRefreshes.current.has(repoPath)) {
+        pendingRefreshNeeded.current.add(repoPath);
+        return;
+      }
       
       inFlightRefreshes.current.add(repoPath);
       try {
         await refreshWorktrees(repoPath);
       } finally {
         inFlightRefreshes.current.delete(repoPath);
+        if (pendingRefreshNeeded.current.has(repoPath)) {
+          pendingRefreshNeeded.current.delete(repoPath);
+          debouncedWorktreeRefresh(repoPath);
+        }
       }
     }, 750);
     

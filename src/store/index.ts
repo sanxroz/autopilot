@@ -547,13 +547,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   updateWorktreeDiffStats: (stats) => {
-    const statsMap = new Map(stats.map(s => [s.path, s.diff_stats ?? undefined]));
+    const statsMap = new Map(stats.map(s => [s.path, s.diff_stats]));
     set((state) => ({
       repositories: state.repositories.map((repo) => ({
         ...repo,
         worktrees: repo.worktrees.map((wt) => {
-          const newStats = statsMap.get(wt.path);
-          return newStats !== undefined ? { ...wt, diff_stats: newStats } : wt;
+          if (statsMap.has(wt.path)) {
+            return { ...wt, diff_stats: statsMap.get(wt.path) ?? undefined };
+          }
+          return wt;
         }),
       })),
     }));
