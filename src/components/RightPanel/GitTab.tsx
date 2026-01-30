@@ -386,14 +386,6 @@ export function GitTab({ worktreePath }: GitTabProps) {
         <span className="text-[12px]" style={{ color: theme.text.primary }}>
           {gitStatus?.branch || "unknown"}
         </span>
-        {gitStatus?.upstream_branch && (
-          <>
-            <span className="text-[12px]" style={{ color: theme.text.muted }}>/</span>
-            <span className="text-[12px]" style={{ color: theme.text.tertiary }}>
-              {gitStatus.upstream_branch}
-            </span>
-          </>
-        )}
         {gitStatus && gitStatus.ahead > 0 && (
           <button
             onClick={handlePush}

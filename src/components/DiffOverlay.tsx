@@ -364,14 +364,17 @@ export function DiffOverlay({
   > | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
+  const sidebarContainerRef = useRef<HTMLDivElement>(null);
+  const sidebarWidthRef = useRef(DEFAULT_SIDEBAR_WIDTH);
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       if (!asSidebar) return;
       e.preventDefault();
+      sidebarWidthRef.current = sidebarWidth;
       setIsResizing(true);
     },
-    [asSidebar],
+    [asSidebar, sidebarWidth],
   );
 
   useEffect(() => {
@@ -383,11 +386,15 @@ export function DiffOverlay({
         MAX_SIDEBAR_WIDTH,
         Math.max(MIN_SIDEBAR_WIDTH, containerRight - e.clientX),
       );
-      setSidebarWidth(newWidth);
+      sidebarWidthRef.current = newWidth;
+      if (sidebarContainerRef.current) {
+        sidebarContainerRef.current.style.width = `${newWidth}px`;
+      }
     };
 
     const handleMouseUp = () => {
       setIsResizing(false);
+      setSidebarWidth(sidebarWidthRef.current);
     };
 
     document.addEventListener("mousemove", handleMouseMove);
@@ -504,6 +511,7 @@ export function DiffOverlay({
 
   return (
     <motion.div
+      ref={asSidebar ? sidebarContainerRef : undefined}
       initial={
         asSidebar
           ? false

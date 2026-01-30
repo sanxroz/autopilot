@@ -129,6 +129,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
   const [error, setError] = useState<string | null>(null);
   const [expandedImage, setExpandedImage] = useState<{ src: string; alt: string } | null>(null);
   const [collapsedReviews, setCollapsedReviews] = useState<Set<string>>(new Set());
+  const [copiedReviewId, setCopiedReviewId] = useState<string | null>(null);
   const lastPrStatusRef = useRef<PRStatus | null>(null);
   const initialFetchDoneRef = useRef(false);
 
@@ -426,9 +427,11 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
         }
         lines.push(`> **${thread.author}** *(${new Date(thread.created_at).toLocaleString()})*`);
         lines.push('>');
-        const bodyLines = thread.body.split('\n');
-        for (const bodyLine of bodyLines) {
-          lines.push(`> ${bodyLine}`);
+        if (thread.body) {
+          const bodyLines = thread.body.split('\n');
+          for (const bodyLine of bodyLines) {
+            lines.push(`> ${bodyLine}`);
+          }
         }
         lines.push('');
       }
@@ -436,8 +439,6 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
     
     return lines.join('\n');
   };
-
-  const [copiedReviewId, setCopiedReviewId] = useState<string | null>(null);
 
   const handleCopyReview = async (review: PRComment, threads: PRComment[]) => {
     const formatted = formatReviewForCopy(review, threads);
@@ -557,7 +558,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
                               {formatDate(thread.created_at)}
                             </span>
                           </div>
-                          {renderCommentBody(thread.body)}
+                          {thread.body && renderCommentBody(thread.body)}
                         </div>
                       </div>
                     </div>
