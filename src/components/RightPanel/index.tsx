@@ -4,7 +4,6 @@ import {
   GitPullRequest,
   GitMerge,
   ChevronDown,
-  Loader,
   ExternalLink,
   ListTodo,
   ClipboardList,
@@ -14,7 +13,6 @@ import {
   GitBranch,
   MessageSquare,
 } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
 import { useTheme } from "../../hooks/useTheme";
 import { usePRStatusForBranch } from "../../hooks/usePRStatus";
 import { useAppStore } from "../../store";
@@ -31,7 +29,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
-import type { CreatePRResult } from "../../types/github";
 
 interface RightPanelProps {
   worktreePath: string | null;
@@ -54,8 +51,6 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widthRef = useRef(DEFAULT_WIDTH);
   const [activeTab, setActiveTab] = useState<TabId>("checks");
-  const [showPRDropdown, setShowPRDropdown] = useState(false);
-  const [isCreatingPR, setIsCreatingPR] = useState(false);
   const [showCustomPromptInput, setShowCustomPromptInput] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
   const customPromptInputRef = useRef<HTMLTextAreaElement>(null);
@@ -63,6 +58,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
   const repositories = useAppStore((state) => state.repositories);
   const addTerminalWithCommand = useAppStore((state) => state.addTerminalWithCommand);
+  const defaultAIAgent = useAppStore((state) => state.defaultAIAgent);
 
   const repoPath =
     repositories.find((r) => r.worktrees.some((w) => w.path === worktreePath))
@@ -106,26 +102,33 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
     };
   }, [isResizing]);
 
-  const handleCreatePR = async (draft: boolean) => {
-    if (!repoPath) return;
+  const handleCreatePR = useCallback(() => {
+    const prompt = "Create a pull request for this branch. Use gh pr create to create it. Generate an appropriate title and description based on the git diff and commit history.";
+    const escapedPrompt = prompt.replace(/'/g, "'\\''");
 
-    setIsCreatingPR(true);
-    setShowPRDropdown(false);
-
-    try {
-      await invoke<CreatePRResult>("create_pr", {
-        repoPath,
-        title: branch || "New PR",
-        body: null,
-        base: null,
-        draft,
-      });
-    } catch (e) {
-      console.error("Failed to create PR:", e);
-    } finally {
-      setIsCreatingPR(false);
+    let command: string;
+    switch (defaultAIAgent) {
+      case "opencode":
+        command = `opencode run '${escapedPrompt}'`;
+        break;
+      case "claude":
+        command = `claude -p '${escapedPrompt}'`;
+        break;
+      case "aider":
+        command = `aider --message '${escapedPrompt}'`;
+        break;
+      case "amp":
+        command = `amp '${escapedPrompt}'`;
+        break;
+      case "codex":
+        command = `codex '${escapedPrompt}'`;
+        break;
+      default:
+        command = `${defaultAIAgent} '${escapedPrompt}'`;
     }
-  };
+
+    addTerminalWithCommand(command);
+  }, [defaultAIAgent, addTerminalWithCommand]);
 
   const getChecksColor = () => {
     return theme.text.secondary;
@@ -440,87 +443,27 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         )}
 
         {!prStatus && (
-          <div className="relative">
-            <button
-              onClick={() => setShowPRDropdown(!showPRDropdown)}
-              disabled={isCreatingPR || !repoPath}
-              className="px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1 transition-colors"
-              style={{
-                background: theme.bg.tertiary,
-                color: theme.text.primary,
-                opacity: isCreatingPR || !repoPath ? 0.5 : 1,
-              }}
-              onMouseEnter={(e) => {
-                if (!isCreatingPR && repoPath) {
-                  e.currentTarget.style.background = theme.bg.hover;
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = theme.bg.tertiary;
-              }}
-            >
-              {isCreatingPR ? (
-                <Loader className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <>
-                  <GitPullRequest className="w-3.5 h-3.5" />
-                  Create PR
-                  <ChevronDown className="w-3.5 h-3.5" />
-                </>
-              )}
-            </button>
-
-            {showPRDropdown && (
-              <>
-                <div
-                  className="fixed inset-0 z-10"
-                  onClick={() => setShowPRDropdown(false)}
-                />
-                <motion.div
-                  initial={reducedMotion ? false : { opacity: 0, scale: 0.95, y: -8 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95, y: -8 }}
-                  transition={{
-                    duration: reducedMotion ? 0 : 0.15,
-                    ease: [0.215, 0.61, 0.355, 1],
-                  }}
-                  className="absolute right-0 top-full mt-1 rounded shadow-lg z-20 py-1 min-w-[140px]"
-                  style={{
-                    background: theme.bg.secondary,
-                    border: `1px solid ${theme.border.default}`,
-                    transformOrigin: "top right",
-                  }}
-                >
-                  <button
-                    onClick={() => handleCreatePR(false)}
-                    className="w-full px-3 py-1.5 text-left text-xs transition-colors"
-                    style={{ color: theme.text.primary }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = theme.bg.hover;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "transparent";
-                    }}
-                  >
-                    Create PR
-                  </button>
-                  <button
-                    onClick={() => handleCreatePR(true)}
-                    className="w-full px-3 py-1.5 text-left text-xs transition-colors"
-                    style={{ color: theme.text.secondary }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = theme.bg.hover;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "transparent";
-                    }}
-                  >
-                    Create draft PR
-                  </button>
-                </motion.div>
-              </>
-            )}
-          </div>
+          <button
+            onClick={handleCreatePR}
+            disabled={!repoPath}
+            className="px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors"
+            style={{
+              background: theme.bg.tertiary,
+              color: theme.text.primary,
+              opacity: !repoPath ? 0.5 : 1,
+            }}
+            onMouseEnter={(e) => {
+              if (repoPath) {
+                e.currentTarget.style.background = theme.bg.hover;
+              }
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = theme.bg.tertiary;
+            }}
+          >
+            <GitPullRequest className="w-3.5 h-3.5" />
+            Create PR
+          </button>
         )}
       </div>
 
