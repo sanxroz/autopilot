@@ -103,7 +103,18 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   }, [isResizing]);
 
   const handleCreatePR = useCallback(() => {
-    const prompt = "Create a pull request for this branch. Use gh pr create to create it. Generate an appropriate title and description based on the git diff and commit history.";
+    const prompt = `Prepare and create a pull request for this branch. Follow these steps:
+
+1. Run git status to check for uncommitted changes
+2. If there are uncommitted changes, stage and commit them with descriptive commit messages
+3. Check the current branch name - if it is not descriptive (e.g. just a ticket number or generic name), rename it to something meaningful that describes the changes
+4. Push the branch to origin (use --set-upstream if needed)
+5. Create the PR using gh pr create with:
+   - A clear, concise title summarizing the changes
+   - A description with only relevant information: what changed and why
+   - Do not include verbose lists or unnecessary details
+
+Execute each step and proceed to the next.`;
     const escapedPrompt = prompt.replace(/'/g, "'\\''");
 
     let command: string;
