@@ -66,6 +66,7 @@ const ModalContent = React.forwardRef<
               <ModalClose
                 className="absolute right-4 top-4 rounded-sm p-1 transition-colors"
                 style={{ color: theme.text.tertiary }}
+                aria-label="Close dialog"
               >
                 <X className="h-4 w-4" />
               </ModalClose>

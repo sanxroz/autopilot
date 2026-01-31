@@ -105,6 +105,15 @@ export const WorktreeItem = memo(function WorktreeItem({
   return (
     <div
       onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+      role="button"
+      tabIndex={0}
+      aria-label={`${branch || name} workspace${prStatus ? `, PR #${prStatus.number}` : ""}${isActive ? ", currently selected" : ""}`}
       className="group rounded-md pl-3 pr-1.5 py-2 cursor-pointer relative w-full transition-colors"
       style={{
         background: isActive ? theme.bg.active : "transparent",

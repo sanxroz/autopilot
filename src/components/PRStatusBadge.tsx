@@ -8,6 +8,8 @@ import {
   AlertTriangle,
   Loader,
 } from "lucide-react";
+import { useTheme } from "../hooks/useTheme";
+import type { Theme } from "../theme";
 import type { PRStatus } from "../types/github";
 
 interface PRStatusBadgeProps {
@@ -22,12 +24,12 @@ type BadgeVariant = {
   label: string;
 };
 
-function getBadgeVariant(prStatus: PRStatus): BadgeVariant {
+function getBadgeVariant(prStatus: PRStatus, theme: Theme): BadgeVariant {
   if (prStatus.merged) {
     return {
       icon: GitMerge,
-      color: "#A855F7",
-      bgColor: "rgba(168, 85, 247, 0.15)",
+      color: theme.terminal.magenta,
+      bgColor: `${theme.terminal.magenta}26`,
       label: "Merged",
     };
   }
@@ -35,8 +37,8 @@ function getBadgeVariant(prStatus: PRStatus): BadgeVariant {
   if (prStatus.state === "closed") {
     return {
       icon: X,
-      color: "#EF4444",
-      bgColor: "rgba(239, 68, 68, 0.15)",
+      color: theme.semantic.error,
+      bgColor: theme.semantic.errorMuted,
       label: "Closed",
     };
   }
@@ -44,8 +46,8 @@ function getBadgeVariant(prStatus: PRStatus): BadgeVariant {
   if (prStatus.draft) {
     return {
       icon: CircleDashed,
-      color: "#6B7280",
-      bgColor: "rgba(107, 114, 128, 0.15)",
+      color: theme.text.tertiary,
+      bgColor: theme.bg.tertiary,
       label: "Draft",
     };
   }
@@ -53,8 +55,8 @@ function getBadgeVariant(prStatus: PRStatus): BadgeVariant {
   if (prStatus.checks_status === "failure") {
     return {
       icon: X,
-      color: "#EF4444",
-      bgColor: "rgba(239, 68, 68, 0.15)",
+      color: theme.semantic.error,
+      bgColor: theme.semantic.errorMuted,
       label: "Failing",
     };
   }
@@ -62,8 +64,8 @@ function getBadgeVariant(prStatus: PRStatus): BadgeVariant {
   if (prStatus.checks_status === "pending") {
     return {
       icon: Loader,
-      color: "#F59E0B",
-      bgColor: "rgba(245, 158, 11, 0.15)",
+      color: theme.semantic.warning,
+      bgColor: theme.semantic.warningMuted,
       label: "Running",
     };
   }
@@ -72,22 +74,22 @@ function getBadgeVariant(prStatus: PRStatus): BadgeVariant {
     case "APPROVED":
       return {
         icon: Check,
-        color: "#22C55E",
-        bgColor: "rgba(34, 197, 94, 0.15)",
+        color: theme.semantic.success,
+        bgColor: theme.semantic.successMuted,
         label: "Approved",
       };
     case "CHANGES_REQUESTED":
       return {
         icon: AlertTriangle,
-        color: "#F59E0B",
-        bgColor: "rgba(245, 158, 11, 0.15)",
+        color: theme.semantic.warning,
+        bgColor: theme.semantic.warningMuted,
         label: "Changes",
       };
     default:
       return {
         icon: Clock,
-        color: "#3B82F6",
-        bgColor: "rgba(59, 130, 246, 0.15)",
+        color: theme.semantic.info,
+        bgColor: theme.semantic.infoMuted,
         label: "Review",
       };
   }
@@ -97,7 +99,8 @@ export function PRStatusBadge({
   prStatus,
   compact = false,
 }: PRStatusBadgeProps) {
-  const variant = getBadgeVariant(prStatus);
+  const theme = useTheme();
+  const variant = getBadgeVariant(prStatus, theme);
   const Icon = variant.icon;
 
   if (compact) {

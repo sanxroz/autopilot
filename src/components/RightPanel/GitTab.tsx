@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
 import { useAppStore } from "../../store";
+import type { Theme } from "../../theme";
 import type { GitStatus, GitStatusFile } from "../../types";
 import {
   DropdownMenu,
@@ -40,15 +41,15 @@ function getFileIcon(status: string) {
   return FileEdit;
 }
 
-function getFileColor(status: string): string {
+function getFileColor(status: string, theme: Theme): string {
   const statusLower = status.toLowerCase();
   if (statusLower === "added" || statusLower === "untracked") {
-    return "#22C55E";
+    return theme.semantic.success;
   }
   if (statusLower === "deleted") {
-    return "#EF4444";
+    return theme.semantic.error;
   }
-  return "#F59E0B";
+  return theme.semantic.warning;
 }
 
 function getFileName(path: string): string {
@@ -264,7 +265,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
 
   const renderFileItem = (file: GitStatusFile, isStaged: boolean) => {
     const Icon = getFileIcon(file.status);
-    const color = getFileColor(file.status);
+    const color = getFileColor(file.status, theme);
     const fileName = getFileName(file.path);
 
     return (
@@ -291,6 +292,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
           }}
           onMouseEnter={(e) => (e.currentTarget.style.color = theme.text.primary)}
           onMouseLeave={(e) => (e.currentTarget.style.color = theme.text.tertiary)}
+          aria-label={isStaged ? `Unstage ${fileName}` : `Stage ${fileName}`}
         >
           {isStaging ? <Loader className="w-4 h-4 animate-spin" /> : isStaged ? <Minus className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
         </button>
@@ -422,6 +424,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
                 handleCommit();
               }
             }}
+            aria-label="Commit message"
           />
           <button
             onClick={handleGenerateMessage}
@@ -440,6 +443,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
               e.currentTarget.style.color = isGenerating || staged.length === 0 ? theme.text.muted : theme.text.tertiary;
             }}
             title="Generate commit message with AI"
+            aria-label="Generate commit message with AI"
           >
             {isGenerating ? (
               <Loader className="w-3.5 h-3.5 animate-spin" />
