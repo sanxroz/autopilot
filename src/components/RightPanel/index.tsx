@@ -105,7 +105,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
 
   const handleCreatePR = useCallback(
     (draft: boolean) => {
-      const agent = AI_AGENTS.find((a) => a.id === defaultAIAgent);
+      const agent = AI_AGENTS.find((a) => a.id === defaultAIAgent) || AI_AGENTS[0];
       if (!agent) return;
 
       const draftFlag = draft ? " as a draft" : "";
