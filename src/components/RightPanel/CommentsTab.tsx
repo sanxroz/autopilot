@@ -69,6 +69,7 @@ function CopyButton({ text }: { text: string }) {
       className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
       style={{ background: theme.bg.hover }}
       title="Copy code"
+      aria-label={copied ? "Code copied" : "Copy code"}
     >
       {copied ? (
         <Check className="w-3 h-3" style={{ color: theme.semantic.success }} />
@@ -86,11 +87,15 @@ function ImageModal({ src, alt, onClose }: { src: string; alt: string; onClose: 
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
       onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Image: ${alt}`}
     >
       <button
         onClick={onClose}
         className="absolute top-4 right-4 p-2 rounded-full"
         style={{ background: theme.bg.secondary }}
+        aria-label="Close image"
       >
         <X className="w-5 h-5" style={{ color: theme.text.primary }} />
       </button>
@@ -490,6 +495,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
             className="p-1 rounded opacity-0 group-hover/review:opacity-100 transition-opacity"
             style={{ background: theme.bg.hover }}
             title="Copy review"
+            aria-label={isCopied ? "Review copied" : "Copy review"}
           >
             {isCopied ? (
               <Check className="w-3.5 h-3.5" style={{ color: theme.semantic.success }} />

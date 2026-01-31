@@ -27,6 +27,7 @@ import { DiffView, DiffModeEnum, DiffFile } from "@git-diff-view/react";
 import "@git-diff-view/react/styles/diff-view.css";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useTheme, useThemeMode } from "../../hooks/useTheme";
+import type { Theme } from "../../theme";
 import { useCodeReview } from "../../hooks/useCodeReview";
 import { useAppStore } from "../../store";
 import {
@@ -103,19 +104,19 @@ function getFileIcon(status: ChangedFile["status"]) {
   }
 }
 
-function getStatusColor(status: ChangedFile["status"]) {
+function getStatusColor(status: ChangedFile["status"], theme: Theme) {
   switch (status) {
     case "added":
     case "untracked":
-      return "#22C55E";
+      return theme.semantic.success;
     case "deleted":
-      return "#EF4444";
+      return theme.semantic.error;
     case "modified":
     case "renamed":
     case "copied":
-      return "#F59E0B";
+      return theme.semantic.warning;
     default:
-      return "#6B7280";
+      return theme.text.tertiary;
   }
 }
 
@@ -185,7 +186,7 @@ function FileSection({
   const theme = useTheme();
   const reducedMotion = useReducedMotion();
   const Icon = getFileIcon(file.status);
-  const statusColor = getStatusColor(file.status);
+  const statusColor = getStatusColor(file.status, theme);
   const dir = dirname(file.path);
   const diffFileRef = useRef<DiffFile | null>(null);
 
@@ -278,12 +279,12 @@ function FileSection({
 
           <span className="shrink-0 font-mono text-[11px] tabular-nums whitespace-nowrap">
             {file.additions > 0 && (
-              <span className="mr-1.5" style={{ color: "#22C55E" }}>
+              <span className="mr-1.5" style={{ color: theme.semantic.success }}>
                 +{file.additions}
               </span>
             )}
             {file.deletions > 0 && (
-              <span style={{ color: "#EF4444" }}>-{file.deletions}</span>
+              <span style={{ color: theme.semantic.error }}>-{file.deletions}</span>
             )}
           </span>
         </div>
@@ -513,12 +514,12 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
             {changedFiles.length} files
           </span>
           {totalAdditions > 0 && (
-            <span className="font-mono" style={{ color: "#22C55E" }}>
+            <span className="font-mono" style={{ color: theme.semantic.success }}>
               +{totalAdditions}
             </span>
           )}
           {totalDeletions > 0 && (
-            <span className="font-mono" style={{ color: "#EF4444" }}>
+            <span className="font-mono" style={{ color: theme.semantic.error }}>
               -{totalDeletions}
             </span>
           )}
@@ -538,6 +539,7 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
                 e.currentTarget.style.color = theme.text.tertiary;
               }}
               title={allExpanded ? "Collapse all" : "Expand all"}
+              aria-label={allExpanded ? "Collapse all files" : "Expand all files"}
             >
               {allExpanded ? (
                 <ChevronUp className="w-3.5 h-3.5" />
@@ -561,6 +563,7 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
               e.currentTarget.style.color = theme.text.tertiary;
             }}
             title="Expand to overlay"
+            aria-label="Expand to overlay"
           >
             <Maximize2 className="w-3.5 h-3.5" />
           </button>

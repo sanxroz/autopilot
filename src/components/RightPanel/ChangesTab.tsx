@@ -8,6 +8,7 @@ import {
   Loader
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
+import type { Theme } from "../../theme";
 import type { ChangedFile, FileDiffData } from "../../types";
 
 interface ChangesTabProps {
@@ -34,19 +35,19 @@ function getFileIcon(status: ChangedFile["status"]) {
   }
 }
 
-function getStatusColor(status: ChangedFile["status"]) {
+function getStatusColor(status: ChangedFile["status"], theme: Theme) {
   switch (status) {
     case "added":
     case "untracked":
-      return "#22C55E";
+      return theme.semantic.success;
     case "deleted":
-      return "#EF4444";
+      return theme.semantic.error;
     case "modified":
     case "renamed":
     case "copied":
-      return "#F59E0B";
+      return theme.semantic.warning;
     default:
-      return "#6B7280";
+      return theme.text.tertiary;
   }
 }
 
@@ -167,7 +168,7 @@ export function ChangesTab({
       >
         {changedFiles.map((file) => {
           const Icon = getFileIcon(file.status);
-          const statusColor = getStatusColor(file.status);
+          const statusColor = getStatusColor(file.status, theme);
           const isSelected = selectedFile === file.path;
           const dir = dirname(file.path);
 
@@ -175,6 +176,16 @@ export function ChangesTab({
             <div
               key={file.path}
               onClick={() => onSelectFile(file.path)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  onSelectFile(file.path);
+                }
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label={`${basename(file.path)}, ${file.status}, ${file.additions} additions, ${file.deletions} deletions`}
+              aria-selected={isSelected}
               className="px-3 py-1.5 cursor-pointer flex items-center gap-2 transition-colors"
               style={{
                 background: isSelected ? theme.bg.active : "transparent",
@@ -215,10 +226,10 @@ export function ChangesTab({
                 style={{ color: theme.text.tertiary }}
               >
                 {file.additions > 0 && (
-                  <span style={{ color: "#22C55E" }}>+{file.additions}</span>
+                  <span style={{ color: theme.semantic.success }}>+{file.additions}</span>
                 )}
                 {file.deletions > 0 && (
-                  <span style={{ color: "#EF4444" }}>-{file.deletions}</span>
+                  <span style={{ color: theme.semantic.error }}>-{file.deletions}</span>
                 )}
                 <Square
                   className="w-3.5 h-3.5"
@@ -277,14 +288,14 @@ export function ChangesTab({
                     className="flex"
                     style={{
                       background: isAdd
-                        ? "rgba(34, 197, 94, 0.15)"
+                        ? theme.semantic.successMuted
                         : isDel
-                        ? "rgba(239, 68, 68, 0.15)"
+                        ? theme.semantic.errorMuted
                         : "transparent",
                       color: isAdd
-                        ? "#22C55E"
+                        ? theme.semantic.success
                         : isDel
-                        ? "#EF4444"
+                        ? theme.semantic.error
                         : theme.text.secondary,
                       padding: "1px 8px",
                       whiteSpace: "pre",

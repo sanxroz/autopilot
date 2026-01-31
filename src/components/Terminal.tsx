@@ -210,6 +210,15 @@ export function Terminal({ terminalId, isActive, isVisible, onFocus }: Props) {
     <div
       ref={containerRef}
       onClick={onFocus}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onFocus();
+        }
+      }}
+      role="region"
+      tabIndex={0}
+      aria-label={`Terminal ${terminalId}`}
       className="w-full h-full bg-transparent relative"
       style={{ padding: "4px" }}
     >
