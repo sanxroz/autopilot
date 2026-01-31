@@ -220,14 +220,13 @@ pub fn spawn_terminal_with_command(
     };
 
     if cfg!(target_os = "windows") {
-        // Use /k to keep the terminal open after command completes
         cmd.arg("/k");
         cmd.arg(&full_command);
     } else {
+        // Execute command via -c flag, then exec into interactive shell
+        // This avoids race conditions with shell initialization
         cmd.arg("-c");
-        // Run command, then start interactive shell so user can continue working
-        // Use ${SHELL:-/bin/bash} as fallback if $SHELL is unset
-        cmd.arg(format!("{}; exec ${{SHELL:-/bin/bash}}", full_command));
+        cmd.arg(format!("{}; exec ${{SHELL:-/bin/bash}} -li", full_command));
     }
 
     cmd.cwd(&cwd);
