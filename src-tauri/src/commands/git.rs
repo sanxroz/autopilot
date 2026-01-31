@@ -68,6 +68,30 @@ fn get_worktree_branch(repo_path: &std::path::Path) -> Option<String> {
     head.shorthand().map(String::from)
 }
 
+fn get_push_remote(repo: &Repository) -> Result<String, String> {
+    if let Ok(config) = repo.config() {
+        if let Ok(push_default) = config.get_string("remote.pushDefault") {
+            if repo.find_remote(&push_default).is_ok() {
+                return Ok(push_default);
+            }
+        }
+    }
+
+    if let Ok(remotes) = repo.remotes() {
+        if remotes.len() == 1 {
+            if let Some(remote_name) = remotes.get(0) {
+                return Ok(remote_name.to_string());
+            }
+        }
+    }
+
+    if repo.find_remote("origin").is_ok() {
+        return Ok("origin".to_string());
+    }
+
+    Err("No suitable remote found for push. Configure 'remote.pushDefault' or add an 'origin' remote.".to_string())
+}
+
 fn get_diff_stats_vs_origin_default(repo_path: &std::path::Path) -> Option<DiffStats> {
     let repo = Repository::open(repo_path).ok()?;
     
@@ -1069,8 +1093,9 @@ pub async fn git_push(worktree_path: String) -> Result<(), String> {
                 .output()
                 .map_err(|e| format!("Failed to run git push: {}", e))?
         } else {
+            let remote = get_push_remote(&repo)?;
             Command::new("git")
-                .args(["push", "--set-upstream", "origin", branch_name])
+                .args(["push", "--set-upstream", &remote, branch_name])
                 .current_dir(&worktree_path)
                 .output()
                 .map_err(|e| format!("Failed to run git push: {}", e))?

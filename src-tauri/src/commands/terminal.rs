@@ -223,7 +223,10 @@ pub fn spawn_terminal_with_command(
         cmd.arg("/k");
         cmd.arg(&full_command);
     } else {
-        cmd.arg("-li");
+        // Execute command via -c flag, then exec into interactive shell
+        // This avoids race conditions with shell initialization
+        cmd.arg("-c");
+        cmd.arg(format!("{}; exec ${{SHELL:-/bin/bash}} -li", full_command));
     }
 
     cmd.cwd(&cwd);
@@ -247,20 +250,6 @@ pub fn spawn_terminal_with_command(
     };
 
     state.terminals.lock().insert(terminal_id.clone(), session);
-
-    if !full_command.is_empty() {
-        let state_for_write = state.terminals.clone();
-        let tid_for_write = terminal_id.clone();
-        let cmd_to_write = format!("{}\n", full_command);
-        thread::spawn(move || {
-            thread::sleep(std::time::Duration::from_millis(500));
-            if let Some(session) = state_for_write.lock().get(&tid_for_write) {
-                let mut writer = session.writer.lock();
-                let _ = writer.write_all(cmd_to_write.as_bytes());
-                let _ = writer.flush();
-            }
-        });
-    }
 
     let tid = terminal_id.clone();
     let app_clone = app.clone();

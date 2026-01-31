@@ -1,6 +1,7 @@
 use parking_lot::Mutex;
+use std::cmp::Ordering;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
@@ -24,6 +25,30 @@ const HOME_RELATIVE_PATHS: &[&str] = &[
     ".fly/bin",
 ];
 
+fn parse_node_version(path: &Path) -> Option<(u32, u32, u32)> {
+    let name = path.file_name()?.to_str()?;
+    let version_str = name.strip_prefix('v')?;
+    let parts: Vec<&str> = version_str.split('.').collect();
+    if parts.len() >= 3 {
+        Some((
+            parts[0].parse().ok()?,
+            parts[1].parse().ok()?,
+            parts[2].parse().ok()?,
+        ))
+    } else {
+        None
+    }
+}
+
+fn compare_node_versions(a: &PathBuf, b: &PathBuf) -> Ordering {
+    match (parse_node_version(a), parse_node_version(b)) {
+        (Some(va), Some(vb)) => vb.cmp(&va),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => b.cmp(a),
+    }
+}
+
 fn get_search_paths() -> &'static Vec<String> {
     SEARCH_PATHS.get_or_init(|| {
         let mut paths = Vec::new();
@@ -40,7 +65,7 @@ fn get_search_paths() -> &'static Vec<String> {
                     .filter(|e| e.path().is_dir())
                     .map(|e| e.path())
                     .collect();
-                versions.sort_by(|a, b| b.cmp(a));
+                versions.sort_by(compare_node_versions);
 
                 let default_alias = format!("{}/.nvm/alias/default", home);
                 if let Ok(default_version) = std::fs::read_to_string(&default_alias) {
@@ -69,7 +94,7 @@ fn get_search_paths() -> &'static Vec<String> {
                     .filter(|e| e.path().is_dir())
                     .map(|e| e.path())
                     .collect();
-                versions.sort_by(|a, b| b.cmp(a));
+                versions.sort_by(compare_node_versions);
 
                 for version_path in versions.iter().take(3) {
                     let bin_path = format!("{}/installation/bin", version_path.display());
