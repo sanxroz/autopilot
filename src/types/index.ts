@@ -73,12 +73,12 @@ export interface GitStatus {
   behind: number;
 }
 
-export type AIAgent = 'opencode' | 'claude' | 'aider' | 'amp' | 'codex';
+export type AIAgent = 'opencode' | 'claude' | 'droid' | 'amp' | 'codex';
 
-export const AI_AGENTS: { id: AIAgent; name: string; command: string }[] = [
-  { id: 'opencode', name: 'OpenCode', command: 'opencode' },
-  { id: 'claude', name: 'Claude CLI', command: 'claude' },
-  { id: 'aider', name: 'Aider', command: 'aider' },
-  { id: 'amp', name: 'Amp', command: 'amp' },
-  { id: 'codex', name: 'Codex', command: 'codex' },
+export const AI_AGENTS: { id: AIAgent; name: string; command: string; promptFlag: string | null }[] = [
+  { id: 'opencode', name: 'OpenCode', command: 'opencode', promptFlag: '--prompt' },
+  { id: 'claude', name: 'Claude CLI', command: 'claude', promptFlag: '' },
+  { id: 'droid', name: 'Droid', command: 'droid', promptFlag: '' },
+  { id: 'amp', name: 'Amp', command: 'amp', promptFlag: null },
+  { id: 'codex', name: 'Codex', command: 'codex', promptFlag: '' },
 ];

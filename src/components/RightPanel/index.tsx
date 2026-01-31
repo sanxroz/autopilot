@@ -4,7 +4,6 @@ import {
   GitPullRequest,
   GitMerge,
   ChevronDown,
-  Loader,
   ExternalLink,
   ListTodo,
   ClipboardList,
@@ -14,7 +13,6 @@ import {
   GitBranch,
   MessageSquare,
 } from "lucide-react";
-import { invoke } from "@tauri-apps/api/core";
 import { useTheme } from "../../hooks/useTheme";
 import { usePRStatusForBranch } from "../../hooks/usePRStatus";
 import { useAppStore } from "../../store";
@@ -31,7 +29,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
-import type { CreatePRResult } from "../../types/github";
+import { AI_AGENTS } from "../../types";
 
 interface RightPanelProps {
   worktreePath: string | null;
@@ -55,7 +53,6 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const widthRef = useRef(DEFAULT_WIDTH);
   const [activeTab, setActiveTab] = useState<TabId>("checks");
   const [showPRDropdown, setShowPRDropdown] = useState(false);
-  const [isCreatingPR, setIsCreatingPR] = useState(false);
   const [showCustomPromptInput, setShowCustomPromptInput] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
   const customPromptInputRef = useRef<HTMLTextAreaElement>(null);
@@ -63,6 +60,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
   const repositories = useAppStore((state) => state.repositories);
   const addTerminalWithCommand = useAppStore((state) => state.addTerminalWithCommand);
+  const defaultAIAgent = useAppStore((state) => state.defaultAIAgent);
 
   const repoPath =
     repositories.find((r) => r.worktrees.some((w) => w.path === worktreePath))
@@ -106,26 +104,30 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
     };
   }, [isResizing]);
 
-  const handleCreatePR = async (draft: boolean) => {
-    if (!repoPath) return;
+  const handleCreatePR = useCallback(
+    (draft: boolean) => {
+      setShowPRDropdown(false);
 
-    setIsCreatingPR(true);
-    setShowPRDropdown(false);
+      const agent = AI_AGENTS.find((a) => a.id === defaultAIAgent);
+      if (!agent) return;
 
-    try {
-      await invoke<CreatePRResult>("create_pr", {
-        repoPath,
-        title: branch || "New PR",
-        body: null,
-        base: null,
-        draft,
-      });
-    } catch (e) {
-      console.error("Failed to create PR:", e);
-    } finally {
-      setIsCreatingPR(false);
-    }
-  };
+      const draftFlag = draft ? " as a draft" : "";
+      const prompt = `Check the current branch name and review all changes in this worktree. First, stage and commit any uncommitted changes with a clear commit message. Then push the branch to remote. Finally, create a pull request${draftFlag} with a title that reflects what the branch accomplishes and a focused description summarizing the key changes.`;
+      const escapedPrompt = prompt.replace(/'/g, "'\\''");
+
+      let command: string;
+      if (agent.promptFlag === null) {
+        command = agent.command;
+      } else if (agent.promptFlag === "") {
+        command = `${agent.command} '${escapedPrompt}'`;
+      } else {
+        command = `${agent.command} ${agent.promptFlag} '${escapedPrompt}'`;
+      }
+
+      addTerminalWithCommand(command);
+    },
+    [defaultAIAgent, addTerminalWithCommand],
+  );
 
   const getChecksColor = () => {
     return theme.text.secondary;
@@ -443,15 +445,15 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
           <div className="relative">
             <button
               onClick={() => setShowPRDropdown(!showPRDropdown)}
-              disabled={isCreatingPR || !repoPath}
+              disabled={!repoPath}
               className="px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1 transition-colors"
               style={{
                 background: theme.bg.tertiary,
                 color: theme.text.primary,
-                opacity: isCreatingPR || !repoPath ? 0.5 : 1,
+                opacity: !repoPath ? 0.5 : 1,
               }}
               onMouseEnter={(e) => {
-                if (!isCreatingPR && repoPath) {
+                if (repoPath) {
                   e.currentTarget.style.background = theme.bg.hover;
                 }
               }}
@@ -459,15 +461,9 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
                 e.currentTarget.style.background = theme.bg.tertiary;
               }}
             >
-              {isCreatingPR ? (
-                <Loader className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <>
-                  <GitPullRequest className="w-3.5 h-3.5" />
-                  Create PR
-                  <ChevronDown className="w-3.5 h-3.5" />
-                </>
-              )}
+              <GitPullRequest className="w-3.5 h-3.5" />
+              Create PR
+              <ChevronDown className="w-3.5 h-3.5" />
             </button>
 
             {showPRDropdown && (
