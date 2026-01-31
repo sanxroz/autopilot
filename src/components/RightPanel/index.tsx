@@ -52,7 +52,6 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widthRef = useRef(DEFAULT_WIDTH);
   const [activeTab, setActiveTab] = useState<TabId>("checks");
-  const [showPRDropdown, setShowPRDropdown] = useState(false);
   const [showCustomPromptInput, setShowCustomPromptInput] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
   const customPromptInputRef = useRef<HTMLTextAreaElement>(null);
@@ -106,8 +105,6 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
 
   const handleCreatePR = useCallback(
     (draft: boolean) => {
-      setShowPRDropdown(false);
-
       const agent = AI_AGENTS.find((a) => a.id === defaultAIAgent);
       if (!agent) return;
 
@@ -441,82 +438,31 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
           </button>
         )}
 
-        {!prStatus && (
-          <div className="relative">
-            <button
-              onClick={() => setShowPRDropdown(!showPRDropdown)}
-              disabled={!repoPath}
-              className="px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1 transition-colors"
-              style={{
-                background: theme.bg.tertiary,
-                color: theme.text.primary,
-                opacity: !repoPath ? 0.5 : 1,
-              }}
-              onMouseEnter={(e) => {
-                if (repoPath) {
-                  e.currentTarget.style.background = theme.bg.hover;
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = theme.bg.tertiary;
-              }}
-            >
-              <GitPullRequest className="w-3.5 h-3.5" />
-              Create PR
-              <ChevronDown className="w-3.5 h-3.5" />
-            </button>
-
-            {showPRDropdown && (
-              <>
-                <div
-                  className="fixed inset-0 z-10"
-                  onClick={() => setShowPRDropdown(false)}
-                />
-                <motion.div
-                  initial={reducedMotion ? false : { opacity: 0, scale: 0.95, y: -8 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95, y: -8 }}
-                  transition={{
-                    duration: reducedMotion ? 0 : 0.15,
-                    ease: [0.215, 0.61, 0.355, 1],
-                  }}
-                  className="absolute right-0 top-full mt-1 rounded shadow-lg z-20 py-1 min-w-[140px]"
-                  style={{
-                    background: theme.bg.secondary,
-                    border: `1px solid ${theme.border.default}`,
-                    transformOrigin: "top right",
-                  }}
-                >
-                  <button
-                    onClick={() => handleCreatePR(false)}
-                    className="w-full px-3 py-1.5 text-left text-xs transition-colors"
-                    style={{ color: theme.text.primary }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = theme.bg.hover;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "transparent";
-                    }}
-                  >
-                    Create PR
-                  </button>
-                  <button
-                    onClick={() => handleCreatePR(true)}
-                    className="w-full px-3 py-1.5 text-left text-xs transition-colors"
-                    style={{ color: theme.text.secondary }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = theme.bg.hover;
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "transparent";
-                    }}
-                  >
-                    Create draft PR
-                  </button>
-                </motion.div>
-              </>
-            )}
-          </div>
+        {!prStatus && repoPath && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium transition-colors hover:bg-opacity-80"
+                style={{
+                  color: theme.text.primary,
+                }}
+              >
+                <GitPullRequest className="w-3.5 h-3.5" />
+                Create PR
+                <ChevronDown className="w-3.5 h-3.5 opacity-50" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleCreatePR(false)}>
+                <GitPullRequest className="w-3 h-3" />
+                <span>Create PR</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleCreatePR(true)}>
+                <GitPullRequest className="w-3 h-3" />
+                <span>Create draft PR</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
 
