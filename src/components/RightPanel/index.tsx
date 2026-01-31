@@ -112,7 +112,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
       if (!agent) return;
 
       const draftFlag = draft ? " as a draft" : "";
-      const prompt = `Check the current branch name and review all changes in this worktree. First, stage and commit any uncommitted changes with a clear commit message. Then push the branch to remote. Finally, create a pull request${draftFlag} with a title that reflects what the branch accomplishes and a focused description summarizing the key changes.`;
+      const prompt = `Review all changes in this worktree. If the branch name doesn't reflect the changes, rename it to something descriptive. Stage and commit any uncommitted changes with a clear commit message. Push the branch to remote. Then create a pull request${draftFlag} with a title that reflects what the branch accomplishes and a focused description summarizing the key changes.`;
       const escapedPrompt = prompt.replace(/'/g, "'\\''");
 
       let command: string;
