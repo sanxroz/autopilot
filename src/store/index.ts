@@ -37,6 +37,7 @@ interface AppStore {
   codeReviewOpen: boolean;
   diffOverlayOpen: boolean;
   diffViewMode: DiffViewMode;
+  gitFileDiffPreview: { filePath: string; worktreePath: string; isStaged: boolean } | null;
   processStatusByPath: Record<string, ProcessStatus>;
   defaultAIAgent: AIAgent;
 
@@ -59,6 +60,7 @@ interface AppStore {
   setDiffOverlayOpen: (open: boolean) => void;
   toggleDiffOverlay: () => void;
   setDiffViewMode: (mode: DiffViewMode) => void;
+  setGitFileDiffPreview: (preview: { filePath: string; worktreePath: string; isStaged: boolean } | null) => void;
   toggleDiffViewMode: () => void;
   createWorktreeAuto: (repoPath: string) => Promise<WorktreeInfo | null>;
   deleteWorktree: (repoPath: string, worktreeName: string) => Promise<void>;
@@ -113,6 +115,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   codeReviewOpen: false,
   diffOverlayOpen: false,
   diffViewMode: 'overlay',
+  gitFileDiffPreview: null,
   processStatusByPath: {},
   defaultAIAgent: 'opencode',
 
@@ -223,6 +226,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         selectedWorktree: worktree,
         currentTerminals: existing.terminals,
         currentActiveTerminalId: existing.activeTerminalId,
+        gitFileDiffPreview: null,
       });
       return;
     }
@@ -244,6 +248,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedWorktree: worktree,
       currentTerminals: [terminal],
       currentActiveTerminalId: terminal.id,
+      gitFileDiffPreview: null,
       terminalsByWorktree: {
         ...state.terminalsByWorktree,
         [worktree.path]: {
@@ -420,6 +425,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setDiffViewMode: (mode: DiffViewMode) => {
     set({ diffViewMode: mode });
+  },
+
+  setGitFileDiffPreview: (preview) => {
+    set({ gitFileDiffPreview: preview });
   },
 
   toggleDiffViewMode: () => {
