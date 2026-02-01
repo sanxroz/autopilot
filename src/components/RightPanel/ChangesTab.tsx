@@ -177,6 +177,7 @@ export function ChangesTab({
               key={file.path}
               onClick={() => onSelectFile(file.path)}
               onKeyDown={(e) => {
+                if (e.target !== e.currentTarget) return;
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
                   onSelectFile(file.path);

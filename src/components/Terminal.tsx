@@ -211,6 +211,7 @@ export function Terminal({ terminalId, isActive, isVisible, onFocus }: Props) {
       ref={containerRef}
       onClick={onFocus}
       onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onFocus();
