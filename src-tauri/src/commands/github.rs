@@ -720,3 +720,34 @@ pub async fn run_cubic_review(repo_path: String) -> Result<CubicReviewResult, St
         }
     }
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MergePRResult {
+    pub success: bool,
+    pub message: String,
+}
+
+#[tauri::command]
+pub async fn merge_pr(repo_path: String, pr_number: u64) -> Result<MergePRResult, String> {
+    let gh_path = find_cli_tool("gh")?;
+    let output = Command::new(&gh_path)
+        .args(["pr", "merge", &pr_number.to_string(), "--merge"])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run gh command: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if output.status.success() {
+        Ok(MergePRResult {
+            success: true,
+            message: stdout.trim().to_string(),
+        })
+    } else {
+        Ok(MergePRResult {
+            success: false,
+            message: stderr.trim().to_string(),
+        })
+    }
+}
