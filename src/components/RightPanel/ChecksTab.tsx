@@ -103,6 +103,10 @@ export function ChecksTab({
   const setPRDataCache = useAppStore((state) => state.setPRDataCache);
   const [isMerging, setIsMerging] = useState(false);
   const [hasMerged, setHasMerged] = useState(false);
+
+  useEffect(() => {
+    setHasMerged(false);
+  }, [prNumber, repoPath]);
   
   // Initialize state from the cache (via a lazy initializer) to avoid the initial render
   // briefly showing "No checks" even when cached data exists.

@@ -73,6 +73,10 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const branch = selectedWorktree?.branch ?? null;
   const prStatus = usePRStatusForBranch(repoPath ?? "", branch);
 
+  useEffect(() => {
+    setHasMerged(false);
+  }, [prStatus?.number]);
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     widthRef.current = width;
