@@ -65,6 +65,12 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const defaultAIAgent = useAppStore((state) => state.defaultAIAgent);
   const [isMerging, setIsMerging] = useState(false);
   const [hasMerged, setHasMerged] = useState(false);
+  
+  // Track the active PR to detect stale async callbacks
+  const activePrRef = useRef<{ repoPath: string | null; prNumber: number | null }>({ 
+    repoPath: null, 
+    prNumber: null 
+  });
 
   const repoPath =
     repositories.find((r) => r.worktrees.some((w) => w.path === worktreePath))
@@ -75,7 +81,9 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
 
   useEffect(() => {
     setHasMerged(false);
-  }, [prStatus?.number]);
+    setIsMerging(false);
+    activePrRef.current = { repoPath, prNumber: prStatus?.number ?? null };
+  }, [prStatus?.number, repoPath]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -186,22 +194,39 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
 
   const handleMerge = useCallback(async () => {
     if (!repoPath || !prStatus?.number) return;
+    
+    const mergeRepoPath = repoPath;
+    const mergePrNumber = prStatus.number;
+    
     setIsMerging(true);
     try {
       const result = await invoke<{ success: boolean; message: string }>("merge_pr", {
-        repoPath,
-        prNumber: prStatus.number,
+        repoPath: mergeRepoPath,
+        prNumber: mergePrNumber,
       });
+      
+      const isStale = activePrRef.current.repoPath !== mergeRepoPath || 
+                      activePrRef.current.prNumber !== mergePrNumber;
+      if (isStale) return;
+      
       if (result.success) {
-        toast.success(`PR #${prStatus.number} merged`);
+        toast.success(`PR #${mergePrNumber} merged`);
         setHasMerged(true);
       } else {
         toast.error(result.message || "Merge failed");
       }
     } catch (e) {
-      toast.error(String(e));
+      const isStale = activePrRef.current.repoPath !== mergeRepoPath || 
+                      activePrRef.current.prNumber !== mergePrNumber;
+      if (!isStale) {
+        toast.error(String(e));
+      }
     } finally {
-      setIsMerging(false);
+      const isStale = activePrRef.current.repoPath !== mergeRepoPath || 
+                      activePrRef.current.prNumber !== mergePrNumber;
+      if (!isStale) {
+        setIsMerging(false);
+      }
     }
   }, [repoPath, prStatus?.number]);
 
