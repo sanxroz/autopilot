@@ -61,6 +61,10 @@ function parseChangesFromPatch(patch: string): {
 
   for (const line of lines) {
     if (line.startsWith("@@")) {
+      if (pendingDeleted.length > 0) {
+        deletedAtLine.set(newLineNum, [...pendingDeleted]);
+        pendingDeleted = [];
+      }
       const match = line.match(/@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
       if (match) {
         newLineNum = parseInt(match[1], 10);
@@ -194,6 +198,7 @@ export function GitFileDiffOverlay() {
       return;
     }
 
+    let cancelled = false;
     hasScrolledRef.current = false;
 
     const loadDiff = async () => {
@@ -204,16 +209,26 @@ export function GitFileDiffOverlay() {
           worktreePath,
           filePath,
         });
-        setDiffData(diff);
+        if (!cancelled) {
+          setDiffData(diff);
+        }
       } catch (e) {
-        setError(String(e));
-        setDiffData(null);
+        if (!cancelled) {
+          setError(String(e));
+          setDiffData(null);
+        }
       } finally {
-        setIsLoading(false);
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
     };
 
     loadDiff();
+
+    return () => {
+      cancelled = true;
+    };
   }, [filePath, worktreePath]);
 
   useEffect(() => {
@@ -413,9 +428,9 @@ export function GitFileDiffOverlay() {
                     className="flex"
                     style={{
                       background: isAdd
-                        ? "rgba(34, 197, 94, 0.15)"
+                        ? theme.semantic.successMuted
                         : isDel
-                        ? "rgba(239, 68, 68, 0.15)"
+                        ? theme.semantic.errorMuted
                         : "transparent",
                       height: `${LINE_HEIGHT}px`,
                     }}
@@ -427,9 +442,9 @@ export function GitFileDiffOverlay() {
                         padding: "0 8px",
                         color: theme.text.muted,
                         background: isAdd
-                          ? "rgba(34, 197, 94, 0.2)"
+                          ? theme.semantic.successMuted
                           : isDel
-                          ? "rgba(239, 68, 68, 0.2)"
+                          ? theme.semantic.errorMuted
                           : theme.bg.secondary,
                         borderRight: `1px solid ${theme.border.subtle}`,
                       }}
@@ -446,9 +461,9 @@ export function GitFileDiffOverlay() {
                           ? theme.semantic.error
                           : "transparent",
                         background: isAdd
-                          ? "rgba(34, 197, 94, 0.2)"
+                          ? theme.semantic.successMuted
                           : isDel
-                          ? "rgba(239, 68, 68, 0.2)"
+                          ? theme.semantic.errorMuted
                           : "transparent",
                       }}
                     >

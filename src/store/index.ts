@@ -226,6 +226,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         selectedWorktree: worktree,
         currentTerminals: existing.terminals,
         currentActiveTerminalId: existing.activeTerminalId,
+        gitFileDiffPreview: null,
       });
       return;
     }
@@ -247,6 +248,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       selectedWorktree: worktree,
       currentTerminals: [terminal],
       currentActiveTerminalId: terminal.id,
+      gitFileDiffPreview: null,
       terminalsByWorktree: {
         ...state.terminalsByWorktree,
         [worktree.path]: {
