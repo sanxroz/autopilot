@@ -56,6 +56,8 @@ export interface ChangedFile {
 export interface FileDiffData {
   path: string;
   patch: string;
+  old_content?: string | null;
+  new_content?: string | null;
 }
 
 export interface GitStatusFile {

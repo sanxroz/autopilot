@@ -63,6 +63,8 @@ export function GitTab({ worktreePath }: GitTabProps) {
   const [isStaging, setIsStaging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const defaultAIAgent = useAppStore((state) => state.defaultAIAgent);
+  const gitFileDiffPreview = useAppStore((state) => state.gitFileDiffPreview);
+  const setGitFileDiffPreview = useAppStore((state) => state.setGitFileDiffPreview);
 
   const isOperationInProgress = isStaging || isCommitting || isPushing || isGenerating;
 
@@ -113,6 +115,26 @@ export function GitTab({ worktreePath }: GitTabProps) {
       unlistenIndexChanged.then((fn) => fn());
     };
   }, [worktreePath, fetchStatus]);
+
+  useEffect(() => {
+    if (gitFileDiffPreview && gitStatus) {
+      const allFiles = [...(gitStatus.staged || []), ...(gitStatus.unstaged || [])];
+      const stillExists = allFiles.some(f => f.path === gitFileDiffPreview.filePath);
+      if (!stillExists) {
+        setGitFileDiffPreview(null);
+      }
+    }
+  }, [gitStatus, gitFileDiffPreview, setGitFileDiffPreview]);
+
+  const handleSelectFile = useCallback((file: GitStatusFile, isStaged: boolean) => {
+    if (!worktreePath) return;
+    
+    if (gitFileDiffPreview?.filePath === file.path && gitFileDiffPreview?.isStaged === isStaged) {
+      setGitFileDiffPreview(null);
+    } else {
+      setGitFileDiffPreview({ filePath: file.path, worktreePath, isStaged });
+    }
+  }, [worktreePath, gitFileDiffPreview, setGitFileDiffPreview]);
 
   const handleStageFiles = useCallback(async (files: string[]) => {
     if (!worktreePath || files.length === 0 || isOperationInProgress) return;
@@ -261,19 +283,40 @@ export function GitTab({ worktreePath }: GitTabProps) {
     const Icon = getFileIcon(file.status);
     const color = getFileColor(file.status, theme);
     const fileName = getFileName(file.path);
+    const isSelected = gitFileDiffPreview?.filePath === file.path && gitFileDiffPreview?.isStaged === isStaged;
 
     return (
       <div
         key={file.path}
-        className="flex items-center gap-2 py-1 px-3 transition-colors group"
-        style={{ color: theme.text.primary }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = theme.bg.hover)}
-        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+        className="flex items-center gap-2 py-1 px-3 transition-colors group cursor-pointer"
+        style={{
+          color: theme.text.primary,
+          background: isSelected ? theme.bg.active : "transparent",
+        }}
+        onClick={() => handleSelectFile(file, isStaged)}
+        onMouseEnter={(e) => {
+          if (!isSelected) e.currentTarget.style.background = theme.bg.hover;
+        }}
+        onMouseLeave={(e) => {
+          if (!isSelected) e.currentTarget.style.background = "transparent";
+        }}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleSelectFile(file, isStaged);
+          }
+        }}
+        aria-selected={isSelected}
       >
         <Icon className="w-4 h-4 flex-shrink-0" style={{ color }} />
         <span className="text-[13px] flex-1 truncate">{fileName}</span>
         <button
-          className="p-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+          className={cn(
+            "p-0.5 rounded transition-opacity flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed",
+            isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          )}
           style={{ color: theme.text.tertiary }}
           disabled={isOperationInProgress}
           onClick={(e) => {

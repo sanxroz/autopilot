@@ -4,6 +4,7 @@ import { Sidebar } from "./components/Sidebar";
 import { TerminalGrid } from "./components/TerminalGrid";
 import { RightPanel } from "./components/RightPanel";
 import { DiffOverlay } from "./components/DiffOverlay";
+import { GitFileDiffOverlay } from "./components/GitFileDiffOverlay";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { CommandMenu } from "./components/CommandMenu";
 import { UpdateNotification } from "./components/UpdateNotification";
@@ -90,6 +91,7 @@ function App() {
               onClose={() => setDiffOverlayOpen(false)}
             />
           )}
+          <GitFileDiffOverlay />
         </div>
         {codeReviewOpen && (
           <RightPanel
