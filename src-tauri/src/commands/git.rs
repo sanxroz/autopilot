@@ -700,7 +700,7 @@ pub async fn get_uncommitted_files(worktree_path: String) -> Result<Vec<ChangedF
 }
 
 #[tauri::command]
-pub async fn get_uncommitted_diff(worktree_path: String, file_path: String) -> Result<FileDiffData, String> {
+pub async fn get_uncommitted_diff(worktree_path: String, file_path: String, is_staged: bool) -> Result<FileDiffData, String> {
     tokio::task::spawn_blocking(move || {
         let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
         
@@ -710,15 +710,29 @@ pub async fn get_uncommitted_diff(worktree_path: String, file_path: String) -> R
             .map_err(|e| format!("Cannot get HEAD commit: {}", e.message()))?;
         let head_tree = head_commit.tree().map_err(|e| e.message().to_string())?;
         
-        let old_content = head_tree
+        let workdir = repo.workdir().ok_or("No workdir")?;
+        let full_path = workdir.join(&file_path);
+        
+        let index = repo.index().map_err(|e| e.message().to_string())?;
+        
+        let index_content = index
+            .get_path(std::path::Path::new(&file_path), 0)
+            .and_then(|entry| repo.find_blob(entry.id).ok())
+            .and_then(|blob| String::from_utf8(blob.content().to_vec()).ok());
+        
+        let head_content = head_tree
             .get_path(std::path::Path::new(&file_path))
             .ok()
             .and_then(|entry| repo.find_blob(entry.id()).ok())
             .and_then(|blob| String::from_utf8(blob.content().to_vec()).ok());
         
-        let workdir = repo.workdir().ok_or("No workdir")?;
-        let full_path = workdir.join(&file_path);
-        let new_content = std::fs::read_to_string(&full_path).ok();
+        let workdir_content = std::fs::read_to_string(&full_path).ok();
+        
+        let (old_content, new_content) = if is_staged {
+            (head_content, index_content.clone().or_else(|| workdir_content.clone()))
+        } else {
+            (index_content.or(head_content), workdir_content)
+        };
         
         let is_new_file = old_content.is_none();
         
@@ -726,9 +740,13 @@ pub async fn get_uncommitted_diff(worktree_path: String, file_path: String) -> R
         diff_opts.pathspec(&file_path);
         diff_opts.include_untracked(true);
         
-        let diff = repo
-            .diff_tree_to_workdir_with_index(Some(&head_tree), Some(&mut diff_opts))
-            .map_err(|e| e.message().to_string())?;
+        let diff = if is_staged {
+            repo.diff_tree_to_index(Some(&head_tree), Some(&index), Some(&mut diff_opts))
+                .map_err(|e| e.message().to_string())?
+        } else {
+            repo.diff_index_to_workdir(Some(&index), Some(&mut diff_opts))
+                .map_err(|e| e.message().to_string())?
+        };
         
         let mut patch = String::new();
         diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {

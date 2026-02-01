@@ -188,6 +188,7 @@ export function GitFileDiffOverlay() {
 
   const filePath = preview?.filePath ?? null;
   const worktreePath = preview?.worktreePath ?? null;
+  const isStaged = preview?.isStaged ?? false;
 
   useEffect(() => {
     if (!filePath || !worktreePath) {
@@ -208,6 +209,7 @@ export function GitFileDiffOverlay() {
         const diff = await invoke<FileDiffData>("get_uncommitted_diff", {
           worktreePath,
           filePath,
+          isStaged,
         });
         if (!cancelled) {
           setDiffData(diff);
@@ -229,7 +231,7 @@ export function GitFileDiffOverlay() {
     return () => {
       cancelled = true;
     };
-  }, [filePath, worktreePath]);
+  }, [filePath, worktreePath, isStaged]);
 
   useEffect(() => {
     if (!diffData?.new_content || !filePath) {
