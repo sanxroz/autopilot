@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   GitPullRequest,
@@ -12,6 +14,7 @@ import {
   ScanSearch,
   GitBranch,
   MessageSquare,
+  Loader,
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
 import { usePRStatusForBranch } from "../../hooks/usePRStatus";
@@ -60,6 +63,8 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const repositories = useAppStore((state) => state.repositories);
   const addTerminalWithCommand = useAppStore((state) => state.addTerminalWithCommand);
   const defaultAIAgent = useAppStore((state) => state.defaultAIAgent);
+  const [isMerging, setIsMerging] = useState(false);
+  const [hasMerged, setHasMerged] = useState(false);
 
   const repoPath =
     repositories.find((r) => r.worktrees.some((w) => w.path === worktreePath))
@@ -174,6 +179,27 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
     prStatus.checks_status === "success" &&
     (prStatus.review_decision === "APPROVED" ||
       prStatus.review_decision === null);
+
+  const handleMerge = useCallback(async () => {
+    if (!repoPath || !prStatus?.number) return;
+    setIsMerging(true);
+    try {
+      const result = await invoke<{ success: boolean; message: string }>("merge_pr", {
+        repoPath,
+        prNumber: prStatus.number,
+      });
+      if (result.success) {
+        toast.success(`PR #${prStatus.number} merged`);
+        setHasMerged(true);
+      } else {
+        toast.error(result.message || "Merge failed");
+      }
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setIsMerging(false);
+    }
+  }, [repoPath, prStatus?.number]);
 
   const diffViewMode = useAppStore((state) => state.diffViewMode);
   const prevDiffViewModeRef = useRef(diffViewMode);
@@ -424,17 +450,22 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         </DropdownMenu>
         )}
 
-        {isReadyToMerge && (
+        {isReadyToMerge && !hasMerged && (
           <button
-            onClick={() => window.open(prStatus.url, "_blank")}
-            className="px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors"
+            onClick={handleMerge}
+            disabled={isMerging}
+            className="px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-70"
             style={{
               background: "#22C55E",
               color: "white",
             }}
           >
-            <GitMerge className="w-3.5 h-3.5" />
-            Merge
+            {isMerging ? (
+              <Loader className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <GitMerge className="w-3.5 h-3.5" />
+            )}
+            {isMerging ? "Merging..." : "Merge"}
           </button>
         )}
 
@@ -483,7 +514,6 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
               <ChecksTab
                 repoPath={repoPath}
                 prNumber={prStatus?.number ?? null}
-                prUrl={prStatus?.url ?? null}
                 prStatus={prStatus}
               />
             </motion.div>

@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import {
   Check,
   X,
@@ -14,7 +15,6 @@ import type { PRChecksResult, PRDetailedInfo, PRStatus } from "../../types/githu
 interface ChecksTabProps {
   repoPath: string | null;
   prNumber: number | null;
-  prUrl: string | null;
   prStatus: PRStatus | null;
 }
 
@@ -96,12 +96,13 @@ function getMergeStatusColor(status: string, theme: ReturnType<typeof useTheme>)
 export function ChecksTab({
   repoPath,
   prNumber,
-  prUrl,
   prStatus,
 }: ChecksTabProps) {
   const theme = useTheme();
   const getPRDataCache = useAppStore((state) => state.getPRDataCache);
   const setPRDataCache = useAppStore((state) => state.setPRDataCache);
+  const [isMerging, setIsMerging] = useState(false);
+  const [hasMerged, setHasMerged] = useState(false);
   
   // Initialize state from the cache (via a lazy initializer) to avoid the initial render
   // briefly showing "No checks" even when cached data exists.
@@ -188,6 +189,27 @@ export function ChecksTab({
     }
   }, [prStatus, fetchData]);
 
+  const handleMerge = useCallback(async () => {
+    if (!repoPath || !prNumber) return;
+    setIsMerging(true);
+    try {
+      const result = await invoke<{ success: boolean; message: string }>("merge_pr", {
+        repoPath,
+        prNumber,
+      });
+      if (result.success) {
+        toast.success(`PR #${prNumber} merged`);
+        setHasMerged(true);
+      } else {
+        toast.error(result.message || "Merge failed");
+      }
+    } catch (e) {
+      toast.error(String(e));
+    } finally {
+      setIsMerging(false);
+    }
+  }, [repoPath, prNumber]);
+
   if (!prNumber) {
     return (
       <div
@@ -270,19 +292,21 @@ export function ChecksTab({
                 {getMergeStatusText(prDetails.merge_state_status)}
               </span>
             </div>
-            {prDetails.merge_state_status === "CLEAN" && prUrl && (
+            {prDetails.merge_state_status === "CLEAN" && prNumber && !hasMerged && (
               <button
-                onClick={() => window.open(prUrl, "_blank")}
-                className="text-xs px-2 py-1 rounded transition-colors"
+                onClick={handleMerge}
+                disabled={isMerging}
+                className="text-xs px-2 py-1 rounded transition-colors flex items-center gap-1 disabled:opacity-70"
                 style={{ color: theme.text.secondary }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = theme.bg.hover;
+                  if (!isMerging) e.currentTarget.style.background = theme.bg.hover;
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = "transparent";
                 }}
               >
-                Merge
+                {isMerging && <Loader className="w-3 h-3 animate-spin" />}
+                {isMerging ? "Merging..." : "Merge"}
               </button>
             )}
           </div>
