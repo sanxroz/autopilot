@@ -391,6 +391,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
                       minHeight: "56px",
                     }}
                     autoFocus
+                    aria-label="Review prompt"
                   />
                   <div className="flex items-center justify-end gap-1 px-1 pb-0.5">
                     <button

@@ -219,7 +219,15 @@ export function Sidebar({ isOpen }: SidebarProps) {
 
                 <div
                    className="flex items-center justify-between px-3 py-1.5 mt-0.5 mb-1 group w-full min-w-0 rounded-md cursor-pointer"
+                   role="button"
+                   tabIndex={0}
                    onClick={() => toggleRepoCollapsed(group.repoPath)}
+                   onKeyDown={(e) => {
+                     if (e.key === "Enter" || e.key === " ") {
+                       e.preventDefault();
+                       toggleRepoCollapsed(group.repoPath);
+                     }
+                   }}
                    style={{ background: "transparent" }}
                    onMouseEnter={(e) => {
                      e.currentTarget.style.background = theme.bg.hover;
@@ -227,6 +235,8 @@ export function Sidebar({ isOpen }: SidebarProps) {
                    onMouseLeave={(e) => {
                      e.currentTarget.style.background = "transparent";
                    }}
+                   aria-expanded={!isCollapsed}
+                   aria-label={`${group.repoName} repository, ${isCollapsed ? "collapsed" : "expanded"}`}
                  >
                    <div className="flex items-center gap-1.5 min-w-0">
                      <span

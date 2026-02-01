@@ -347,6 +347,7 @@ export function ChecksTab({
                     rel="noopener noreferrer"
                     className="p-1 rounded transition-colors flex-shrink-0"
                     style={{ color: theme.text.tertiary }}
+                    aria-label={`Open ${check.name} in new tab`}
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
@@ -403,6 +404,7 @@ export function ChecksTab({
                     rel="noopener noreferrer"
                     className="p-1 rounded transition-colors flex-shrink-0"
                     style={{ color: theme.text.tertiary }}
+                    aria-label={`Open ${check.name} in new tab`}
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>

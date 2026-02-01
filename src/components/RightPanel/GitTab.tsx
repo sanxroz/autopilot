@@ -9,20 +9,15 @@ import {
   FilePlus,
   FileEdit,
   FileMinus,
-  ChevronDown,
   Loader,
   GitBranch,
   Sparkles,
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
 import { useAppStore } from "../../store";
+import type { Theme } from "../../theme";
 import type { GitStatus, GitStatusFile } from "../../types";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "../ui/dropdown-menu";
+
 import { cn } from "../../utils/cn";
 
 interface GitTabProps {
@@ -40,15 +35,15 @@ function getFileIcon(status: string) {
   return FileEdit;
 }
 
-function getFileColor(status: string): string {
+function getFileColor(status: string, theme: Theme): string {
   const statusLower = status.toLowerCase();
   if (statusLower === "added" || statusLower === "untracked") {
-    return "#22C55E";
+    return theme.semantic.success;
   }
   if (statusLower === "deleted") {
-    return "#EF4444";
+    return theme.semantic.error;
   }
-  return "#F59E0B";
+  return theme.semantic.warning;
 }
 
 function getFileName(path: string): string {
@@ -264,7 +259,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
 
   const renderFileItem = (file: GitStatusFile, isStaged: boolean) => {
     const Icon = getFileIcon(file.status);
-    const color = getFileColor(file.status);
+    const color = getFileColor(file.status, theme);
     const fileName = getFileName(file.path);
 
     return (
@@ -291,6 +286,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
           }}
           onMouseEnter={(e) => (e.currentTarget.style.color = theme.text.primary)}
           onMouseLeave={(e) => (e.currentTarget.style.color = theme.text.tertiary)}
+          aria-label={isStaged ? `Unstage ${fileName}` : `Stage ${fileName}`}
         >
           {isStaging ? <Loader className="w-4 h-4 animate-spin" /> : isStaged ? <Minus className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
         </button>
@@ -386,7 +382,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
         <span className="text-[12px]" style={{ color: theme.text.primary }}>
           {gitStatus?.branch || "unknown"}
         </span>
-        {gitStatus && gitStatus.ahead > 0 && (
+        {gitStatus && (gitStatus.ahead > 0 || !gitStatus.upstream_branch) && (
           <button
             onClick={handlePush}
             disabled={isPushing}
@@ -398,7 +394,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
             ) : (
               <Upload className="w-3 h-3" />
             )}
-            Publish
+            {gitStatus.upstream_branch ? "Push" : "Publish Branch"}
           </button>
         )}
       </div>
@@ -422,6 +418,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
                 handleCommit();
               }
             }}
+            aria-label="Commit message"
           />
           <button
             onClick={handleGenerateMessage}
@@ -440,6 +437,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
               e.currentTarget.style.color = isGenerating || staged.length === 0 ? theme.text.muted : theme.text.tertiary;
             }}
             title="Generate commit message with AI"
+            aria-label="Generate commit message with AI"
           >
             {isGenerating ? (
               <Loader className="w-3.5 h-3.5 animate-spin" />
@@ -449,54 +447,22 @@ export function GitTab({ worktreePath }: GitTabProps) {
           </button>
         </div>
         <div className="flex justify-end mt-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                disabled={!canCommit}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-medium transition-colors"
-                style={{
-                  color: canCommit ? theme.text.primary : theme.text.muted,
-                  cursor: canCommit ? "pointer" : "not-allowed",
-                }}
-                onClick={(e) => {
-                  if (canCommit) {
-                    e.preventDefault();
-                    handleCommit();
-                  }
-                }}
-              >
-                {isCommitting ? (
-                  <Loader className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <GitCommit className="w-3.5 h-3.5" />
-                )}
-                Commit
-                <ChevronDown className="w-3.5 h-3.5 opacity-50" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleCommit} disabled={!canCommit}>
-                <GitCommit className="w-3 h-3" />
-                <span>Commit</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={async () => {
-                  if (!worktreePath || !commitMessage.trim()) return;
-                  try {
-                    await invoke("git_stage_all", { worktreePath });
-                    await fetchStatus();
-                    await handleCommit();
-                  } catch (e) {
-                    setError(String(e));
-                  }
-                }}
-                disabled={totalChanges === 0 || !commitMessage.trim()}
-              >
-                <GitCommit className="w-3 h-3" />
-                <span>Commit All</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <button
+            onClick={handleCommit}
+            disabled={!canCommit}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-medium transition-colors"
+            style={{
+              color: canCommit ? theme.text.primary : theme.text.muted,
+              cursor: canCommit ? "pointer" : "not-allowed",
+            }}
+          >
+            {isCommitting ? (
+              <Loader className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <GitCommit className="w-3.5 h-3.5" />
+            )}
+            Commit
+          </button>
         </div>
       </div>
     </div>
