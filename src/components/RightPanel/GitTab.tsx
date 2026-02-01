@@ -129,6 +129,9 @@ export function GitTab({ worktreePath }: GitTabProps) {
       const inStaged = staged.some(f => f.path === gitFileDiffPreview.filePath);
       const inUnstaged = unstaged.some(f => f.path === gitFileDiffPreview.filePath);
 
+      // File is partially staged (in both lists) - keep user's current selection
+      if (inStaged && inUnstaged) return;
+
       if (!inStaged && !inUnstaged) {
         // File no longer exists in either list
         setGitFileDiffPreview(null);
