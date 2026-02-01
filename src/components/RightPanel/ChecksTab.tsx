@@ -103,9 +103,17 @@ export function ChecksTab({
   const setPRDataCache = useAppStore((state) => state.setPRDataCache);
   const [isMerging, setIsMerging] = useState(false);
   const [hasMerged, setHasMerged] = useState(false);
+  
+  // Track the active PR to detect stale async callbacks
+  const activePrRef = useRef<{ repoPath: string | null; prNumber: number | null }>({ 
+    repoPath: null, 
+    prNumber: null 
+  });
 
   useEffect(() => {
     setHasMerged(false);
+    setIsMerging(false);
+    activePrRef.current = { repoPath, prNumber };
   }, [prNumber, repoPath]);
   
   // Initialize state from the cache (via a lazy initializer) to avoid the initial render
@@ -195,22 +203,39 @@ export function ChecksTab({
 
   const handleMerge = useCallback(async () => {
     if (!repoPath || !prNumber) return;
+    
+    const mergeRepoPath = repoPath;
+    const mergePrNumber = prNumber;
+    
     setIsMerging(true);
     try {
       const result = await invoke<{ success: boolean; message: string }>("merge_pr", {
-        repoPath,
-        prNumber,
+        repoPath: mergeRepoPath,
+        prNumber: mergePrNumber,
       });
+      
+      const isStale = activePrRef.current.repoPath !== mergeRepoPath || 
+                      activePrRef.current.prNumber !== mergePrNumber;
+      if (isStale) return;
+      
       if (result.success) {
-        toast.success(`PR #${prNumber} merged`);
+        toast.success(`PR #${mergePrNumber} merged`);
         setHasMerged(true);
       } else {
         toast.error(result.message || "Merge failed");
       }
     } catch (e) {
-      toast.error(String(e));
+      const isStale = activePrRef.current.repoPath !== mergeRepoPath || 
+                      activePrRef.current.prNumber !== mergePrNumber;
+      if (!isStale) {
+        toast.error(String(e));
+      }
     } finally {
-      setIsMerging(false);
+      const isStale = activePrRef.current.repoPath !== mergeRepoPath || 
+                      activePrRef.current.prNumber !== mergePrNumber;
+      if (!isStale) {
+        setIsMerging(false);
+      }
     }
   }, [repoPath, prNumber]);
 
