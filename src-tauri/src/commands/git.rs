@@ -1183,9 +1183,9 @@ pub async fn generate_commit_message(
                     .output()
                     .map_err(|e| format!("Failed to run {}: {}", agent, e))?
             }
-            "aider" => {
+            "droid" => {
                 Command::new(&agent_cmd)
-                    .args(["--message", prompt, "--yes"])
+                    .args(["exec", prompt])
                     .current_dir(&worktree_path)
                     .output()
                     .map_err(|e| format!("Failed to run {}: {}", agent, e))?

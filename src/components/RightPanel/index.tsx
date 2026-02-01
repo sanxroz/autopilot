@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   GitPullRequest,
@@ -12,6 +14,7 @@ import {
   ScanSearch,
   GitBranch,
   MessageSquare,
+  Loader,
 } from "lucide-react";
 import { useTheme } from "../../hooks/useTheme";
 import { usePRStatusForBranch } from "../../hooks/usePRStatus";
@@ -29,6 +32,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+import { AI_AGENTS } from "../../types";
 
 interface RightPanelProps {
   worktreePath: string | null;
@@ -59,6 +63,14 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const repositories = useAppStore((state) => state.repositories);
   const addTerminalWithCommand = useAppStore((state) => state.addTerminalWithCommand);
   const defaultAIAgent = useAppStore((state) => state.defaultAIAgent);
+  const [isMerging, setIsMerging] = useState(false);
+  const [hasMerged, setHasMerged] = useState(false);
+  
+  // Track the active PR to detect stale async callbacks
+  const activePrRef = useRef<{ repoPath: string | null; prNumber: number | null }>({ 
+    repoPath: null, 
+    prNumber: null 
+  });
 
   const repoPath =
     repositories.find((r) => r.worktrees.some((w) => w.path === worktreePath))
@@ -66,6 +78,12 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
 
   const branch = selectedWorktree?.branch ?? null;
   const prStatus = usePRStatusForBranch(repoPath ?? "", branch);
+
+  useEffect(() => {
+    setHasMerged(false);
+    setIsMerging(false);
+    activePrRef.current = { repoPath, prNumber: prStatus?.number ?? null };
+  }, [prStatus?.number, repoPath]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -102,44 +120,28 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
     };
   }, [isResizing]);
 
-  const handleCreatePR = useCallback(() => {
-    const prompt = `Prepare and create a pull request for this branch. Follow these steps:
+  const handleCreatePR = useCallback(
+    (draft: boolean) => {
+      const agent = AI_AGENTS.find((a) => a.id === defaultAIAgent) || AI_AGENTS[0];
+      if (!agent) return;
 
-1. Run git status to check for uncommitted changes
-2. If there are uncommitted changes, stage and commit them with descriptive commit messages
-3. Check the current branch name - if it is not descriptive (e.g. just a ticket number or generic name), rename it to something meaningful that describes the changes
-4. Push the branch to origin (use --set-upstream if needed)
-5. Create the PR using gh pr create with:
-   - A clear, concise title summarizing the changes
-   - A description with only relevant information: what changed and why
-   - Do not include verbose lists or unnecessary details
+      const draftFlag = draft ? " as a draft" : "";
+      const prompt = `Review all changes in this worktree. If the branch name doesn't reflect the changes, rename it to something descriptive. Stage and commit any uncommitted changes with a clear commit message. Push the branch to remote. Then create a pull request${draftFlag} with a title that reflects what the branch accomplishes and a focused description summarizing the key changes.`;
+      const escapedPrompt = prompt.replace(/'/g, "'\\''");
 
-Execute each step and proceed to the next.`;
-    const escapedPrompt = prompt.replace(/'/g, "'\\''");
+      let command: string;
+      if (agent.promptFlag === null) {
+        command = agent.command;
+      } else if (agent.promptFlag === "") {
+        command = `${agent.command} '${escapedPrompt}'`;
+      } else {
+        command = `${agent.command} ${agent.promptFlag} '${escapedPrompt}'`;
+      }
 
-    let command: string;
-    switch (defaultAIAgent) {
-      case "opencode":
-        command = `opencode run '${escapedPrompt}'`;
-        break;
-      case "claude":
-        command = `claude -p '${escapedPrompt}'`;
-        break;
-      case "aider":
-        command = `aider --message '${escapedPrompt}'`;
-        break;
-      case "amp":
-        command = `amp '${escapedPrompt}'`;
-        break;
-      case "codex":
-        command = `codex '${escapedPrompt}'`;
-        break;
-      default:
-        command = `${defaultAIAgent} '${escapedPrompt}'`;
-    }
-
-    addTerminalWithCommand(command);
-  }, [defaultAIAgent, addTerminalWithCommand]);
+      addTerminalWithCommand(command);
+    },
+    [defaultAIAgent, addTerminalWithCommand],
+  );
 
   const getChecksColor = () => {
     return theme.text.secondary;
@@ -189,6 +191,44 @@ Execute each step and proceed to the next.`;
     prStatus.checks_status === "success" &&
     (prStatus.review_decision === "APPROVED" ||
       prStatus.review_decision === null);
+
+  const handleMerge = useCallback(async () => {
+    if (!repoPath || !prStatus?.number) return;
+    
+    const mergeRepoPath = repoPath;
+    const mergePrNumber = prStatus.number;
+    
+    setIsMerging(true);
+    try {
+      const result = await invoke<{ success: boolean; message: string }>("merge_pr", {
+        repoPath: mergeRepoPath,
+        prNumber: mergePrNumber,
+      });
+      
+      const isStale = activePrRef.current.repoPath !== mergeRepoPath || 
+                      activePrRef.current.prNumber !== mergePrNumber;
+      if (isStale) return;
+      
+      if (result.success) {
+        toast.success(`PR #${mergePrNumber} merged`);
+        setHasMerged(true);
+      } else {
+        toast.error(result.message || "Merge failed");
+      }
+    } catch (e) {
+      const isStale = activePrRef.current.repoPath !== mergeRepoPath || 
+                      activePrRef.current.prNumber !== mergePrNumber;
+      if (!isStale) {
+        toast.error(String(e));
+      }
+    } finally {
+      const isStale = activePrRef.current.repoPath !== mergeRepoPath || 
+                      activePrRef.current.prNumber !== mergePrNumber;
+      if (!isStale) {
+        setIsMerging(false);
+      }
+    }
+  }, [repoPath, prStatus?.number]);
 
   const diffViewMode = useAppStore((state) => state.diffViewMode);
   const prevDiffViewModeRef = useRef(diffViewMode);
@@ -440,42 +480,50 @@ Execute each step and proceed to the next.`;
         </DropdownMenu>
         )}
 
-        {isReadyToMerge && (
+        {isReadyToMerge && !hasMerged && (
           <button
-            onClick={() => window.open(prStatus.url, "_blank")}
-            className="px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors"
+            onClick={handleMerge}
+            disabled={isMerging}
+            className="px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-70"
             style={{
               background: "#22C55E",
               color: "white",
             }}
           >
-            <GitMerge className="w-3.5 h-3.5" />
-            Merge
+            {isMerging ? (
+              <Loader className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <GitMerge className="w-3.5 h-3.5" />
+            )}
+            {isMerging ? "Merging..." : "Merge"}
           </button>
         )}
 
-        {!prStatus && (
-          <button
-            onClick={handleCreatePR}
-            disabled={!repoPath}
-            className="px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors"
-            style={{
-              background: theme.bg.tertiary,
-              color: theme.text.primary,
-              opacity: !repoPath ? 0.5 : 1,
-            }}
-            onMouseEnter={(e) => {
-              if (repoPath) {
-                e.currentTarget.style.background = theme.bg.hover;
-              }
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = theme.bg.tertiary;
-            }}
-          >
-            <GitPullRequest className="w-3.5 h-3.5" />
-            Create PR
-          </button>
+        {!prStatus && repoPath && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className="flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium transition-colors hover:bg-opacity-80"
+                style={{
+                  color: theme.text.primary,
+                }}
+              >
+                <GitPullRequest className="w-3.5 h-3.5" />
+                Create PR
+                <ChevronDown className="w-3.5 h-3.5 opacity-50" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => handleCreatePR(false)}>
+                <GitPullRequest className="w-3 h-3" />
+                <span>Create PR</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleCreatePR(true)}>
+                <GitPullRequest className="w-3 h-3" />
+                <span>Create draft PR</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
 
@@ -496,7 +544,6 @@ Execute each step and proceed to the next.`;
               <ChecksTab
                 repoPath={repoPath}
                 prNumber={prStatus?.number ?? null}
-                prUrl={prStatus?.url ?? null}
                 prStatus={prStatus}
               />
             </motion.div>
