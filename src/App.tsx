@@ -7,6 +7,7 @@ import { DiffOverlay } from "./components/DiffOverlay";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { CommandMenu } from "./components/CommandMenu";
 import { UpdateNotification } from "./components/UpdateNotification";
+import { Toaster } from "sonner";
 import { useAppStore } from "./store";
 import { useTheme } from "./hooks/useTheme";
 import { usePRStatusPolling } from "./hooks/usePRStatus";
@@ -115,6 +116,8 @@ function App() {
         onRestart={restart}
         onRetry={checkForUpdates}
       />
+
+      <Toaster position="bottom-right" theme="system" />
     </div>
   );
 }

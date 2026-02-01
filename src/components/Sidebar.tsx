@@ -223,6 +223,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
                    tabIndex={0}
                    onClick={() => toggleRepoCollapsed(group.repoPath)}
                    onKeyDown={(e) => {
+                     if (e.target !== e.currentTarget) return;
                      if (e.key === "Enter" || e.key === " ") {
                        e.preventDefault();
                        toggleRepoCollapsed(group.repoPath);

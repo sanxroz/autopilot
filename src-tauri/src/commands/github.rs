@@ -720,3 +720,101 @@ pub async fn run_cubic_review(repo_path: String) -> Result<CubicReviewResult, St
         }
     }
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MergePRResult {
+    pub success: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MergeStrategy {
+    Merge,
+    Squash,
+    Rebase,
+}
+
+impl MergeStrategy {
+    fn as_flag(&self) -> &'static str {
+        match self {
+            MergeStrategy::Merge => "--merge",
+            MergeStrategy::Squash => "--squash",
+            MergeStrategy::Rebase => "--rebase",
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RepoMergeSettings {
+    merge_commit_allowed: bool,
+    squash_merge_allowed: bool,
+    rebase_merge_allowed: bool,
+}
+
+fn get_default_merge_strategy(gh_path: &str, repo_path: &str) -> Result<MergeStrategy, String> {
+    let output = Command::new(gh_path)
+        .args([
+            "repo",
+            "view",
+            "--json",
+            "mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+        ])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to query repo settings: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to get repo merge settings: {}", stderr));
+    }
+
+    let settings: RepoMergeSettings = serde_json::from_slice(&output.stdout)
+        .map_err(|e| format!("Failed to parse repo settings: {}", e))?;
+
+    if settings.merge_commit_allowed {
+        Ok(MergeStrategy::Merge)
+    } else if settings.squash_merge_allowed {
+        Ok(MergeStrategy::Squash)
+    } else if settings.rebase_merge_allowed {
+        Ok(MergeStrategy::Rebase)
+    } else {
+        Err("No merge methods are allowed for this repository".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn merge_pr(
+    repo_path: String,
+    pr_number: u64,
+    strategy: Option<MergeStrategy>,
+) -> Result<MergePRResult, String> {
+    let gh_path = find_cli_tool("gh")?;
+
+    let strategy = match strategy {
+        Some(s) => s,
+        None => get_default_merge_strategy(&gh_path, &repo_path)?,
+    };
+
+    let output = Command::new(&gh_path)
+        .args(["pr", "merge", &pr_number.to_string(), strategy.as_flag()])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run gh command: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if output.status.success() {
+        Ok(MergePRResult {
+            success: true,
+            message: stdout.trim().to_string(),
+        })
+    } else {
+        Ok(MergePRResult {
+            success: false,
+            message: stderr.trim().to_string(),
+        })
+    }
+}

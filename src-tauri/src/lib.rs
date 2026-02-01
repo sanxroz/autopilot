@@ -128,6 +128,7 @@ pub fn run() {
             github::get_pr_details,
             github::create_pr,
             github::run_cubic_review,
+            github::merge_pr,
             process::get_worktree_process_status,
             process::get_all_worktrees_process_status,
             terminal::spawn_terminal,
