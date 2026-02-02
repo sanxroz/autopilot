@@ -8,8 +8,8 @@ import {
   Loader,
   Circle,
 } from "lucide-react";
-import { useTheme } from "../../hooks/useTheme";
 import { useAppStore } from "../../store";
+import { cn } from "../../utils/cn";
 import type { PRChecksResult, PRDetailedInfo, PRStatus } from "../../types/github";
 
 interface ChecksTabProps {
@@ -31,17 +31,17 @@ function getCheckIcon(status: string, conclusion: string | null) {
   return Circle;
 }
 
-function getCheckColor(status: string, conclusion: string | null, theme: ReturnType<typeof useTheme>) {
+function getCheckColorClass(status: string, conclusion: string | null): string {
   if (status !== "completed") {
-    return theme.semantic.warning;
+    return "text-semantic-warning";
   }
   if (conclusion === "success") {
-    return theme.semantic.success;
+    return "text-semantic-success";
   }
   if (conclusion === "failure" || conclusion === "cancelled") {
-    return theme.semantic.error;
+    return "text-semantic-error";
   }
-  return theme.text.tertiary;
+  return "text-tertiary";
 }
 
 function formatDuration(
@@ -78,18 +78,18 @@ function getMergeStatusText(status: string): string {
   }
 }
 
-function getMergeStatusColor(status: string, theme: ReturnType<typeof useTheme>): string {
+function getMergeStatusColorClass(status: string): string {
   switch (status) {
     case "CLEAN":
-      return theme.semantic.success;
+      return "text-semantic-success";
     case "UNSTABLE":
     case "BEHIND":
-      return theme.semantic.warning;
+      return "text-semantic-warning";
     case "DIRTY":
     case "BLOCKED":
-      return theme.semantic.error;
+      return "text-semantic-error";
     default:
-      return theme.text.tertiary;
+      return "text-tertiary";
   }
 }
 
@@ -98,7 +98,6 @@ export function ChecksTab({
   prNumber,
   prStatus,
 }: ChecksTabProps) {
-  const theme = useTheme();
   const getPRDataCache = useAppStore((state) => state.getPRDataCache);
   const setPRDataCache = useAppStore((state) => state.setPRDataCache);
   const [isMerging, setIsMerging] = useState(false);
@@ -241,10 +240,7 @@ export function ChecksTab({
 
   if (!prNumber) {
     return (
-      <div
-        className="flex-1 flex items-center justify-center text-sm"
-        style={{ color: theme.text.secondary }}
-      >
+      <div className="flex-1 flex items-center justify-center text-sm text-secondary">
         No PR found for this branch
       </div>
     );
@@ -252,10 +248,7 @@ export function ChecksTab({
 
   if (isLoading) {
     return (
-      <div
-        className="flex-1 flex items-center justify-center text-sm"
-        style={{ color: theme.text.secondary }}
-      >
+      <div className="flex-1 flex items-center justify-center text-sm text-secondary">
         <Loader className="w-3.5 h-3.5 animate-spin mr-2" />
         Loading...
       </div>
@@ -264,15 +257,11 @@ export function ChecksTab({
 
   if (error) {
     return (
-      <div
-        className="flex-1 flex flex-col items-center justify-center text-sm gap-2 p-4"
-        style={{ color: theme.semantic.error }}
-      >
+      <div className="flex-1 flex flex-col items-center justify-center text-sm gap-2 p-4 text-semantic-error">
         <span className="text-center">{error}</span>
         <button
           onClick={() => fetchData()}
-          className="px-3 py-1 rounded text-xs"
-          style={{ background: theme.bg.tertiary, color: theme.text.primary }}
+          className="px-3 py-1 rounded text-xs bg-tertiary text-primary"
         >
           Retry
         </button>
@@ -299,25 +288,16 @@ export function ChecksTab({
   return (
     <div className="flex flex-col h-full overflow-auto">
       {prDetails && (
-        <div
-          className="px-3 py-3"
-          style={{ borderColor: theme.border.default }}
-        >
-          <div
-            className="text-xs font-medium mb-2"
-            style={{ color: theme.text.tertiary }}
-          >
+        <div className="px-3 py-3 border-border">
+          <div className="text-xs font-medium mb-2 text-tertiary">
             Git status
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Circle
-                className="w-3.5 h-3.5"
-                style={{
-                  color: getMergeStatusColor(prDetails.merge_state_status, theme),
-                }}
+                className={cn("w-3.5 h-3.5", getMergeStatusColorClass(prDetails.merge_state_status))}
               />
-              <span className="text-sm" style={{ color: theme.text.primary }}>
+              <span className="text-sm text-primary">
                 {getMergeStatusText(prDetails.merge_state_status)}
               </span>
             </div>
@@ -325,14 +305,7 @@ export function ChecksTab({
               <button
                 onClick={handleMerge}
                 disabled={isMerging}
-                className="text-xs px-2 py-1 rounded transition-colors flex items-center gap-1 disabled:opacity-70"
-                style={{ color: theme.text.secondary }}
-                onMouseEnter={(e) => {
-                  if (!isMerging) e.currentTarget.style.background = theme.bg.hover;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "transparent";
-                }}
+                className="text-xs px-2 py-1 rounded transition-colors flex items-center gap-1 disabled:opacity-70 text-secondary hover:bg-hover"
               >
                 {isMerging && <Loader className="w-3 h-3 animate-spin" />}
                 {isMerging ? "Merging..." : "Merge"}
@@ -343,30 +316,20 @@ export function ChecksTab({
       )}
 
       {deployments.length > 0 && (
-        <div
-          className="px-3 py-3"
-          style={{ borderColor: theme.border.default }}
-        >
-          <div
-            className="text-xs font-medium mb-2"
-            style={{ color: theme.text.tertiary }}
-          >
+        <div className="px-3 py-3 border-border">
+          <div className="text-xs font-medium mb-2 text-tertiary">
             Deployments
           </div>
           {deployments.map((check, index) => {
             const Icon = getCheckIcon(check.status, check.conclusion);
-            const color = getCheckColor(check.status, check.conclusion, theme);
+            const colorClass = getCheckColorClass(check.status, check.conclusion);
 
             return (
               <div key={index} className="flex items-center gap-2 py-1.5">
                 <Icon
-                  className={`w-3.5 h-3.5 flex-shrink-0 ${check.status !== "completed" ? "animate-spin" : ""}`}
-                  style={{ color }}
+                  className={cn("w-3.5 h-3.5 flex-shrink-0", colorClass, check.status !== "completed" && "animate-spin")}
                 />
-                <span
-                  className="flex-1 text-sm truncate"
-                  style={{ color: theme.text.primary }}
-                >
+                <span className="flex-1 text-sm truncate text-primary">
                   {check.name}
                 </span>
                 {check.url && (
@@ -374,8 +337,7 @@ export function ChecksTab({
                     href={check.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="p-1 rounded transition-colors flex-shrink-0"
-                    style={{ color: theme.text.tertiary }}
+                    className="p-1 rounded transition-colors flex-shrink-0 text-tertiary"
                     aria-label={`Open ${check.name} in new tab`}
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
@@ -388,19 +350,13 @@ export function ChecksTab({
       )}
 
       {regularChecks.length > 0 && (
-        <div
-          className="px-3 py-3"
-          style={{ borderColor: theme.border.default }}
-        >
-          <div
-            className="text-xs font-medium mb-2"
-            style={{ color: theme.text.tertiary }}
-          >
+        <div className="px-3 py-3 border-border">
+          <div className="text-xs font-medium mb-2 text-tertiary">
             Checks
           </div>
           {regularChecks.map((check, index) => {
             const Icon = getCheckIcon(check.status, check.conclusion);
-            const color = getCheckColor(check.status, check.conclusion, theme);
+            const colorClass = getCheckColorClass(check.status, check.conclusion);
             const duration = formatDuration(
               check.started_at,
               check.completed_at,
@@ -409,20 +365,13 @@ export function ChecksTab({
             return (
               <div key={index} className="flex items-center gap-2 py-1.5">
                 <Icon
-                  className={`w-3.5 h-3.5 flex-shrink-0 ${check.status !== "completed" ? "animate-spin" : ""}`}
-                  style={{ color }}
+                  className={cn("w-3.5 h-3.5 flex-shrink-0", colorClass, check.status !== "completed" && "animate-spin")}
                 />
-                <span
-                  className="flex-1 text-sm truncate"
-                  style={{ color: theme.text.primary }}
-                >
+                <span className="flex-1 text-sm truncate text-primary">
                   {check.name}
                 </span>
                 {duration && (
-                  <span
-                    className="text-xs flex-shrink-0"
-                    style={{ color: theme.text.tertiary }}
-                  >
+                  <span className="text-xs flex-shrink-0 text-tertiary">
                     {duration}
                   </span>
                 )}
@@ -431,8 +380,7 @@ export function ChecksTab({
                     href={check.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="p-1 rounded transition-colors flex-shrink-0"
-                    style={{ color: theme.text.tertiary }}
+                    className="p-1 rounded transition-colors flex-shrink-0 text-tertiary"
                     aria-label={`Open ${check.name} in new tab`}
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
@@ -445,10 +393,7 @@ export function ChecksTab({
       )}
 
       {(!checksResult || checksResult.checks.length === 0) && (
-        <div
-          className="flex-1 flex items-center justify-center text-sm"
-          style={{ color: theme.text.secondary }}
-        >
+        <div className="flex-1 flex items-center justify-center text-sm text-secondary">
           No checks
         </div>
       )}

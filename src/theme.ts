@@ -147,6 +147,9 @@ export function getThemeMode(): ThemeMode {
 
 export function setThemeMode(mode: ThemeMode): void {
   currentMode = mode;
+  if (typeof document !== 'undefined') {
+    document.documentElement.setAttribute('data-theme', mode);
+  }
   listeners.forEach((fn) => fn());
 }
 
@@ -161,5 +164,8 @@ export function subscribeTheme(fn: () => void): () => void {
 
 export function initializeTheme(mode: ThemeMode): void {
   currentMode = mode;
+  if (typeof document !== 'undefined') {
+    document.documentElement.setAttribute('data-theme', mode);
+  }
   listeners.forEach((fn) => fn());
 }

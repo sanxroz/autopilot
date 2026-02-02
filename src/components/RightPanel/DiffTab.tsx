@@ -26,8 +26,8 @@ import {
 import { DiffView, DiffModeEnum, DiffFile } from "@git-diff-view/react";
 import "@git-diff-view/react/styles/diff-view.css";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useTheme, useThemeMode } from "../../hooks/useTheme";
-import type { Theme } from "../../theme";
+import { useThemeMode } from "../../hooks/useTheme";
+import { cn } from "../../utils/cn";
 import { useCodeReview } from "../../hooks/useCodeReview";
 import { useAppStore } from "../../store";
 import {
@@ -104,19 +104,19 @@ function getFileIcon(status: ChangedFile["status"]) {
   }
 }
 
-function getStatusColor(status: ChangedFile["status"], theme: Theme) {
+function getStatusColorClass(status: ChangedFile["status"]): string {
   switch (status) {
     case "added":
     case "untracked":
-      return theme.semantic.success;
+      return "text-semantic-success";
     case "deleted":
-      return theme.semantic.error;
+      return "text-semantic-error";
     case "modified":
     case "renamed":
     case "copied":
-      return theme.semantic.warning;
+      return "text-semantic-warning";
     default:
-      return theme.text.tertiary;
+      return "text-tertiary";
   }
 }
 
@@ -183,10 +183,9 @@ function FileSection({
   shikiHighlighter,
   isLightMode,
 }: FileSectionProps) {
-  const theme = useTheme();
   const reducedMotion = useReducedMotion();
   const Icon = getFileIcon(file.status);
-  const statusColor = getStatusColor(file.status, theme);
+  const statusColorClass = getStatusColorClass(file.status);
   const dir = dirname(file.path);
   const diffFileRef = useRef<DiffFile | null>(null);
 
@@ -223,18 +222,12 @@ function FileSection({
   }, []);
 
   return (
-    <div
-      className="bg-background rounded-lg border overflow-clip mb-2"
-      style={{ borderColor: theme.border.default }}
-    >
+    <div className="bg-background rounded-lg border overflow-clip mb-2 border-border">
       <header
-        className="group px-3 py-1.5 font-mono text-xs cursor-pointer transition-colors"
-        style={{
-          background: theme.bg.secondary,
-          borderBottom: isExpanded
-            ? `1px solid ${theme.border.default}`
-            : undefined,
-        }}
+        className={cn(
+          "group px-3 py-1.5 font-mono text-xs cursor-pointer transition-colors bg-secondary",
+          isExpanded && "border-b border-border"
+        )}
         onClick={onToggle}
         role="button"
         tabIndex={0}
@@ -250,29 +243,22 @@ function FileSection({
         <div className="flex items-center gap-2">
           <div className="relative w-4 h-4 shrink-0">
             <Icon
-              className="absolute inset-0 w-4 h-4 transition-all duration-200 group-hover:opacity-0 group-hover:scale-75"
-              style={{ color: statusColor }}
+              className={cn("absolute inset-0 w-4 h-4 transition-all duration-200 group-hover:opacity-0 group-hover:scale-75", statusColorClass)}
             />
             <ChevronDown
-              className={`absolute inset-0 w-4 h-4 transition-all duration-200 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 ${
-                !isExpanded ? "-rotate-90" : ""
-              }`}
-              style={{ color: theme.text.tertiary }}
+              className={cn(
+                "absolute inset-0 w-4 h-4 transition-all duration-200 opacity-0 scale-75 group-hover:opacity-100 group-hover:scale-100 text-tertiary",
+                !isExpanded && "-rotate-90"
+              )}
             />
           </div>
 
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <span
-              className="font-medium truncate"
-              style={{ color: theme.text.primary }}
-            >
+            <span className="font-medium truncate text-primary">
               {basename(file.path)}
             </span>
             {dir && (
-              <span
-                className="text-[11px] truncate"
-                style={{ color: theme.text.tertiary }}
-              >
+              <span className="text-[11px] truncate text-tertiary">
                 {dir}
               </span>
             )}
@@ -280,12 +266,12 @@ function FileSection({
 
           <span className="shrink-0 font-mono text-[11px] tabular-nums whitespace-nowrap">
             {file.additions > 0 && (
-              <span className="mr-1.5" style={{ color: theme.semantic.success }}>
+              <span className="mr-1.5 text-semantic-success">
                 +{file.additions}
               </span>
             )}
             {file.deletions > 0 && (
-              <span style={{ color: theme.semantic.error }}>-{file.deletions}</span>
+              <span className="text-semantic-error">-{file.deletions}</span>
             )}
           </span>
         </div>
@@ -303,10 +289,7 @@ function FileSection({
           className="agent-diff-wrapper overflow-hidden"
         >
           {isLoading ? (
-            <div
-              className="flex items-center justify-center gap-2 py-8"
-              style={{ color: theme.text.tertiary }}
-            >
+            <div className="flex items-center justify-center gap-2 py-8 text-tertiary">
               <Loader className="w-3.5 h-3.5 animate-spin" />
               <span className="text-sm">Loading diff...</span>
             </div>
@@ -322,10 +305,7 @@ function FileSection({
               />
             </DiffErrorBoundary>
           ) : (
-            <div
-              className="px-4 py-8 text-center text-sm"
-              style={{ color: theme.text.tertiary }}
-            >
+            <div className="px-4 py-8 text-center text-sm text-tertiary">
               No diff available
             </div>
           )}
@@ -336,7 +316,6 @@ function FileSection({
 }
 
 export function DiffTab({ worktreePath }: DiffTabProps) {
-  const theme = useTheme();
   const themeMode = useThemeMode();
   const isLightMode = themeMode === "light";
   const setDiffViewMode = useAppStore((state) => state.setDiffViewMode);
@@ -461,19 +440,11 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
     <div
       className={`flex flex-col h-full diff-overlay ${isLightMode ? "light-mode" : ""}`}
     >
-      <div
-        className="flex items-center justify-between px-3 py-2"
-        style={{ borderColor: theme.border.default }}
-      >
+      <div className="flex items-center justify-between px-3 py-2 border-border">
         <div className="flex items-center gap-2 text-xs">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button
-                className="flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium transition-colors hover:bg-opacity-80"
-                style={{
-                  color: theme.text.primary,
-                }}
-              >
+              <button className="flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium transition-colors hover:bg-opacity-80 text-primary">
                 {diffMode === "local" ? (
                   <>
                     <Laptop className="w-3.5 h-3.5" />
@@ -505,22 +476,16 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <span
-            className="px-1.5 py-0.5 rounded"
-            style={{
-              background: theme.bg.tertiary,
-              color: theme.text.tertiary,
-            }}
-          >
+          <span className="px-1.5 py-0.5 rounded bg-tertiary text-tertiary">
             {changedFiles.length} files
           </span>
           {totalAdditions > 0 && (
-            <span className="font-mono" style={{ color: theme.semantic.success }}>
+            <span className="font-mono text-semantic-success">
               +{totalAdditions}
             </span>
           )}
           {totalDeletions > 0 && (
-            <span className="font-mono" style={{ color: theme.semantic.error }}>
+            <span className="font-mono text-semantic-error">
               -{totalDeletions}
             </span>
           )}
@@ -529,16 +494,7 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
           {changedFiles.length > 0 && (
             <button
               onClick={allExpanded ? collapseAll : expandAll}
-              className="p-1 rounded transition-colors flex items-center gap-1 text-xs"
-              style={{ color: theme.text.tertiary }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = theme.bg.hover;
-                e.currentTarget.style.color = theme.text.primary;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "transparent";
-                e.currentTarget.style.color = theme.text.tertiary;
-              }}
+              className="p-1 rounded transition-colors flex items-center gap-1 text-xs text-tertiary hover:bg-hover hover:text-primary"
               title={allExpanded ? "Collapse all" : "Expand all"}
               aria-label={allExpanded ? "Collapse all files" : "Expand all files"}
             >
@@ -553,16 +509,7 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
           )}
           <button
             onClick={handleExpandToOverlay}
-            className="p-1 rounded transition-colors"
-            style={{ color: theme.text.tertiary }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = theme.bg.hover;
-              e.currentTarget.style.color = theme.text.primary;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = theme.text.tertiary;
-            }}
+            className="p-1 rounded transition-colors text-tertiary hover:bg-hover hover:text-primary"
             title="Expand to overlay"
             aria-label="Expand to overlay"
           >
@@ -573,17 +520,11 @@ export function DiffTab({ worktreePath }: DiffTabProps) {
 
       <div ref={scrollContainerRef} className="flex-1 overflow-auto p-2">
         {isLoading ? (
-          <div
-            className="flex items-center justify-center h-full text-sm"
-            style={{ color: theme.text.secondary }}
-          >
+          <div className="flex items-center justify-center h-full text-sm text-secondary">
             Loading changes...
           </div>
         ) : changedFiles.length === 0 ? (
-          <div
-            className="flex items-center justify-center h-full text-sm"
-            style={{ color: theme.text.tertiary }}
-          >
+          <div className="flex items-center justify-center h-full text-sm text-tertiary">
             No changes detected
           </div>
         ) : (

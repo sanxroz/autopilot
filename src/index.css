@@ -2,6 +2,79 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Theme CSS Variables */
+:root {
+  /* Background colors - Dark theme (default) */
+  --color-bg-primary: #000;
+  --color-bg-secondary: rgba(20, 20, 20, 0.9);
+  --color-bg-tertiary: rgba(26, 26, 26, 0.95);
+  --color-bg-hover: rgba(31, 31, 31, 0.95);
+  --color-bg-active: rgba(37, 37, 37, 0.95);
+  --color-bg-solid: #0D0D0D;
+
+  /* Border colors */
+  --color-border-subtle: rgba(31, 31, 31, 0.8);
+  --color-border-default: rgba(42, 42, 42, 0.8);
+  --color-border-strong: rgba(51, 51, 51, 0.9);
+
+  /* Text colors */
+  --color-text-primary: #E8E2D9;
+  --color-text-secondary: #A89F91;
+  --color-text-tertiary: #6B6358;
+  --color-text-muted: #4A453D;
+
+  /* Accent colors */
+  --color-accent-primary: #D4A574;
+  --color-accent-secondary: #C9956B;
+  --color-accent-hover: #E0B585;
+
+  /* Semantic colors */
+  --color-semantic-error: #DC2626;
+  --color-semantic-error-muted: rgba(127, 29, 29, 0.5);
+  --color-semantic-success: #22C55E;
+  --color-semantic-success-muted: rgba(20, 83, 45, 0.5);
+  --color-semantic-warning: #F59E0B;
+  --color-semantic-warning-muted: rgba(120, 53, 15, 0.5);
+  --color-semantic-info: #3B82F6;
+  --color-semantic-info-muted: rgba(30, 58, 138, 0.5);
+}
+
+[data-theme="light"] {
+  /* Background colors - Light theme */
+  --color-bg-primary: #fff;
+  --color-bg-secondary: #faf9f9;
+  --color-bg-tertiary: #f0efed;
+  --color-bg-hover: #ebebeb;
+  --color-bg-active: #ebebeb;
+  --color-bg-solid: #F2F1ED;
+
+  /* Border colors */
+  --color-border-subtle: rgba(221, 220, 216, 0.8);
+  --color-border-default: rgba(221, 220, 216, 1);
+  --color-border-strong: rgba(200, 199, 195, 1);
+
+  /* Text colors */
+  --color-text-primary: #262521;
+  --color-text-secondary: rgba(38, 37, 33, 0.70);
+  --color-text-tertiary: rgba(38, 37, 33, 0.55);
+  --color-text-muted: rgba(38, 37, 33, 0.38);
+
+  /* Accent colors */
+  --color-accent-primary: #262521;
+  --color-accent-secondary: rgba(38, 37, 33, 0.85);
+  --color-accent-hover: #000000;
+
+  /* Semantic colors - muted variants differ */
+  --color-semantic-error: #DC2626;
+  --color-semantic-error-muted: rgba(254, 226, 226, 0.8);
+  --color-semantic-success: #22C55E;
+  --color-semantic-success-muted: rgba(220, 252, 231, 0.8);
+  --color-semantic-warning: #F59E0B;
+  --color-semantic-warning-muted: rgba(254, 243, 199, 0.8);
+  --color-semantic-info: #3B82F6;
+  --color-semantic-info-muted: rgba(219, 234, 254, 0.8);
+}
+
 /* Position native Tauri window controls at top-left */
 .titlebar {
   position: fixed;

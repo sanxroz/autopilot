@@ -8,7 +8,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { useAppStore } from "../store";
-import { useTheme } from "../hooks/useTheme";
+import { cn } from "../utils/cn";
 
 interface NavbarProps {
   sidebarOpen: boolean;
@@ -22,7 +22,6 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
   const diffViewMode = useAppStore((state) => state.diffViewMode);
   const codeReviewOpen = useAppStore((state) => state.codeReviewOpen);
   const setCodeReviewOpen = useAppStore((state) => state.setCodeReviewOpen);
-  const theme = useTheme();
   const reducedMotion = useReducedMotion();
 
   const handleToggleRightPanel = () => {
@@ -35,29 +34,14 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
   return (
     <div
       data-tauri-drag-region
-      className="relative flex items-center justify-between select-none"
-      style={{
-        height: "35px",
-        minHeight: "35px",
-        paddingLeft: sidebarOpen ? "12px" : "75px",
-        paddingRight: "12px",
-      }}
+      className={cn(
+        "relative flex items-center justify-between select-none h-[35px] min-h-[35px] pr-3",
+        sidebarOpen ? "pl-3" : "pl-[75px]"
+      )}
     >
       <button
         onClick={onToggleSidebar}
-        className="py-1.5 px-2 transition-colors rounded-md"
-        style={{
-          background: "transparent",
-          color: theme.text.tertiary,
-        }}
-        onMouseEnter={(e) => {
-          e.currentTarget.style.background = theme.bg.hover;
-          e.currentTarget.style.color = theme.text.primary;
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.background = "transparent";
-          e.currentTarget.style.color = theme.text.tertiary;
-        }}
+        className="py-1.5 px-2 transition-colors rounded-md bg-transparent text-tertiary hover:bg-hover hover:text-primary"
         title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
         aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
       >
@@ -70,33 +54,16 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
 
       <div
         data-tauri-drag-region
-        className="flex items-center gap-2 text-sm absolute left-1/2 transform -translate-x-1/2 max-w-[50%] overflow-hidden"
-        style={{ color: theme.text.secondary }}
+        className="flex items-center gap-2 text-sm absolute left-1/2 transform -translate-x-1/2 max-w-[50%] overflow-hidden text-secondary"
       >
         {branchName && (
           <>
-            <GitBranch
-              className="w-3.5 h-3.5 flex-shrink-0"
-              style={{ color: theme.text.tertiary }}
-            />
-            <span
-              className="truncate min-w-0"
-              style={{ color: theme.text.primary }}
-            >
-              {branchName}
-            </span>
+            <GitBranch className="w-3.5 h-3.5 flex-shrink-0 text-tertiary" />
+            <span className="truncate min-w-0 text-primary">{branchName}</span>
             {worktreeName && worktreeName !== branchName && (
               <>
-                <span
-                  className="flex-shrink-0"
-                  style={{ color: theme.text.tertiary }}
-                >
-                  /
-                </span>
-                <span
-                  className="truncate min-w-0"
-                  style={{ color: theme.text.secondary }}
-                >
+                <span className="flex-shrink-0 text-tertiary">/</span>
+                <span className="truncate min-w-0 text-secondary">
                   {worktreeName}
                 </span>
               </>
@@ -105,39 +72,19 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
         )}
       </div>
 
-      {/* Right controls */}
       <div className="flex items-center gap-1 ml-auto">
         {diffViewMode === "overlay" && (
           <motion.button
             onClick={toggleDiffOverlay}
-            className="py-1.5 px-2 rounded-md"
+            className={cn(
+              "py-1.5 px-2 rounded-md border-none cursor-pointer bg-transparent",
+              diffOverlayOpen
+                ? "text-accent-primary"
+                : "text-tertiary hover:bg-hover hover:text-primary"
+            )}
             whileHover={reducedMotion ? {} : { scale: 1.05 }}
             whileTap={reducedMotion ? {} : { scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            style={{
-              background: "transparent",
-              color: diffOverlayOpen
-                ? theme.accent.primary
-                : theme.text.tertiary,
-              border: "none",
-              cursor: "pointer",
-            }}
-            onMouseEnter={(e) => {
-              if (!diffOverlayOpen) {
-                (e.currentTarget as HTMLButtonElement).style.background =
-                  theme.bg.hover;
-                (e.currentTarget as HTMLButtonElement).style.color =
-                  theme.text.primary;
-              }
-            }}
-            onMouseLeave={(e) => {
-              (e.currentTarget as HTMLButtonElement).style.background =
-                "transparent";
-              if (!diffOverlayOpen) {
-                (e.currentTarget as HTMLButtonElement).style.color =
-                  theme.text.tertiary;
-              }
-            }}
             title="Diff"
             aria-label="Toggle diff overlay"
           >
@@ -146,32 +93,15 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
         )}
         <motion.button
           onClick={handleToggleRightPanel}
-          className="py-1.5 px-2 rounded-md"
+          className={cn(
+            "py-1.5 px-2 rounded-md border-none cursor-pointer bg-transparent",
+            codeReviewOpen
+              ? "text-accent-primary"
+              : "text-tertiary hover:bg-hover hover:text-primary"
+          )}
           whileHover={reducedMotion ? {} : { scale: 1.05 }}
           whileTap={reducedMotion ? {} : { scale: 0.95 }}
           transition={{ duration: 0.15 }}
-          style={{
-            background: "transparent",
-            color: codeReviewOpen ? theme.accent.primary : theme.text.tertiary,
-            border: "none",
-            cursor: "pointer",
-          }}
-          onMouseEnter={(e) => {
-            if (!codeReviewOpen) {
-              (e.currentTarget as HTMLButtonElement).style.background =
-                theme.bg.hover;
-              (e.currentTarget as HTMLButtonElement).style.color =
-                theme.text.primary;
-            }
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLButtonElement).style.background =
-              "transparent";
-            if (!codeReviewOpen) {
-              (e.currentTarget as HTMLButtonElement).style.color =
-                theme.text.tertiary;
-            }
-          }}
           title="Checks & Review"
           aria-label={
             codeReviewOpen

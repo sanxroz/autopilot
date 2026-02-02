@@ -2,8 +2,9 @@ import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { codeToTokens, type BundledLanguage } from "shiki";
 import { X, Loader } from "lucide-react";
-import { useTheme, useThemeMode } from "../hooks/useTheme";
+import { useThemeMode } from "../hooks/useTheme";
 import { useAppStore } from "../store";
+import { cn } from "../utils/cn";
 import type { FileDiffData } from "../types";
 
 interface LineInfo {
@@ -172,7 +173,6 @@ interface HighlightedLine {
 const LINE_HEIGHT = 20;
 
 export function GitFileDiffOverlay() {
-  const theme = useTheme();
   const themeMode = useThemeMode();
   const isLightMode = themeMode === "light";
   
@@ -337,61 +337,32 @@ export function GitFileDiffOverlay() {
   if (!preview) return null;
 
   return (
-    <div
-      className="absolute inset-0 z-20 flex flex-col"
-      style={{ background: theme.bg.primary }}
-    >
+    <div className="absolute inset-0 z-20 flex flex-col bg-primary">
       <div
         data-tauri-drag-region
-        className="flex items-center justify-between select-none flex-shrink-0"
-        style={{ 
-          height: "35px",
-          minHeight: "35px",
-          paddingLeft: "12px",
-          paddingRight: "12px",
-          borderBottom: `1px solid ${theme.border.default}`,
-          background: theme.bg.secondary,
-        }}
+        className="flex items-center justify-between select-none flex-shrink-0 h-[35px] min-h-[35px] px-3 border-b border-border bg-secondary"
       >
         <div data-tauri-drag-region className="flex items-center gap-3 flex-1">
-          <span
-            className="text-sm font-medium"
-            style={{ color: theme.text.primary }}
-          >
+          <span className="text-sm font-medium text-primary">
             {getFileName(preview.filePath)}
           </span>
-          <span
-            className="text-[11px] px-1.5 py-0.5 rounded"
-            style={{ 
-              color: theme.text.tertiary,
-              background: theme.bg.tertiary,
-            }}
-          >
+          <span className="text-[11px] px-1.5 py-0.5 rounded text-tertiary bg-tertiary">
             {preview.isStaged ? "staged" : "unstaged"}
           </span>
           {stats.added > 0 && (
-            <span className="text-[11px] font-mono" style={{ color: theme.semantic.success }}>
+            <span className="text-[11px] font-mono text-semantic-success">
               +{stats.added}
             </span>
           )}
           {stats.deleted > 0 && (
-            <span className="text-[11px] font-mono" style={{ color: theme.semantic.error }}>
+            <span className="text-[11px] font-mono text-semantic-error">
               -{stats.deleted}
             </span>
           )}
         </div>
         <button
           onClick={handleClose}
-          className="p-1 rounded transition-colors"
-          style={{ color: theme.text.tertiary }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = theme.bg.hover;
-            e.currentTarget.style.color = theme.text.primary;
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "transparent";
-            e.currentTarget.style.color = theme.text.tertiary;
-          }}
+          className="p-1 rounded transition-colors text-tertiary hover:bg-hover hover:text-primary"
           aria-label="Close diff preview"
         >
           <X className="w-3.5 h-3.5" />
@@ -404,18 +375,12 @@ export function GitFileDiffOverlay() {
           className="flex-1 overflow-auto"
         >
           {isLoading ? (
-            <div
-              className="flex items-center justify-center gap-2 py-12"
-              style={{ color: theme.text.tertiary }}
-            >
+            <div className="flex items-center justify-center gap-2 py-12 text-tertiary">
               <Loader className="w-4 h-4 animate-spin" />
               <span className="text-sm">Loading...</span>
             </div>
           ) : error ? (
-            <div
-              className="px-4 py-12 text-center text-sm"
-              style={{ color: theme.semantic.error }}
-            >
+            <div className="px-4 py-12 text-center text-sm text-semantic-error">
               {error}
             </div>
           ) : fileLines.length > 0 ? (
@@ -427,58 +392,34 @@ export function GitFileDiffOverlay() {
                 return (
                   <div
                     key={line.index}
-                    className="flex"
-                    style={{
-                      background: isAdd
-                        ? theme.semantic.successMuted
-                        : isDel
-                        ? theme.semantic.errorMuted
-                        : "transparent",
-                      height: `${LINE_HEIGHT}px`,
-                    }}
+                    className={cn(
+                      "flex",
+                      isAdd && "bg-semantic-success-muted",
+                      isDel && "bg-semantic-error-muted"
+                    )}
+                    style={{ height: `${LINE_HEIGHT}px` }}
                   >
                     <span
-                      className="flex-shrink-0 text-right select-none"
-                      style={{
-                        width: "50px",
-                        padding: "0 8px",
-                        color: theme.text.muted,
-                        background: isAdd
-                          ? theme.semantic.successMuted
-                          : isDel
-                          ? theme.semantic.errorMuted
-                          : theme.bg.secondary,
-                        borderRight: `1px solid ${theme.border.subtle}`,
-                      }}
+                      className={cn(
+                        "flex-shrink-0 text-right select-none w-[50px] px-2 text-muted border-r border-border-subtle",
+                        isAdd && "bg-semantic-success-muted",
+                        isDel && "bg-semantic-error-muted",
+                        !isAdd && !isDel && "bg-secondary"
+                      )}
                     >
                       {line.lineNum > 0 ? line.lineNum : ""}
                     </span>
                     <span
-                      className="flex-shrink-0 select-none text-center"
-                      style={{
-                        width: "20px",
-                        color: isAdd
-                          ? theme.semantic.success
-                          : isDel
-                          ? theme.semantic.error
-                          : "transparent",
-                        background: isAdd
-                          ? theme.semantic.successMuted
-                          : isDel
-                          ? theme.semantic.errorMuted
-                          : "transparent",
-                      }}
+                      className={cn(
+                        "flex-shrink-0 select-none text-center w-5",
+                        isAdd && "text-semantic-success bg-semantic-success-muted",
+                        isDel && "text-semantic-error bg-semantic-error-muted",
+                        !isAdd && !isDel && "text-transparent"
+                      )}
                     >
                       {isAdd ? "+" : isDel ? "-" : ""}
                     </span>
-                    <pre
-                      className="flex-1 m-0"
-                      style={{
-                        padding: "0 16px 0 8px",
-                        whiteSpace: "pre",
-                        overflow: "visible",
-                      }}
-                    >
+                    <pre className="flex-1 m-0 pl-2 pr-4 whitespace-pre overflow-visible">
                       {renderLineContent(line)}
                     </pre>
                   </div>
@@ -486,32 +427,22 @@ export function GitFileDiffOverlay() {
               })}
             </div>
           ) : (
-            <div
-              className="px-4 py-12 text-center text-sm"
-              style={{ color: theme.text.tertiary }}
-            >
+            <div className="px-4 py-12 text-center text-sm text-tertiary">
               No changes in this file
             </div>
           )}
         </div>
 
         {editIndicators.length > 0 && (
-          <div
-            className="absolute top-0 right-0 bottom-0 pointer-events-none"
-            style={{ width: "6px" }}
-          >
+          <div className="absolute top-0 right-0 bottom-0 w-1.5 pointer-events-none">
             {editIndicators.map((indicator, i) => (
               <div
                 key={i}
-                className="absolute right-0"
-                style={{
-                  top: `${indicator.position * 100}%`,
-                  width: "6px",
-                  height: "2px",
-                  background: indicator.type === "added" 
-                    ? theme.semantic.success 
-                    : theme.semantic.error,
-                }}
+                className={cn(
+                  "absolute right-0 w-1.5 h-0.5",
+                  indicator.type === "added" ? "bg-semantic-success" : "bg-semantic-error"
+                )}
+                style={{ top: `${indicator.position * 100}%` }}
               />
             ))}
           </div>

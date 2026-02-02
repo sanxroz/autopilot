@@ -3,7 +3,6 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { PackagePlus } from "lucide-react";
 import { useAppStore } from "../store";
 import { Terminal } from "./Terminal";
-import { useTheme } from "../hooks/useTheme";
 import { TerminalAnimation } from "./TerminalAnimation";
 
 export function TerminalGrid() {
@@ -17,8 +16,6 @@ export function TerminalGrid() {
   const addTerminal = useAppStore((state) => state.addTerminal);
   const removeTerminal = useAppStore((state) => state.removeTerminal);
   const addRepository = useAppStore((state) => state.addRepository);
-
-  const theme = useTheme();
 
   const handleAddRepository = async () => {
     try {
@@ -66,58 +63,30 @@ export function TerminalGrid() {
       <div className="flex-1 flex items-center justify-center bg-transparent overflow-hidden">
         <div className="text-center max-w-full px-4">
           <div className="mb-6 hidden md:block">
-            <TerminalAnimation color={theme.text.muted} />
+            <TerminalAnimation className="text-muted" />
           </div>
-          <h1
-            className="mb-6 select-none text-2xl font-bold tracking-tight text-balance md:hidden"
-            style={{ color: theme.text.muted }}
-          >
+          <h1 className="mb-6 select-none text-2xl font-bold tracking-tight text-balance md:hidden text-muted">
             autopilot
           </h1>
-          <p className="text-sm text-pretty" style={{ color: theme.text.secondary }}>
+          <p className="text-sm text-pretty text-secondary">
             Select a workspace from the sidebar to start
           </p>
           <button
             onClick={handleAddRepository}
-            className="mt-6 px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 mx-auto"
-            style={{
-              background: theme.accent.primary,
-              color: theme.bg.primary,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = theme.accent.hover;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = theme.accent.primary;
-            }}
+            className="mt-6 px-4 py-2 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 mx-auto bg-accent-primary text-bg-primary hover:bg-accent-hover"
           >
             <PackagePlus className="w-4 h-4" />
             Add Repository
           </button>
-          <div
-            className="mt-6 text-xs space-y-1"
-            style={{ color: theme.text.tertiary }}
-          >
+          <div className="mt-6 text-xs space-y-1 text-tertiary">
             <p>
-              <kbd
-                className="px-2 py-1 rounded"
-                style={{
-                  background: theme.bg.tertiary,
-                  color: theme.text.secondary,
-                }}
-              >
+              <kbd className="px-2 py-1 rounded bg-tertiary text-secondary">
                 ⌘D
               </kbd>{" "}
               New terminal
             </p>
             <p>
-              <kbd
-                className="px-2 py-1 rounded"
-                style={{
-                  background: theme.bg.tertiary,
-                  color: theme.text.secondary,
-                }}
-              >
+              <kbd className="px-2 py-1 rounded bg-tertiary text-secondary">
                 ⌘W
               </kbd>{" "}
               Close terminal
@@ -138,7 +107,6 @@ export function TerminalGrid() {
         if (worktreeTerminals.length === 0) return null;
 
         const terminalCount = worktreeTerminals.length;
-        // Always show terminals side-by-side (N columns).
         const cols = terminalCount;
         const rows = 1;
 
@@ -156,10 +124,7 @@ export function TerminalGrid() {
             {worktreeTerminals.map((terminal, index) => (
               <div
                 key={terminal.id}
-                className="min-w-0 min-h-0 bg-transparent overflow-hidden"
-                style={{
-                  borderLeft: index > 0 ? `1px solid ${theme.border.default}` : undefined,
-                }}
+                className={`min-w-0 min-h-0 bg-transparent overflow-hidden ${index > 0 ? "border-l border-DEFAULT" : ""}`}
               >
                 <Terminal
                   terminalId={terminal.id}
@@ -179,15 +144,12 @@ export function TerminalGrid() {
         <div className="absolute inset-0 flex items-center justify-center bg-transparent z-10 overflow-hidden">
           <div className="text-center max-w-full px-4">
             <div className="mb-6 hidden md:block">
-              <TerminalAnimation color={theme.text.muted} />
+              <TerminalAnimation className="text-muted" />
             </div>
-            <h1
-              className="mb-6 select-none text-2xl font-bold tracking-tight text-balance md:hidden"
-              style={{ color: theme.text.muted }}
-            >
+            <h1 className="mb-6 select-none text-2xl font-bold tracking-tight text-balance md:hidden text-muted">
               autopilot
             </h1>
-            <p className="text-sm text-pretty" style={{ color: theme.text.secondary }}>
+            <p className="text-sm text-pretty text-secondary">
               Select a workspace from the sidebar to start
             </p>
           </div>

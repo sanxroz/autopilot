@@ -1,6 +1,5 @@
 import { Download, RefreshCw, AlertCircle, Sparkles, Clock, ArrowRight } from "lucide-react";
 import * as Modal from "./ui/modal";
-import { useTheme } from "../hooks/useTheme";
 
 interface UpdateNotificationProps {
   open: boolean;
@@ -31,8 +30,6 @@ export function UpdateNotification({
   onRestart,
   onRetry,
 }: UpdateNotificationProps) {
-  const theme = useTheme();
-
   if (status === "idle" || !updateInfo) return null;
 
   const renderContent = () => {
@@ -41,38 +38,19 @@ export function UpdateNotification({
         return (
           <>
             <div className="flex items-start gap-4 mb-5">
-              <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{
-                  background: theme.bg.tertiary,
-                  border: `1px solid ${theme.border.default}`,
-                }}
-              >
-                <Sparkles
-                  className="w-6 h-6"
-                  style={{ color: theme.accent.primary }}
-                />
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-tertiary border border-border">
+                <Sparkles className="w-6 h-6 text-accent-primary" />
               </div>
               <div className="flex-1 min-w-0">
                 <Modal.Title className="text-base font-semibold mb-1">
                   Update Available
                 </Modal.Title>
                 <div className="flex items-center gap-2">
-                  <span
-                    className="px-2 py-0.5 text-xs font-medium rounded-full"
-                    style={{
-                      background: `${theme.accent.primary}20`,
-                      color: theme.accent.primary,
-                      border: `1px solid ${theme.accent.primary}30`,
-                    }}
-                  >
+                  <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-accent-primary/20 text-accent-primary border border-accent-primary/30">
                     v{updateInfo.version}
                   </span>
                   {updateInfo.date && (
-                    <span
-                      className="flex items-center gap-1 text-xs"
-                      style={{ color: theme.text.tertiary }}
-                    >
+                    <span className="flex items-center gap-1 text-xs text-tertiary">
                       <Clock className="w-3.5 h-3.5" />
                       {updateInfo.date}
                     </span>
@@ -82,28 +60,14 @@ export function UpdateNotification({
             </div>
 
             {updateInfo.body && (
-              <div
-                className="mb-5 rounded-lg p-4"
-                style={{
-                  background: theme.bg.tertiary,
-                  border: `1px solid ${theme.border.subtle}`,
-                }}
-              >
-                <div
-                  className="flex items-center gap-2 mb-2"
-                  style={{ color: theme.text.secondary }}
-                >
+              <div className="mb-5 rounded-lg p-4 bg-tertiary border border-border-subtle">
+                <div className="flex items-center gap-2 mb-2 text-secondary">
                   <Sparkles className="w-3.5 h-3.5" />
                   <span className="text-xs font-medium uppercase tracking-wider">
                     What's New
                   </span>
                 </div>
-                <div
-                  className="text-sm leading-relaxed whitespace-pre-wrap max-h-32 overflow-y-auto pr-2"
-                  style={{
-                    color: theme.text.secondary,
-                  }}
-                >
+                <div className="text-sm leading-relaxed whitespace-pre-wrap max-h-32 overflow-y-auto pr-2 text-secondary">
                   {updateInfo.body}
                 </div>
               </div>
@@ -112,38 +76,13 @@ export function UpdateNotification({
             <div className="flex gap-3">
               <button
                 onClick={onLater}
-                className="flex-1 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200"
-                style={{
-                  background: "transparent",
-                  color: theme.text.secondary,
-                  border: `1px solid ${theme.border.default}`,
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = theme.bg.hover;
-                  e.currentTarget.style.borderColor = theme.border.strong;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "transparent";
-                  e.currentTarget.style.borderColor = theme.border.default;
-                }}
+                className="flex-1 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 bg-transparent text-secondary border border-border hover:bg-hover hover:border-border-strong"
               >
                 Later
               </button>
               <button
                 onClick={onUpdate}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200"
-                style={{
-                  background: theme.accent.primary,
-                  color: theme.bg.primary,
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = theme.accent.hover;
-                  e.currentTarget.style.transform = "translateY(-1px)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = theme.accent.primary;
-                  e.currentTarget.style.transform = "translateY(0)";
-                }}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 bg-accent-primary text-primary hover:bg-accent-hover hover:-translate-y-px"
               >
                 <Download className="w-3.5 h-3.5" />
                 Update Now
@@ -156,17 +95,8 @@ export function UpdateNotification({
         return (
           <>
             <div className="flex items-center gap-4 mb-5">
-              <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{
-                  background: theme.bg.tertiary,
-                  border: `1px solid ${theme.border.default}`,
-                }}
-              >
-                <Download
-                  className="w-6 h-6 animate-pulse"
-                  style={{ color: theme.accent.primary }}
-                />
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-tertiary border border-border">
+                <Download className="w-6 h-6 animate-pulse text-accent-primary" />
               </div>
               <div className="flex-1 min-w-0">
                 <Modal.Title className="text-base font-semibold mb-1">
@@ -179,27 +109,18 @@ export function UpdateNotification({
             </div>
 
             <div className="space-y-3">
-              <div
-                className="relative h-2 rounded-full overflow-hidden"
-                style={{ background: theme.bg.tertiary }}
-              >
+              <div className="relative h-2 rounded-full overflow-hidden bg-tertiary">
                 <div
-                  className="absolute inset-y-0 left-0 rounded-full transition-all duration-150 ease-out"
-                  style={{
-                    width: `${downloadProgress}%`,
-                    background: theme.accent.primary,
-                  }}
+                  className="absolute inset-y-0 left-0 rounded-full transition-all duration-150 ease-out bg-accent-primary"
+                  style={{ width: `${downloadProgress}%` }}
                 />
               </div>
 
               <div className="flex items-center justify-between">
-                <span className="text-xs" style={{ color: theme.text.tertiary }}>
+                <span className="text-xs text-tertiary">
                   Downloading v{updateInfo.version}
                 </span>
-                <span
-                  className="text-sm font-semibold tabular-nums"
-                  style={{ color: theme.accent.primary }}
-                >
+                <span className="text-sm font-semibold tabular-nums text-accent-primary">
                   {Math.round(downloadProgress)}%
                 </span>
               </div>
@@ -212,17 +133,8 @@ export function UpdateNotification({
         return (
           <>
             <div className="flex items-start gap-4 mb-5">
-              <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{
-                  background: theme.semantic.successMuted,
-                  border: `1px solid ${theme.semantic.success}`,
-                }}
-              >
-                <RefreshCw
-                  className="w-6 h-6"
-                  style={{ color: theme.semantic.success }}
-                />
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-semantic-success-muted border border-semantic-success">
+                <RefreshCw className="w-6 h-6 text-semantic-success" />
               </div>
               <div className="flex-1 min-w-0">
                 <Modal.Title className="text-base font-semibold mb-1">
@@ -234,39 +146,18 @@ export function UpdateNotification({
               </div>
             </div>
 
-            <div
-              className="mb-5 rounded-lg p-4"
-              style={{
-                background: theme.bg.tertiary,
-                border: `1px solid ${theme.border.subtle}`,
-              }}
-            >
+            <div className="mb-5 rounded-lg p-4 bg-tertiary border border-border-subtle">
               <div className="flex items-center gap-3">
-                <div
-                  className="w-2 h-2 rounded-full"
-                  style={{ background: theme.semantic.success }}
-                />
-                <span className="text-sm" style={{ color: theme.text.secondary }}>
-                  Version <strong style={{ color: theme.text.primary }}>{updateInfo.version}</strong> is ready
+                <div className="w-2 h-2 rounded-full bg-semantic-success" />
+                <span className="text-sm text-secondary">
+                  Version <strong className="text-primary">{updateInfo.version}</strong> is ready
                 </span>
               </div>
             </div>
 
             <button
               onClick={onRestart}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200"
-              style={{
-                background: theme.semantic.success,
-                color: "#fff",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.opacity = "0.9";
-                e.currentTarget.style.transform = "translateY(-1px)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.opacity = "1";
-                e.currentTarget.style.transform = "translateY(0)";
-              }}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 bg-semantic-success text-white hover:opacity-90 hover:-translate-y-px"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               Restart Now
@@ -279,17 +170,8 @@ export function UpdateNotification({
         return (
           <>
             <div className="flex items-start gap-4 mb-5">
-              <div
-                className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{
-                  background: theme.semantic.errorMuted,
-                  border: `1px solid ${theme.semantic.error}`,
-                }}
-              >
-                <AlertCircle
-                  className="w-6 h-6"
-                  style={{ color: theme.semantic.error }}
-                />
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 bg-semantic-error-muted border border-semantic-error">
+                <AlertCircle className="w-6 h-6 text-semantic-error" />
               </div>
               <div className="flex-1 min-w-0">
                 <Modal.Title className="text-base font-semibold mb-1">
@@ -302,17 +184,8 @@ export function UpdateNotification({
             </div>
 
             {error && (
-              <div
-                className="mb-5 rounded-lg p-4"
-                style={{
-                  background: theme.semantic.errorMuted,
-                  border: `1px solid ${theme.semantic.error}30`,
-                }}
-              >
-                <div
-                  className="flex items-start gap-2"
-                  style={{ color: theme.semantic.error }}
-                >
+              <div className="mb-5 rounded-lg p-4 bg-semantic-error-muted border border-semantic-error/30">
+                <div className="flex items-start gap-2 text-semantic-error">
                   <AlertCircle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
                   <p className="text-sm leading-relaxed break-words">{error}</p>
                 </div>
@@ -322,38 +195,13 @@ export function UpdateNotification({
             <div className="flex gap-3">
               <button
                 onClick={onLater}
-                className="flex-1 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200"
-                style={{
-                  background: "transparent",
-                  color: theme.text.secondary,
-                  border: `1px solid ${theme.border.default}`,
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = theme.bg.hover;
-                  e.currentTarget.style.borderColor = theme.border.strong;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = "transparent";
-                  e.currentTarget.style.borderColor = theme.border.default;
-                }}
+                className="flex-1 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 bg-transparent text-secondary border border-border hover:bg-hover hover:border-border-strong"
               >
                 Cancel
               </button>
               <button
                 onClick={onRetry}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200"
-                style={{
-                  background: theme.accent.primary,
-                  color: theme.bg.primary,
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = theme.accent.hover;
-                  e.currentTarget.style.transform = "translateY(-1px)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = theme.accent.primary;
-                  e.currentTarget.style.transform = "translateY(0)";
-                }}
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 bg-accent-primary text-primary hover:bg-accent-hover hover:-translate-y-px"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 Try Again

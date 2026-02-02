@@ -4,8 +4,8 @@ import { Loader, MessageSquare, Copy, Check, X, CheckCircle2, XCircle, Code2, Ch
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
-import { useTheme } from "../../hooks/useTheme";
 import { useAppStore } from "../../store";
+import { cn } from "../../utils/cn";
 import type { PRDetailedInfo, PRStatus, PRComment } from "../../types/github";
 
 const AVATAR_COLORS = [
@@ -55,7 +55,6 @@ function formatDate(dateStr: string): string {
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
-  const theme = useTheme();
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(text);
@@ -66,23 +65,20 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-      style={{ background: theme.bg.hover }}
+      className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity bg-hover"
       title="Copy code"
       aria-label={copied ? "Code copied" : "Copy code"}
     >
       {copied ? (
-        <Check className="w-3 h-3" style={{ color: theme.semantic.success }} />
+        <Check className="w-3 h-3 text-semantic-success" />
       ) : (
-        <Copy className="w-3 h-3" style={{ color: theme.text.tertiary }} />
+        <Copy className="w-3 h-3 text-tertiary" />
       )}
     </button>
   );
 }
 
 function ImageModal({ src, alt, onClose }: { src: string; alt: string; onClose: () => void }) {
-  const theme = useTheme();
-
   return (
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
@@ -93,11 +89,10 @@ function ImageModal({ src, alt, onClose }: { src: string; alt: string; onClose: 
     >
       <button
         onClick={onClose}
-        className="absolute top-4 right-4 p-2 rounded-full"
-        style={{ background: theme.bg.secondary }}
+        className="absolute top-4 right-4 p-2 rounded-full bg-secondary"
         aria-label="Close image"
       >
-        <X className="w-5 h-5" style={{ color: theme.text.primary }} />
+        <X className="w-5 h-5 text-primary" />
       </button>
       <img
         src={src}
@@ -125,7 +120,6 @@ function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
 }
 
 export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) {
-  const theme = useTheme();
   const getPRDataCache = useAppStore((state) => state.getPRDataCache);
   const setPRDataCache = useAppStore((state) => state.setPRDataCache);
   
@@ -215,10 +209,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
 
   if (!prNumber) {
     return (
-      <div
-        className="flex-1 flex items-center justify-center text-sm"
-        style={{ color: theme.text.tertiary }}
-      >
+      <div className="flex-1 flex items-center justify-center text-sm text-tertiary">
         No PR found for this branch
       </div>
     );
@@ -226,10 +217,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
 
   if (isLoading) {
     return (
-      <div
-        className="flex-1 flex items-center justify-center gap-2 text-sm"
-        style={{ color: theme.text.tertiary }}
-      >
+      <div className="flex-1 flex items-center justify-center gap-2 text-sm text-tertiary">
         <Loader className="w-4 h-4 animate-spin" />
         <span>Loading comments...</span>
       </div>
@@ -238,19 +226,11 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
 
   if (error) {
     return (
-      <div
-        className="flex-1 flex flex-col items-center justify-center gap-3 p-6"
-      >
-        <span className="text-sm text-center" style={{ color: theme.text.tertiary }}>{error}</span>
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6">
+        <span className="text-sm text-center text-tertiary">{error}</span>
         <button
           onClick={() => fetchData()}
-          className="px-3 py-1.5 rounded text-xs font-medium transition-colors"
-          style={{ 
-            background: theme.bg.tertiary, 
-            color: theme.text.secondary,
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.background = theme.bg.hover}
-          onMouseLeave={(e) => e.currentTarget.style.background = theme.bg.tertiary}
+          className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-tertiary text-secondary hover:bg-hover"
         >
           Try again
         </button>
@@ -316,8 +296,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
         href={href} 
         target="_blank" 
         rel="noopener noreferrer"
-        style={{ color: theme.semantic.info }}
-        className="hover:underline"
+        className="hover:underline text-semantic-info"
       >
         {children}
       </a>
@@ -326,8 +305,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
       const isInline = !className;
       return isInline ? (
         <code 
-          className="px-1 py-0.5 rounded text-[13px]"
-          style={{ background: theme.bg.tertiary, color: theme.text.primary }}
+          className="px-1 py-0.5 rounded text-[13px] bg-tertiary text-primary"
           {...props}
         >
           {children}
@@ -350,10 +328,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
       })();
       return (
         <div className="relative group my-2">
-          <pre 
-            className="p-3 rounded text-[13px] overflow-x-auto"
-            style={{ background: theme.bg.tertiary }}
-          >
+          <pre className="p-3 rounded text-[13px] overflow-x-auto bg-tertiary">
             {children}
           </pre>
           <CopyButton text={codeContent} />
@@ -381,20 +356,14 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
       <p className="my-1.5 first:mt-0 last:mb-0">{children}</p>
     ),
     blockquote: ({ children }: { children?: React.ReactNode }) => (
-      <blockquote 
-        className="border-l-2 pl-3 my-2"
-        style={{ borderColor: theme.border.default, color: theme.text.secondary }}
-      >
+      <blockquote className="border-l-2 pl-3 my-2 border-border text-secondary">
         {children}
       </blockquote>
     ),
   };
 
   const renderCommentBody = (body: string) => (
-    <div
-      className="text-[13px] leading-relaxed"
-      style={{ color: theme.text.primary }}
-    >
+    <div className="text-[13px] leading-relaxed text-primary">
       <ReactMarkdown 
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeRaw]}
@@ -460,16 +429,16 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
     
     let actionText = 'reviewed';
     let ActionIcon: typeof CheckCircle2 | typeof XCircle | null = null;
-    let iconColor: string = theme.text.tertiary;
+    let iconColorClass = "text-tertiary";
     
     if (comment.state === 'APPROVED') {
       actionText = 'approved';
       ActionIcon = CheckCircle2;
-      iconColor = theme.semantic.success;
+      iconColorClass = "text-semantic-success";
     } else if (comment.state === 'CHANGES_REQUESTED') {
       actionText = 'requested changes';
       ActionIcon = XCircle;
-      iconColor = theme.semantic.error;
+      iconColorClass = "text-semantic-error";
     }
 
     return (
@@ -477,30 +446,29 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
         <div className="flex items-center gap-2">
           <Avatar name={comment.author} size="sm" />
           <div className="flex items-center gap-1.5 min-w-0 flex-1">
-            <span className="text-[13px] font-medium" style={{ color: theme.text.primary }}>
+            <span className="text-[13px] font-medium text-primary">
               {comment.author}
             </span>
-            <span className="text-[13px]" style={{ color: theme.text.tertiary }}>
+            <span className="text-[13px] text-tertiary">
               {actionText}
             </span>
             {ActionIcon && (
-              <ActionIcon className="w-3.5 h-3.5 shrink-0" style={{ color: iconColor }} />
+              <ActionIcon className={cn("w-3.5 h-3.5 shrink-0", iconColorClass)} />
             )}
-            <span className="text-[13px]" style={{ color: theme.text.muted }}>
+            <span className="text-[13px] text-muted">
               · {formatDate(comment.created_at)}
             </span>
           </div>
           <button
             onClick={() => handleCopyReview(comment, nestedThreads)}
-            className="p-1 rounded opacity-0 group-hover/review:opacity-100 transition-opacity"
-            style={{ background: theme.bg.hover }}
+            className="p-1 rounded opacity-0 group-hover/review:opacity-100 transition-opacity bg-hover"
             title="Copy review"
             aria-label={isCopied ? "Review copied" : "Copy review"}
           >
             {isCopied ? (
-              <Check className="w-3.5 h-3.5" style={{ color: theme.semantic.success }} />
+              <Check className="w-3.5 h-3.5 text-semantic-success" />
             ) : (
-              <Copy className="w-3.5 h-3.5" style={{ color: theme.text.tertiary }} />
+              <Copy className="w-3.5 h-3.5 text-tertiary" />
             )}
           </button>
         </div>
@@ -515,41 +483,29 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
           <div className="mt-2 ml-7">
             <button
               onClick={() => toggleReviewCollapse(comment.review_id!)}
-              className="flex items-center gap-1.5 text-[12px] py-1 transition-colors"
-              style={{ color: theme.text.secondary }}
-              onMouseEnter={(e) => e.currentTarget.style.color = theme.text.primary}
-              onMouseLeave={(e) => e.currentTarget.style.color = theme.text.secondary}
+              className="flex items-center gap-1.5 text-[12px] py-1 transition-colors text-secondary hover:text-primary"
             >
               <ChevronDown 
-                className={`w-3.5 h-3.5 transition-transform ${isCollapsed ? '-rotate-90' : ''}`} 
+                className={cn("w-3.5 h-3.5 transition-transform", isCollapsed && "-rotate-90")} 
               />
-              <Code2 className="w-3.5 h-3.5" style={{ color: theme.text.tertiary }} />
+              <Code2 className="w-3.5 h-3.5 text-tertiary" />
               <span>{nestedThreads.length} code comment{nestedThreads.length !== 1 ? 's' : ''}</span>
             </button>
             
             {!isCollapsed && (
-              <div 
-                className="mt-2 rounded-lg overflow-hidden"
-                style={{ background: theme.bg.secondary }}
-              >
+              <div className="mt-2 rounded-lg overflow-hidden bg-secondary">
                 {nestedThreads
                   .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
                   .map((thread, idx) => (
                     <div 
                       key={idx}
-                      className="px-3 py-2.5"
-                      style={{ 
-                        borderTop: idx > 0 ? `1px solid ${theme.border.subtle}` : undefined 
-                      }}
+                      className={cn("px-3 py-2.5", idx > 0 && "border-t border-border-subtle")}
                     >
                       {thread.path && (
-                        <div 
-                          className="flex items-center gap-1.5 mb-2 text-[11px] font-mono"
-                          style={{ color: theme.text.tertiary }}
-                        >
+                        <div className="flex items-center gap-1.5 mb-2 text-[11px] font-mono text-tertiary">
                           <span className="truncate">{thread.path}</span>
                           {thread.line && (
-                            <span style={{ color: theme.text.muted }}>:{thread.line}</span>
+                            <span className="text-muted">:{thread.line}</span>
                           )}
                         </div>
                       )}
@@ -557,10 +513,10 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
                         <Avatar name={thread.author} size="sm" />
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 mb-1">
-                            <span className="text-[12px] font-medium" style={{ color: theme.text.primary }}>
+                            <span className="text-[12px] font-medium text-primary">
                               {thread.author}
                             </span>
-                            <span className="text-[11px]" style={{ color: theme.text.muted }}>
+                            <span className="text-[11px] text-muted">
                               {formatDate(thread.created_at)}
                             </span>
                           </div>
@@ -581,31 +537,25 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
     const hasBody = comment.body && comment.body.trim().length > 0;
 
     return (
-      <div 
-        className="py-3 rounded-lg px-3"
-        style={{ background: theme.bg.secondary }}
-      >
+      <div className="py-3 rounded-lg px-3 bg-secondary">
         <div className="flex items-start gap-2.5">
           <Avatar name={comment.author} />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 mb-1">
-              <span className="text-[13px] font-medium" style={{ color: theme.text.primary }}>
+              <span className="text-[13px] font-medium text-primary">
                 {comment.author}
               </span>
-              <span className="text-[12px]" style={{ color: theme.text.muted }}>
+              <span className="text-[12px] text-muted">
                 {formatDate(comment.created_at)}
               </span>
             </div>
             
             {comment.comment_type === 'review_thread' && comment.path && (
-              <div 
-                className="flex items-center gap-1.5 mb-2 text-[11px] font-mono"
-                style={{ color: theme.text.tertiary }}
-              >
+              <div className="flex items-center gap-1.5 mb-2 text-[11px] font-mono text-tertiary">
                 <Code2 className="w-3 h-3 shrink-0" />
                 <span className="truncate">{comment.path}</span>
                 {comment.line && (
-                  <span style={{ color: theme.text.muted }}>:{comment.line}</span>
+                  <span className="text-muted">:{comment.line}</span>
                 )}
               </div>
             )}
@@ -619,11 +569,8 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
 
   if (comments.length === 0) {
     return (
-      <div
-        className="flex-1 flex flex-col items-center justify-center gap-2 p-8"
-        style={{ color: theme.text.tertiary }}
-      >
-        <MessageSquare className="w-8 h-8" style={{ color: theme.text.muted }} />
+      <div className="flex-1 flex flex-col items-center justify-center gap-2 p-8 text-tertiary">
+        <MessageSquare className="w-8 h-8 text-muted" />
         <span className="text-sm">No comments yet</span>
       </div>
     );

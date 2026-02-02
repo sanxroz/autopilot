@@ -2,7 +2,6 @@ import * as React from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { cn } from "../../utils/cn";
-import { useTheme } from "../../hooks/useTheme";
 
 const ModalRoot = DialogPrimitive.Root;
 const ModalTrigger = DialogPrimitive.Trigger;
@@ -35,11 +34,9 @@ const ModalContent = React.forwardRef<
   }
 >(
   (
-    { className, overlayClassName, children, showClose = true, style, ...rest },
+    { className, overlayClassName, children, showClose = true, ...rest },
     forwardedRef
   ) => {
-    const theme = useTheme();
-
     return (
       <ModalPortal>
         <ModalOverlay className={overlayClassName}>
@@ -52,20 +49,15 @@ const ModalContent = React.forwardRef<
               "data-[state=open]:animate-in data-[state=closed]:animate-out",
               "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
               "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
+              "bg-secondary border border-DEFAULT",
               className
             )}
-            style={{
-              background: theme.bg.secondary,
-              border: `1px solid ${theme.border.default}`,
-              ...style,
-            }}
             {...rest}
           >
             {children}
             {showClose && (
               <ModalClose
-                className="absolute right-4 top-4 rounded-sm p-1 transition-colors"
-                style={{ color: theme.text.tertiary }}
+                className="absolute right-4 top-4 rounded-sm p-1 transition-colors text-tertiary hover:text-primary"
                 aria-label="Close dialog"
               >
                 <X className="h-4 w-4" />
@@ -83,12 +75,10 @@ const ModalTitle = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Title>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Title>
 >(({ className, ...rest }, forwardedRef) => {
-  const theme = useTheme();
   return (
     <DialogPrimitive.Title
       ref={forwardedRef}
-      className={cn("text-sm font-medium", className)}
-      style={{ color: theme.text.primary }}
+      className={cn("text-sm font-medium text-primary", className)}
       {...rest}
     />
   );
@@ -99,12 +89,10 @@ const ModalDescription = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Description>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Description>
 >(({ className, ...rest }, forwardedRef) => {
-  const theme = useTheme();
   return (
     <DialogPrimitive.Description
       ref={forwardedRef}
-      className={cn("text-xs", className)}
-      style={{ color: theme.text.secondary }}
+      className={cn("text-xs text-secondary", className)}
       {...rest}
     />
   );

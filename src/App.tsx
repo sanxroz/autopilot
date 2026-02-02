@@ -10,7 +10,6 @@ import { CommandMenu } from "./components/CommandMenu";
 import { UpdateNotification } from "./components/UpdateNotification";
 import { Toaster } from "sonner";
 import { useAppStore } from "./store";
-import { useTheme } from "./hooks/useTheme";
 import { usePRStatusPolling } from "./hooks/usePRStatus";
 import { useGitWatcher } from "./hooks/useGitWatcher";
 import { useUpdater } from "./hooks/useUpdater";
@@ -26,7 +25,6 @@ function App() {
   const diffViewMode = useAppStore((state) => state.diffViewMode);
   const settingsOpen = useAppStore((state) => state.settingsOpen);
   const toggleSettings = useAppStore((state) => state.toggleSettings);
-  const theme = useTheme();
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -70,18 +68,8 @@ function App() {
   }, [updateStatus]);
 
   return (
-    <div
-      className="h-dvh overflow-hidden rounded-lg flex flex-col"
-      style={{ background: "transparent" }}
-    >
-      <div
-        className="overflow-hidden flex h-full"
-        style={{
-          background: theme.bg.primary,
-          boxShadow: `inset 0 0 0 1px ${theme.border.subtle}`,
-          color: theme.text.primary,
-        }}
-      >
+    <div className="h-dvh overflow-hidden rounded-lg flex flex-col bg-transparent">
+      <div className="overflow-hidden flex h-full bg-primary text-primary ring-1 ring-inset ring-border-subtle">
         <Sidebar isOpen={sidebarOpen} />
         <div className="flex flex-col flex-1 overflow-hidden relative">
           <Navbar sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />

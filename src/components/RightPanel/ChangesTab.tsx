@@ -7,8 +7,7 @@ import {
   Square,
   Loader
 } from "lucide-react";
-import { useTheme } from "../../hooks/useTheme";
-import type { Theme } from "../../theme";
+import { cn } from "../../utils/cn";
 import type { ChangedFile, FileDiffData } from "../../types";
 
 interface ChangesTabProps {
@@ -35,19 +34,35 @@ function getFileIcon(status: ChangedFile["status"]) {
   }
 }
 
-function getStatusColor(status: ChangedFile["status"], theme: Theme) {
+function getStatusColorClass(status: ChangedFile["status"]): string {
   switch (status) {
     case "added":
     case "untracked":
-      return theme.semantic.success;
+      return "text-semantic-success";
     case "deleted":
-      return theme.semantic.error;
+      return "text-semantic-error";
     case "modified":
     case "renamed":
     case "copied":
-      return theme.semantic.warning;
+      return "text-semantic-warning";
     default:
-      return theme.text.tertiary;
+      return "text-tertiary";
+  }
+}
+
+function getStatusFillClass(status: ChangedFile["status"]): string {
+  switch (status) {
+    case "added":
+    case "untracked":
+      return "fill-semantic-success";
+    case "deleted":
+      return "fill-semantic-error";
+    case "modified":
+    case "renamed":
+    case "copied":
+      return "fill-semantic-warning";
+    default:
+      return "fill-tertiary";
   }
 }
 
@@ -139,8 +154,6 @@ export function ChangesTab({
   isLoading,
   onSelectFile,
 }: ChangesTabProps) {
-  const theme = useTheme();
-
   const parsedDiff = useMemo(() => {
     if (!fileDiff?.patch) return [];
     return parsePatch(fileDiff.patch);
@@ -148,10 +161,7 @@ export function ChangesTab({
 
   if (changedFiles.length === 0 && !isLoading) {
     return (
-      <div
-        className="flex-1 flex items-center justify-center text-sm"
-        style={{ color: theme.text.secondary }}
-      >
+      <div className="flex-1 flex items-center justify-center text-sm text-secondary">
         No changes detected
       </div>
     );
@@ -160,15 +170,15 @@ export function ChangesTab({
   return (
     <div className="flex flex-col h-full">
       <div
-        className="overflow-y-auto border-b"
+        className="overflow-y-auto border-b border-border"
         style={{
-          borderColor: theme.border.default,
           maxHeight: selectedFile ? "180px" : "100%",
         }}
       >
         {changedFiles.map((file) => {
           const Icon = getFileIcon(file.status);
-          const statusColor = getStatusColor(file.status, theme);
+          const statusColorClass = getStatusColorClass(file.status);
+          const statusFillClass = getStatusFillClass(file.status);
           const isSelected = selectedFile === file.path;
           const dir = dirname(file.path);
 
@@ -187,56 +197,30 @@ export function ChangesTab({
               tabIndex={0}
               aria-label={`${basename(file.path)}, ${file.status}, ${file.additions} additions, ${file.deletions} deletions`}
               aria-selected={isSelected}
-              className="px-3 py-1.5 cursor-pointer flex items-center gap-2 transition-colors"
-              style={{
-                background: isSelected ? theme.bg.active : "transparent",
-              }}
-              onMouseEnter={(e) => {
-                if (!isSelected) {
-                  e.currentTarget.style.background = theme.bg.hover;
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!isSelected) {
-                  e.currentTarget.style.background = "transparent";
-                }
-              }}
+              className={cn(
+                "px-3 py-1.5 cursor-pointer flex items-center gap-2 transition-colors hover:bg-hover",
+                isSelected && "bg-active"
+              )}
             >
-              <Icon
-                className="w-3.5 h-3.5 flex-shrink-0"
-                style={{ color: statusColor }}
-              />
+              <Icon className={cn("w-3.5 h-3.5 flex-shrink-0", statusColorClass)} />
               <div className="flex-1 min-w-0 flex items-center gap-1">
-                <span
-                  className="truncate text-sm"
-                  style={{ color: theme.text.primary }}
-                >
+                <span className="truncate text-sm text-primary">
                   {basename(file.path)}
                 </span>
                 {dir && (
-                  <span
-                    className="truncate text-xs"
-                    style={{ color: theme.text.tertiary }}
-                  >
+                  <span className="truncate text-xs text-tertiary">
                     {dir}
                   </span>
                 )}
               </div>
-              <div
-                className="flex items-center gap-1.5 text-xs font-mono flex-shrink-0"
-                style={{ color: theme.text.tertiary }}
-              >
+              <div className="flex items-center gap-1.5 text-xs font-mono flex-shrink-0 text-tertiary">
                 {file.additions > 0 && (
-                  <span style={{ color: theme.semantic.success }}>+{file.additions}</span>
+                  <span className="text-semantic-success">+{file.additions}</span>
                 )}
                 {file.deletions > 0 && (
-                  <span style={{ color: theme.semantic.error }}>-{file.deletions}</span>
+                  <span className="text-semantic-error">-{file.deletions}</span>
                 )}
-                <Square
-                  className="w-3.5 h-3.5"
-                  style={{ color: statusColor }}
-                  fill={statusColor}
-                />
+                <Square className={cn("w-3.5 h-3.5", statusColorClass, statusFillClass)} />
               </div>
             </div>
           );
@@ -244,15 +228,9 @@ export function ChangesTab({
       </div>
 
       {selectedFile && (
-        <div
-          className="flex-1 overflow-auto"
-          style={{ background: theme.bg.primary }}
-        >
+        <div className="flex-1 overflow-auto bg-primary">
           {!fileDiff && !isLoading && (
-            <div
-              className="flex items-center justify-center h-full text-sm"
-              style={{ color: theme.text.secondary }}
-            >
+            <div className="flex items-center justify-center h-full text-sm text-secondary">
               <Loader className="w-3.5 h-3.5 animate-spin mr-2" />
               <span className="text-sm font-medium">Loading diff...</span>
             </div>
@@ -264,16 +242,10 @@ export function ChangesTab({
                   return (
                     <div
                       key={index}
-                      className="flex px-2 py-1"
-                      style={{
-                        background: theme.bg.tertiary,
-                        color: theme.text.tertiary,
-                        borderTop:
-                          index > 0
-                            ? `1px solid ${theme.border.default}`
-                            : undefined,
-                        borderBottom: `1px solid ${theme.border.default}`,
-                      }}
+                      className={cn(
+                        "flex px-2 py-1 bg-tertiary text-tertiary border-b border-border",
+                        index > 0 && "border-t"
+                      )}
                     >
                       <span className="opacity-70">{line.content}</span>
                     </div>
@@ -286,37 +258,20 @@ export function ChangesTab({
                 return (
                   <div
                     key={index}
-                    className="flex"
-                    style={{
-                      background: isAdd
-                        ? theme.semantic.successMuted
-                        : isDel
-                        ? theme.semantic.errorMuted
-                        : "transparent",
-                      color: isAdd
-                        ? theme.semantic.success
-                        : isDel
-                        ? theme.semantic.error
-                        : theme.text.secondary,
-                      padding: "1px 8px",
-                      whiteSpace: "pre",
-                    }}
+                    className={cn(
+                      "flex px-2 py-px whitespace-pre",
+                      isAdd && "bg-semantic-success-muted text-semantic-success",
+                      isDel && "bg-semantic-error-muted text-semantic-error",
+                      !isAdd && !isDel && "text-secondary"
+                    )}
                   >
-                    <span
-                      style={{
-                        width: "40px",
-                        textAlign: "right",
-                        paddingRight: "12px",
-                        color: theme.text.tertiary,
-                        userSelect: "none",
-                      }}
-                    >
+                    <span className="w-10 text-right pr-3 text-tertiary select-none">
                       {isDel ? line.oldLineNum : line.newLineNum}
                     </span>
-                    <span style={{ width: "16px", userSelect: "none" }}>
+                    <span className="w-4 select-none">
                       {isAdd ? "+" : isDel ? "-" : " "}
                     </span>
-                    <span style={{ flex: 1 }}>{line.content}</span>
+                    <span className="flex-1">{line.content}</span>
                   </div>
                 );
               })}

@@ -16,9 +16,9 @@ import {
   MessageSquare,
   Loader,
 } from "lucide-react";
-import { useTheme } from "../../hooks/useTheme";
 import { usePRStatusForBranch } from "../../hooks/usePRStatus";
 import { useAppStore } from "../../store";
+import { cn } from "../../utils/cn";
 
 import { ChecksTab } from "./ChecksTab";
 import { CommentsTab } from "./CommentsTab";
@@ -48,7 +48,6 @@ const DEFAULT_WIDTH = 450;
 type ReviewMode = "uncommitted" | "base" | "custom";
 
 export function RightPanel({ worktreePath }: RightPanelProps) {
-  const theme = useTheme();
   const reducedMotion = useReducedMotion();
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -144,7 +143,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   );
 
   const getChecksColor = () => {
-    return theme.text.secondary;
+    return "text-secondary";
   };
 
   const handleRunReview = useCallback(
@@ -269,48 +268,30 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
       exit={reducedMotion ? { opacity: 0 } : { x: 400, opacity: 0 }}
       transition={{
         duration: reducedMotion ? 0 : 0.25,
-        ease: [0.215, 0.61, 0.355, 1], // cubic-out
+        ease: [0.215, 0.61, 0.355, 1],
       }}
-      className="relative flex flex-col h-full select-none"
+      className="relative flex flex-col h-full select-none border-l border-DEFAULT"
       style={{
         width: `${width}px`,
         minWidth: `${MIN_WIDTH}px`,
         maxWidth: `${MAX_WIDTH}px`,
-        borderLeft: `1px solid ${theme.border.default}`,
       }}
     >
       <div
         onMouseDown={handleMouseDown}
-        className="absolute top-0 left-0 w-1 h-full cursor-col-resize z-10 transition-colors"
-        style={{
-          backgroundColor: isResizing ? theme.border.strong : "transparent",
-        }}
+        className={cn(
+          "absolute top-0 left-0 w-1 h-full cursor-col-resize z-10 transition-colors",
+          isResizing ? "bg-border-strong" : "bg-transparent"
+        )}
       />
 
-      <div
-        className="flex items-center gap-1 px-3"
-        style={{
-          height: "35px",
-          minHeight: "35px",
-        }}
-      >
+      <div className="flex items-center gap-1 px-3 h-[35px] min-h-[35px]">
         {prStatus && (
           <a
             href={prStatus.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors mr-2"
-            style={{
-              color: theme.text.secondary,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = theme.bg.hover;
-              e.currentTarget.style.color = theme.text.primary;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = theme.text.secondary;
-            }}
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors mr-2 text-secondary hover:bg-hover hover:text-primary"
             title={prStatus.title}
           >
             <span className="font-medium">#{prStatus.number}</span>
@@ -324,8 +305,8 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
             onValueChange={(value: string) => setActiveTab(value as TabId)}
           >
             <TabsList
-              containerBgColor={theme.bg.primary}
-              floatingBgColor={theme.bg.tertiary}
+              containerBgColor="var(--color-bg-primary)"
+              floatingBgColor="var(--color-bg-tertiary)"
             >
               {tabs.map((tab) => {
                 const isActive = activeTab === tab.id;
@@ -334,13 +315,13 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
                     <Tooltip.Trigger asChild>
                       <TabsTrigger
                         value={tab.id}
-                        style={{
-                          color: tab.color
+                        className={cn(
+                          tab.color
                             ? tab.color
                             : isActive
-                              ? theme.text.primary
-                              : theme.text.secondary,
-                        }}
+                              ? "text-primary"
+                              : "text-secondary"
+                        )}
                       >
                         <tab.icon className="w-3.5 h-3.5" />
                       </TabsTrigger>
@@ -367,12 +348,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
           }}
         >
           <DropdownMenuTrigger asChild>
-            <button
-              className="flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium transition-colors hover:bg-opacity-80"
-              style={{
-                color: theme.text.primary,
-              }}
-            >
+            <button className="flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium transition-colors hover:bg-opacity-80 text-primary">
               <ScanSearch className="w-3.5 h-3.5" />
               Review
               <ChevronDown className="w-3.5 h-3.5 opacity-50" />
@@ -425,19 +401,19 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
                   <div className="flex items-center justify-end gap-1 px-1 pb-0.5">
                     <button
                       onClick={handleCustomPromptCancel}
-                      className="px-2 py-1 text-xs rounded transition-colors"
-                      style={{ color: theme.text.tertiary }}
+                      className="px-2 py-1 text-xs rounded transition-colors text-tertiary hover:text-primary"
                     >
                       Cancel
                     </button>
                     <button
                       onClick={handleCustomPromptSubmit}
                       disabled={!customPrompt.trim()}
-                      className="px-2 py-1 text-xs rounded transition-colors flex items-center gap-1"
-                      style={{
-                        background: customPrompt.trim() ? theme.accent.primary : "transparent",
-                        color: customPrompt.trim() ? "white" : theme.text.muted,
-                      }}
+                      className={cn(
+                        "px-2 py-1 text-xs rounded transition-colors flex items-center gap-1",
+                        customPrompt.trim()
+                          ? "bg-accent-primary text-white"
+                          : "bg-transparent text-muted"
+                      )}
                     >
                       <ScanSearch className="w-3 h-3" />
                       Run
@@ -502,12 +478,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         {!prStatus && repoPath && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button
-                className="flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium transition-colors hover:bg-opacity-80"
-                style={{
-                  color: theme.text.primary,
-                }}
-              >
+              <button className="flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium transition-colors hover:bg-opacity-80 text-primary">
                 <GitPullRequest className="w-3.5 h-3.5" />
                 Create PR
                 <ChevronDown className="w-3.5 h-3.5 opacity-50" />
