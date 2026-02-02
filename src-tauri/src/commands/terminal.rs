@@ -223,10 +223,9 @@ pub fn spawn_terminal_with_command(
         cmd.arg("/k");
         cmd.arg(&full_command);
     } else {
-        // Execute command via -c flag, then exec into interactive shell
-        // This avoids race conditions with shell initialization
-        cmd.arg("-c");
-        cmd.arg(format!("{}; exec ${{SHELL:-/bin/bash}} -li", full_command));
+        // -lic (login+interactive+cmd), then spawn child shell to keep terminal open and show errors
+        cmd.arg("-lic");
+        cmd.arg(format!("{}\n$SHELL -li", full_command));
     }
 
     cmd.cwd(&cwd);
