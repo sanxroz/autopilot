@@ -223,9 +223,14 @@ pub fn spawn_terminal_with_command(
         cmd.arg("/k");
         cmd.arg(&full_command);
     } else {
-        // -lic (login+interactive+cmd), then spawn child shell to keep terminal open and show errors
-        cmd.arg("-lic");
-        cmd.arg(format!("{}\n$SHELL -li", full_command));
+        // login+interactive+cmd for bash/zsh; plain -c for other shells
+        if should_wrap_shell(&shell) {
+            cmd.arg("-lic");
+        } else {
+            cmd.arg("-c");
+        }
+        // Spawn child shell after command to keep terminal open and show errors
+        cmd.arg(format!("{}\n${{SHELL:-/bin/bash}} -li", full_command));
     }
 
     cmd.cwd(&cwd);
