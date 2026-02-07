@@ -229,8 +229,7 @@ pub fn spawn_terminal_with_command(
         } else {
             cmd.arg("-c");
         }
-        // Spawn child shell after command to keep terminal open and show errors
-        cmd.arg(format!("{}\n${{SHELL:-/bin/bash}} -li", full_command));
+        cmd.arg(format!("{}\n{} -li", full_command, shell));
     }
 
     cmd.cwd(&cwd);
