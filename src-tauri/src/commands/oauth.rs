@@ -42,7 +42,9 @@ struct DeviceCodeApiResponse {
 #[derive(Debug, Deserialize)]
 struct TokenApiResponse {
     access_token: Option<String>,
+    #[allow(dead_code)]
     token_type: Option<String>,
+    #[allow(dead_code)]
     scope: Option<String>,
     error: Option<String>,
     error_description: Option<String>,
@@ -101,16 +103,13 @@ pub async fn oauth_poll_for_token(device_code: String) -> Result<OAuthStatus, St
 
     let status_code = response.status();
     let response_text = response.text().await.unwrap_or_default();
-    
-    println!("[OAuth] Poll response status: {}", status_code);
-    println!("[OAuth] Poll response body: {}", response_text);
 
     if !status_code.is_success() {
         return Err(format!("GitHub API error ({}): {}", status_code, response_text));
     }
 
     let token_response: TokenApiResponse = serde_json::from_str(&response_text)
-        .map_err(|e| format!("Failed to parse token response: {} - body: {}", e, response_text))?;
+        .map_err(|e| format!("Failed to parse token response: {}", e))?;
 
     if let Some(error) = token_response.error {
         match error.as_str() {
@@ -140,9 +139,7 @@ pub async fn oauth_poll_for_token(device_code: String) -> Result<OAuthStatus, St
         .access_token
         .ok_or("No access token in response")?;
 
-    println!("[OAuth] Got access token, fetching user info...");
     let user = fetch_github_user(&access_token).await?;
-    println!("[OAuth] User: {}", user.login);
 
     let credentials = StoredCredentials {
         access_token,
@@ -150,19 +147,13 @@ pub async fn oauth_poll_for_token(device_code: String) -> Result<OAuthStatus, St
         avatar_url: Some(user.avatar_url.clone()),
     };
     
-    match secure_storage::store_credentials(&credentials) {
-        Ok(()) => println!("[OAuth] Credentials stored successfully"),
-        Err(e) => {
-            println!("[OAuth] Failed to store credentials: {}", e);
-            return Err(format!("Failed to store credentials: {}", e));
-        }
-    }
+    secure_storage::store_credentials(&credentials)
+        .map_err(|e| format!("Failed to store credentials: {}", e))?;
 
     if let Err(e) = configure_git_credential_helper(&credentials.username, &credentials.access_token) {
-        println!("[OAuth] Warning: Failed to configure git credentials: {}", e);
+        eprintln!("[OAuth] Warning: Failed to configure git credentials: {}", e);
     }
 
-    
 
     Ok(OAuthStatus {
         authenticated: true,
@@ -226,23 +217,16 @@ fn configure_git_credential_helper(username: &str, token: &str) -> Result<(), St
 
 #[tauri::command]
 pub async fn oauth_get_status() -> Result<OAuthStatus, String> {
-    println!("[OAuth] Checking for stored credentials...");
-    
     let creds = match secure_storage::get_credentials() {
-        Ok(Some(c)) => {
-            println!("[OAuth] Found stored credentials for user: {}", c.username);
-            c
-        }
+        Ok(Some(c)) => c,
         Ok(None) => {
-            println!("[OAuth] No stored credentials found");
             return Ok(OAuthStatus {
                 authenticated: false,
                 username: None,
                 avatar_url: None,
             });
         }
-        Err(e) => {
-            println!("[OAuth] Error reading credentials: {}", e);
+        Err(_) => {
             return Ok(OAuthStatus {
                 authenticated: false,
                 username: None,
@@ -262,7 +246,6 @@ pub async fn oauth_get_status() -> Result<OAuthStatus, String> {
 
     match response {
         Ok(resp) if resp.status().is_success() => {
-            println!("[OAuth] Token is valid");
             Ok(OAuthStatus {
                 authenticated: true,
                 username: Some(creds.username),
@@ -270,7 +253,6 @@ pub async fn oauth_get_status() -> Result<OAuthStatus, String> {
             })
         }
         Ok(resp) if resp.status() == 401 => {
-            println!("[OAuth] Token is invalid (401), clearing credentials");
             let _ = secure_storage::delete_credentials();
             Ok(OAuthStatus {
                 authenticated: false,
@@ -278,20 +260,28 @@ pub async fn oauth_get_status() -> Result<OAuthStatus, String> {
                 avatar_url: None,
             })
         }
-        Ok(resp) => {
-            println!("[OAuth] API returned status {}, assuming token valid", resp.status());
+        Ok(resp) if resp.status().is_server_error() => {
+            // 5xx: GitHub is having issues — assume token still valid
             Ok(OAuthStatus {
                 authenticated: true,
                 username: Some(creds.username),
                 avatar_url: creds.avatar_url,
             })
         }
-        Err(e) => {
-            println!("[OAuth] Network error checking token: {}, assuming valid", e);
+        Ok(_) => {
+            // Other 4xx (403 revoked, 422, etc.) — treat as unauthenticated
             Ok(OAuthStatus {
-                authenticated: true,
-                username: Some(creds.username),
-                avatar_url: creds.avatar_url,
+                authenticated: false,
+                username: None,
+                avatar_url: None,
+            })
+        }
+        Err(_) => {
+            // Network error — don't assume authenticated
+            Ok(OAuthStatus {
+                authenticated: false,
+                username: None,
+                avatar_url: None,
             })
         }
     }
@@ -299,6 +289,8 @@ pub async fn oauth_get_status() -> Result<OAuthStatus, String> {
 
 #[tauri::command]
 pub async fn oauth_logout() -> Result<(), String> {
+    let creds = secure_storage::get_credentials().ok().flatten();
+
     secure_storage::delete_credentials()?;
 
     use std::io::Write;
@@ -316,6 +308,10 @@ pub async fn oauth_logout() -> Result<(), String> {
         if let Some(ref mut stdin) = process.stdin {
             writeln!(stdin, "protocol=https").ok();
             writeln!(stdin, "host=github.com").ok();
+            if let Some(ref c) = creds {
+                writeln!(stdin, "username={}", c.username).ok();
+                writeln!(stdin, "password={}", c.access_token).ok();
+            }
             writeln!(stdin).ok();
         }
         process.wait().ok();
@@ -328,5 +324,3 @@ pub async fn oauth_logout() -> Result<(), String> {
 pub fn oauth_get_token() -> Result<Option<String>, String> {
     secure_storage::get_token()
 }
-
-

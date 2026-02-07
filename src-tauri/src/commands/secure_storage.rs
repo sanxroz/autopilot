@@ -17,57 +17,52 @@ fn get_credentials_path() -> Option<PathBuf> {
 
 fn store_to_file(credentials: &StoredCredentials) -> Result<(), String> {
     let path = get_credentials_path().ok_or("Could not determine home directory")?;
-    println!("[OAuth] Writing credentials to: {:?}", path);
 
     let json = serde_json::to_string(credentials)
         .map_err(|e| format!("Failed to serialize credentials: {}", e))?;
 
-    fs::write(&path, &json).map_err(|e| {
-        println!("[OAuth] Failed to write file: {}", e);
-        format!("Failed to write credentials file: {}", e)
-    })?;
-
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(metadata) = fs::metadata(&path) {
-            let mut perms = metadata.permissions();
-            perms.set_mode(0o600);
-            let _ = fs::set_permissions(&path, perms);
-        }
+        use std::fs::OpenOptions;
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&path)
+            .map_err(|e| format!("Failed to create credentials file: {}", e))?;
+
+        file.write_all(json.as_bytes())
+            .map_err(|e| format!("Failed to write credentials file: {}", e))?;
     }
 
-    println!("[OAuth] Credentials saved successfully");
+    #[cfg(not(unix))]
+    {
+        fs::write(&path, &json).map_err(|e| format!("Failed to write credentials file: {}", e))?;
+    }
+
     Ok(())
 }
 
 fn get_from_file() -> Result<Option<StoredCredentials>, String> {
     let path = match get_credentials_path() {
         Some(p) => p,
-        None => {
-            println!("[OAuth] Could not determine home directory");
-            return Ok(None);
-        }
+        None => return Ok(None),
     };
 
-    println!("[OAuth] Looking for credentials at: {:?}", path);
-
     if !path.exists() {
-        println!("[OAuth] Credentials file does not exist");
         return Ok(None);
     }
 
-    let json = fs::read_to_string(&path).map_err(|e| {
-        println!("[OAuth] Failed to read file: {}", e);
-        format!("Failed to read credentials file: {}", e)
-    })?;
+    let json =
+        fs::read_to_string(&path).map_err(|e| format!("Failed to read credentials file: {}", e))?;
 
-    let creds: StoredCredentials = serde_json::from_str(&json).map_err(|e| {
-        println!("[OAuth] Failed to parse file: {}", e);
-        format!("Failed to parse credentials file: {}", e)
-    })?;
+    let creds: StoredCredentials = serde_json::from_str(&json)
+        .map_err(|e| format!("Failed to parse credentials file: {}", e))?;
 
-    println!("[OAuth] Credentials loaded for user: {}", creds.username);
     Ok(Some(creds))
 }
 
@@ -76,17 +71,12 @@ fn delete_from_file() -> Result<(), String> {
         if path.exists() {
             fs::remove_file(&path)
                 .map_err(|e| format!("Failed to delete credentials file: {}", e))?;
-            println!("[OAuth] Credentials deleted");
         }
     }
     Ok(())
 }
 
 pub fn store_credentials(credentials: &StoredCredentials) -> Result<(), String> {
-    println!(
-        "[OAuth] Attempting to store credentials for user: {}",
-        credentials.username
-    );
     store_to_file(credentials)
 }
 
