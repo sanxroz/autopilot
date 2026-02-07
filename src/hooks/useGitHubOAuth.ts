@@ -22,6 +22,7 @@ export function useGitHubOAuth(): UseGitHubOAuthReturn {
   const [error, setError] = useState<string | null>(null);
   const pollingRef = useRef<{ clear: () => void } | null>(null);
   const deviceCodeRef = useRef<string | null>(null);
+  const loginInProgressRef = useRef(false);
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
@@ -53,6 +54,7 @@ export function useGitHubOAuth(): UseGitHubOAuthReturn {
 
     const cleanup = () => {
       completed = true;
+      loginInProgressRef.current = false;
       if (currentTimeoutId) clearTimeout(currentTimeoutId);
       if (expirationTimeoutId) clearTimeout(expirationTimeoutId);
       pollingRef.current = null;
@@ -111,7 +113,8 @@ export function useGitHubOAuth(): UseGitHubOAuthReturn {
   }, []);
 
   const startLogin = useCallback(async () => {
-    if (status === 'pending' || status === 'polling') return;
+    if (loginInProgressRef.current) return;
+    loginInProgressRef.current = true;
 
     try {
       stopPolling();
@@ -129,14 +132,16 @@ export function useGitHubOAuth(): UseGitHubOAuthReturn {
       setStatus('polling');
       pollForToken(response.device_code, response.interval, response.expires_in);
     } catch (e) {
+      loginInProgressRef.current = false;
       setStatus('error');
       setError(String(e));
     }
-  }, [status, pollForToken, stopPolling]);
+  }, [pollForToken, stopPolling]);
 
   const logout = useCallback(async () => {
     try {
       stopPolling();
+      loginInProgressRef.current = false;
       await invoke('oauth_logout');
       setOAuthStatus({ authenticated: false, username: null, avatar_url: null });
       setStatus('idle');

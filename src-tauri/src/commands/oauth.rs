@@ -269,7 +269,7 @@ pub async fn oauth_get_status() -> Result<OAuthStatus, String> {
             })
         }
         Ok(_) => {
-            // Other 4xx (403 revoked, 422, etc.) — treat as unauthenticated
+            let _ = secure_storage::delete_credentials();
             Ok(OAuthStatus {
                 authenticated: false,
                 username: None,

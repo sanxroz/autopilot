@@ -37,6 +37,11 @@ fn store_to_file(credentials: &StoredCredentials) -> Result<(), String> {
 
         file.write_all(json.as_bytes())
             .map_err(|e| format!("Failed to write credentials file: {}", e))?;
+
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o600);
+        std::fs::set_permissions(&path, perms)
+            .map_err(|e| format!("Failed to set credentials file permissions: {}", e))?;
     }
 
     #[cfg(not(unix))]
