@@ -300,9 +300,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const worktree = state.selectedWorktree;
     if (!worktree) return null;
 
-    // Use spawn_terminal_with_command to avoid race condition
-    // The command is executed as part of shell initialization, eliminating
-    // the timing issue with writing to a terminal before the shell is ready
     const result = await invoke<{ terminal_id: string }>('spawn_terminal_with_command', {
       cwd: worktree.path,
       command,

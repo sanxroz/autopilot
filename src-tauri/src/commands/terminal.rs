@@ -223,10 +223,13 @@ pub fn spawn_terminal_with_command(
         cmd.arg("/k");
         cmd.arg(&full_command);
     } else {
-        // Execute command via -c flag, then exec into interactive shell
-        // This avoids race conditions with shell initialization
-        cmd.arg("-c");
-        cmd.arg(format!("{}; exec ${{SHELL:-/bin/bash}} -li", full_command));
+        // login+interactive+cmd for bash/zsh; plain -c for other shells
+        if should_wrap_shell(&shell) {
+            cmd.arg("-lic");
+        } else {
+            cmd.arg("-c");
+        }
+        cmd.arg(format!("{}\n{} -li", full_command, shell));
     }
 
     cmd.cwd(&cwd);
