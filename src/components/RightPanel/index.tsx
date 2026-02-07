@@ -270,7 +270,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         duration: reducedMotion ? 0 : 0.25,
         ease: [0.215, 0.61, 0.355, 1],
       }}
-      className="relative flex flex-col h-full select-none border-l border-DEFAULT"
+      className="relative flex flex-col h-full select-none border-l border-border"
       style={{
         width: `${width}px`,
         minWidth: `${MIN_WIDTH}px`,

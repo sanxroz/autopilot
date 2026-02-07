@@ -124,7 +124,7 @@ export function TerminalGrid() {
             {worktreeTerminals.map((terminal, index) => (
               <div
                 key={terminal.id}
-                className={`min-w-0 min-h-0 bg-transparent overflow-hidden ${index > 0 ? "border-l border-DEFAULT" : ""}`}
+                className={`min-w-0 min-h-0 bg-transparent overflow-hidden ${index > 0 ? "border-l border-border" : ""}`}
               >
                 <Terminal
                   terminalId={terminal.id}

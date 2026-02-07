@@ -142,7 +142,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           <div className="flex justify-end px-6 py-4 border-t border-border">
             <button
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium rounded-lg transition-colors bg-accent-primary text-primary hover:bg-accent-hover"
+              className="px-4 py-2 text-sm font-medium rounded-lg transition-colors bg-accent-primary text-bg-primary hover:bg-accent-hover"
             >
               Save
             </button>

@@ -57,7 +57,7 @@ export function NewWorktreeDialog({ repoPath, onClose }: Props) {
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50" onClick={onClose}>
       <div
-        className="border rounded-lg p-6 w-96 shadow-xl bg-secondary border-DEFAULT"
+        className="border rounded-lg p-6 w-96 shadow-xl bg-secondary border-border"
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-lg font-semibold mb-4 text-primary">

@@ -198,8 +198,8 @@ export function ChangesTab({
               aria-label={`${basename(file.path)}, ${file.status}, ${file.additions} additions, ${file.deletions} deletions`}
               aria-selected={isSelected}
               className={cn(
-                "px-3 py-1.5 cursor-pointer flex items-center gap-2 transition-colors hover:bg-hover",
-                isSelected && "bg-active"
+                "px-3 py-1.5 cursor-pointer flex items-center gap-2 transition-colors",
+                isSelected ? "bg-active" : "hover:bg-hover"
               )}
             >
               <Icon className={cn("w-3.5 h-3.5 flex-shrink-0", statusColorClass)} />

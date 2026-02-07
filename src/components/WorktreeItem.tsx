@@ -26,7 +26,7 @@ function getStatusInfo(prStatus: PRStatus | null): StatusInfo {
   if (!prStatus) return null;
 
   if (prStatus.merged) {
-    return { label: "Merged", colorClass: "text-purple-500" };
+    return { label: "Merged", colorClass: "text-semantic-merged" };
   }
 
   if (prStatus.state === "closed") {

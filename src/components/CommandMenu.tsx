@@ -108,7 +108,7 @@ export function CommandMenu({ open: isOpen, onOpenChange }: CommandMenuProps) {
                 <CommandMenuUI.Item
                   key={wt.path}
                   onSelect={() => handleSelectWorktree(wt)}
-                  className={`text-primary ${isCurrentWorktree ? "!bg-[var(--item-active-bg)]" : ""}`}
+                  className={`text-primary ${isCurrentWorktree ? "!bg-active" : ""}`}
                   data-active={isCurrentWorktree}
                 >
                   <CommandMenuUI.ItemIcon as={GitBranch} className="text-tertiary" />

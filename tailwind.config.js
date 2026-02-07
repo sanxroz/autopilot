@@ -47,6 +47,8 @@ export default {
           'warning-muted': 'var(--color-semantic-warning-muted)',
           info: 'var(--color-semantic-info)',
           'info-muted': 'var(--color-semantic-info-muted)',
+          merged: 'var(--color-semantic-merged)',
+          'merged-muted': 'var(--color-semantic-merged-muted)',
         },
       },
       borderColor: {

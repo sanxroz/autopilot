@@ -184,7 +184,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
     >
       <div
         ref={innerRef}
-        className="flex flex-col h-full pt-8 select-none bg-secondary border-r border-DEFAULT"
+        className="flex flex-col h-full pt-8 select-none bg-secondary border-r border-border"
         style={{
           width: `${width}px`,
           minWidth: `${MIN_WIDTH}px`,

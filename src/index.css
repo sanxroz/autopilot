@@ -37,6 +37,12 @@
   --color-semantic-warning-muted: rgba(120, 53, 15, 0.5);
   --color-semantic-info: #3B82F6;
   --color-semantic-info-muted: rgba(30, 58, 138, 0.5);
+  --color-semantic-merged: #A855F7;
+  --color-semantic-merged-muted: rgba(107, 33, 168, 0.5);
+
+  /* Scrollbar */
+  --color-scrollbar-thumb: rgba(168, 159, 145, 0.2);
+  --color-scrollbar-thumb-hover: rgba(168, 159, 145, 0.35);
 }
 
 [data-theme="light"] {
@@ -73,6 +79,12 @@
   --color-semantic-warning-muted: rgba(254, 243, 199, 0.8);
   --color-semantic-info: #3B82F6;
   --color-semantic-info-muted: rgba(219, 234, 254, 0.8);
+  --color-semantic-merged: #A855F7;
+  --color-semantic-merged-muted: rgba(243, 232, 255, 0.8);
+
+  /* Scrollbar */
+  --color-scrollbar-thumb: rgba(38, 37, 33, 0.15);
+  --color-scrollbar-thumb-hover: rgba(38, 37, 33, 0.25);
 }
 
 /* Position native Tauri window controls at top-left */
@@ -170,12 +182,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: var(--color-scrollbar-thumb, rgba(168, 159, 145, 0.2));
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: var(--color-scrollbar-thumb-hover, rgba(168, 159, 145, 0.35));
 }
 
 .xterm {

@@ -27,8 +27,8 @@ function getBadgeVariant(prStatus: PRStatus): BadgeVariant {
   if (prStatus.merged) {
     return {
       icon: GitMerge,
-      colorClass: "text-purple-500",
-      bgClass: "bg-purple-500/15",
+      colorClass: "text-semantic-merged",
+      bgClass: "bg-semantic-merged-muted",
       label: "Merged",
     };
   }

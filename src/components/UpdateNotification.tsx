@@ -82,7 +82,7 @@ export function UpdateNotification({
               </button>
               <button
                 onClick={onUpdate}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 bg-accent-primary text-primary hover:bg-accent-hover hover:-translate-y-px"
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 bg-accent-primary text-bg-primary hover:bg-accent-hover hover:-translate-y-px"
               >
                 <Download className="w-3.5 h-3.5" />
                 Update Now
@@ -201,7 +201,7 @@ export function UpdateNotification({
               </button>
               <button
                 onClick={onRetry}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 bg-accent-primary text-primary hover:bg-accent-hover hover:-translate-y-px"
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-200 bg-accent-primary text-bg-primary hover:bg-accent-hover hover:-translate-y-px"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
                 Try Again
