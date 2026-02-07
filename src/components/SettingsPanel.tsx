@@ -12,8 +12,12 @@ import {
   Server,
   Bug,
   ChevronDown,
+  Loader2,
+  LogOut,
+  Copy,
 } from "lucide-react";
 import { useTheme } from "../hooks/useTheme";
+import { useGitHubOAuth } from "../hooks/useGitHubOAuth";
 import { useAppStore } from "../store";
 import { AI_AGENTS, type AIAgent } from "../types";
 
@@ -166,7 +170,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           </div>
 
           <div className="flex-1 overflow-y-auto px-6 py-5">
-            {activeSection === "account" && <AccountSection theme={theme} githubSettings={githubSettings} />}
+            {activeSection === "account" && <AccountSection theme={theme} />}
             {activeSection === "appearance" && <PlaceholderSection theme={theme} title="Appearance" description="Customize the look and feel of the application." />}
             {activeSection === "preferences" && (
               <PreferencesSection
@@ -215,11 +219,27 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
 function AccountSection({
   theme,
-  githubSettings,
 }: {
   theme: ReturnType<typeof useTheme>;
-  githubSettings: { ghCliAvailable: boolean; ghAuthUser: string | null };
 }) {
+  const { githubSettings } = useAppStore();
+  const { status, oauthStatus, userCode, verificationUri, error, startLogin, logout } = useGitHubOAuth();
+  const [copied, setCopied] = useState(false);
+
+  const copyCode = async () => {
+    if (userCode) {
+      await navigator.clipboard.writeText(userCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const isOAuthAuthenticated = oauthStatus?.authenticated && oauthStatus?.username;
+  const isGhCliAuthenticated = githubSettings.ghCliAvailable && githubSettings.ghAuthUser;
+  const isAuthenticated = isOAuthAuthenticated || isGhCliAuthenticated;
+  const displayUsername = oauthStatus?.username || githubSettings.ghAuthUser;
+  const displayAvatarUrl = oauthStatus?.avatar_url || (displayUsername ? `https://github.com/${displayUsername}.png` : null);
+
   return (
     <div className="space-y-6">
       <div>
@@ -230,34 +250,123 @@ function AccountSection({
           GitHub Account
         </h4>
 
-        {githubSettings.ghCliAvailable && githubSettings.ghAuthUser ? (
-          <div className="flex items-center gap-4">
-            <img
-              src={`https://github.com/${githubSettings.ghAuthUser}.png`}
-              alt={githubSettings.ghAuthUser}
-              className="w-16 h-16 rounded-full"
-              style={{ border: `2px solid ${theme.border.default}` }}
-            />
-            <div className="flex flex-col gap-1">
-              <span
-                className="text-lg font-semibold"
-                style={{ color: theme.text.primary }}
-              >
-                {githubSettings.ghAuthUser}
-              </span>
-              <div className="flex items-center gap-1.5">
-                <svg
-                  className="w-3.5 h-3.5"
-                  style={{ color: theme.text.tertiary }}
-                  viewBox="0 0 16 16"
-                  fill="currentColor"
+        {isAuthenticated && displayUsername ? (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <img
+                src={displayAvatarUrl || `https://github.com/${displayUsername}.png`}
+                alt={displayUsername}
+                className="w-16 h-16 rounded-full"
+                style={{ border: `2px solid ${theme.border.default}` }}
+              />
+              <div className="flex flex-col gap-1">
+                <span
+                  className="text-lg font-semibold"
+                  style={{ color: theme.text.primary }}
                 >
-                  <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
-                </svg>
-                <span className="text-sm" style={{ color: theme.text.tertiary }}>
-                  {githubSettings.ghAuthUser}
+                  {displayUsername}
                 </span>
+                <div className="flex items-center gap-1.5">
+                  <svg
+                    className="w-3.5 h-3.5"
+                    style={{ color: theme.text.tertiary }}
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                  >
+                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+                  </svg>
+                  <span className="text-sm" style={{ color: theme.text.tertiary }}>
+                    {isOAuthAuthenticated ? "Connected" : "via gh CLI"}
+                  </span>
+                </div>
               </div>
+            </div>
+            {isOAuthAuthenticated ? (
+              <button
+                onClick={logout}
+                className="flex items-center gap-2 px-3 py-2 text-sm rounded-lg transition-colors"
+                style={{
+                  background: theme.bg.tertiary,
+                  color: theme.text.secondary,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = theme.bg.hover;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = theme.bg.tertiary;
+                }}
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                Sign out
+              </button>
+            ) : (
+              <span
+                className="px-3 py-2 text-xs rounded-lg"
+                style={{
+                  background: theme.bg.tertiary,
+                  color: theme.text.tertiary,
+                }}
+              >
+                Manage with: gh auth logout
+              </span>
+            )}
+          </div>
+        ) : status === "polling" && userCode ? (
+          <div
+            className="p-4 rounded-lg border"
+            style={{
+              background: theme.bg.primary,
+              borderColor: theme.border.default,
+            }}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <Loader2 
+                className="w-4 h-4 animate-spin" 
+                style={{ color: theme.accent.primary }} 
+              />
+              <span className="text-sm" style={{ color: theme.text.primary }}>
+                Waiting for authorization...
+              </span>
+            </div>
+            <p className="text-xs mb-3" style={{ color: theme.text.tertiary }}>
+              Enter this code at{" "}
+              <a
+                href={verificationUri || "https://github.com/login/device"}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+                style={{ color: theme.accent.primary }}
+              >
+                {verificationUri || "github.com/login/device"}
+              </a>
+            </p>
+            <div className="flex items-center gap-2">
+              <code
+                className="flex-1 px-4 py-3 text-center text-2xl font-mono font-bold tracking-widest rounded-lg"
+                style={{
+                  background: theme.bg.tertiary,
+                  color: theme.text.primary,
+                  letterSpacing: "0.25em",
+                }}
+              >
+                {userCode}
+              </code>
+              <button
+                onClick={copyCode}
+                className="p-3 rounded-lg transition-colors"
+                style={{
+                  background: theme.bg.tertiary,
+                  color: copied ? theme.semantic.success : theme.text.secondary,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = theme.bg.hover;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = theme.bg.tertiary;
+                }}
+              >
+                {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              </button>
             </div>
           </div>
         ) : (
@@ -268,41 +377,145 @@ function AccountSection({
               borderColor: theme.border.default,
             }}
           >
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 mb-4">
               <div
                 className="p-2 rounded-md"
                 style={{ background: theme.bg.tertiary }}
               >
-                <Terminal className="w-3.5 h-3.5" style={{ color: theme.text.secondary }} />
+                <svg
+                  className="w-4 h-4"
+                  style={{ color: theme.text.secondary }}
+                  viewBox="0 0 16 16"
+                  fill="currentColor"
+                >
+                  <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+                </svg>
               </div>
               <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium" style={{ color: theme.text.primary }}>
-                    GitHub CLI
-                  </span>
-                  <AlertCircle className="w-3.5 h-3.5" style={{ color: theme.semantic.error }} />
-                </div>
+                <span className="text-sm font-medium" style={{ color: theme.text.primary }}>
+                  Connect GitHub
+                </span>
                 <p className="text-xs mt-0.5" style={{ color: theme.text.tertiary }}>
-                  {githubSettings.ghCliAvailable
-                    ? "Installed but not authenticated. Run: gh auth login"
-                    : "Not installed. Run: brew install gh"}
+                  Sign in to push code and manage pull requests
                 </p>
               </div>
             </div>
-            {!githubSettings.ghCliAvailable && (
-              <p className="text-xs mt-3" style={{ color: theme.text.tertiary }}>
-                Install the GitHub CLI to enable account integration.{" "}
-                <a
-                  href="https://cli.github.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="underline"
-                  style={{ color: theme.accent.primary }}
-                >
-                  Learn more
-                </a>
-              </p>
+            {error && (
+              <div
+                className="flex items-center gap-2 p-3 mb-4 rounded-lg"
+                style={{
+                  background: `${theme.semantic.error}15`,
+                  border: `1px solid ${theme.semantic.error}30`,
+                }}
+              >
+                <AlertCircle className="w-3.5 h-3.5" style={{ color: theme.semantic.error }} />
+                <span className="text-xs" style={{ color: theme.semantic.error }}>
+                  {error}
+                </span>
+              </div>
             )}
+            <button
+              onClick={startLogin}
+              disabled={status === "pending"}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+              style={{
+                background: theme.text.primary,
+                color: theme.bg.primary,
+              }}
+              onMouseEnter={(e) => {
+                if (status !== "pending") {
+                  e.currentTarget.style.opacity = "0.9";
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.opacity = "1";
+              }}
+            >
+              {status === "pending" ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Connecting...
+                </>
+              ) : (
+                <>
+                  <svg
+                    className="w-4 h-4"
+                    viewBox="0 0 16 16"
+                    fill="currentColor"
+                  >
+                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
+                  </svg>
+                  Sign in with GitHub
+                </>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <GitHubCliSection theme={theme} githubSettings={githubSettings} />
+    </div>
+  );
+}
+
+function GitHubCliSection({
+  theme,
+  githubSettings,
+}: {
+  theme: ReturnType<typeof useTheme>;
+  githubSettings: { ghCliAvailable: boolean; ghAuthUser: string | null };
+}) {
+  const isAuthenticated = githubSettings.ghCliAvailable && githubSettings.ghAuthUser;
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-3">
+        <h4
+          className="text-xs font-medium uppercase"
+          style={{ color: theme.text.tertiary }}
+        >
+          GitHub CLI Integration
+        </h4>
+        {isAuthenticated ? (
+          <Check className="w-3.5 h-3.5" style={{ color: theme.semantic.success }} />
+        ) : (
+          <AlertCircle className="w-3.5 h-3.5" style={{ color: theme.text.tertiary }} />
+        )}
+      </div>
+
+      <div
+        className="p-4 rounded-lg border"
+        style={{
+          background: theme.bg.primary,
+          borderColor: theme.border.default,
+        }}
+      >
+        {isAuthenticated ? (
+          <div>
+            <p className="text-sm" style={{ color: theme.text.primary }}>
+              GitHub CLI is authenticated and ready.
+            </p>
+            <p className="text-sm mt-1" style={{ color: theme.text.secondary }}>
+              Signed in as <span style={{ color: theme.text.primary }}>{githubSettings.ghAuthUser}</span>
+            </p>
+          </div>
+        ) : githubSettings.ghCliAvailable ? (
+          <div>
+            <p className="text-sm" style={{ color: theme.text.secondary }}>
+              GitHub CLI is installed but not authenticated.
+            </p>
+            <p className="text-xs mt-2" style={{ color: theme.text.tertiary }}>
+              Run <code className="px-1.5 py-0.5 rounded" style={{ background: theme.bg.tertiary }}>gh auth login</code> in your terminal
+            </p>
+          </div>
+        ) : (
+          <div>
+            <p className="text-sm" style={{ color: theme.text.secondary }}>
+              GitHub CLI is not installed.
+            </p>
+            <p className="text-xs mt-2" style={{ color: theme.text.tertiary }}>
+              Install with <code className="px-1.5 py-0.5 rounded" style={{ background: theme.bg.tertiary }}>brew install gh</code> then run <code className="px-1.5 py-0.5 rounded" style={{ background: theme.bg.tertiary }}>gh auth login</code>
+            </p>
           </div>
         )}
       </div>

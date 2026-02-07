@@ -2,7 +2,7 @@
 
 mod commands;
 
-use commands::{git, github, process, terminal, watcher};
+use commands::{git, github, oauth, process, terminal, watcher};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -128,6 +128,11 @@ pub fn run() {
             github::get_pr_details,
             github::create_pr,
             github::run_cubic_review,
+            oauth::oauth_start_device_flow,
+            oauth::oauth_poll_for_token,
+            oauth::oauth_get_status,
+            oauth::oauth_logout,
+            oauth::oauth_get_token,
             process::get_worktree_process_status,
             process::get_all_worktrees_process_status,
             terminal::spawn_terminal,

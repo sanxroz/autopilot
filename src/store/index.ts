@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { load } from '@tauri-apps/plugin-store';
 import type { Repository, WorktreeInfo, TerminalInstance, ProcessStatus, DiffViewMode, AIAgent } from '../types';
-import type { GitHubSettings, PRStatus, PRChecksResult, PRDetailedInfo } from '../types/github';
+import type { GitHubSettings, PRStatus, PRChecksResult, PRDetailedInfo, OAuthStatus } from '../types/github';
 import { DEFAULT_GITHUB_SETTINGS } from '../types/github';
 import { setThemeMode as setGlobalThemeMode, getThemeMode, type ThemeMode } from '../theme';
 
@@ -498,6 +498,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   checkGitHubCli: async () => {
+    try {
+      const oauthStatus = await invoke<OAuthStatus>('oauth_get_status');
+      if (oauthStatus.authenticated && oauthStatus.username) {
+        set((state) => ({
+          githubSettings: {
+            ...state.githubSettings,
+            ghCliAvailable: true,
+            ghAuthUser: oauthStatus.username,
+          },
+        }));
+        return;
+      }
+    } catch {}
+
     try {
       const available = await invoke<boolean>('check_gh_cli');
       let user: string | null = null;
