@@ -131,7 +131,6 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
   const setPRDataCache = useAppStore((state) => state.setPRDataCache);
   const toggleAddressedComment = useAppStore((state) => state.toggleAddressedComment);
   const isCommentAddressed = useAppStore((state) => state.isCommentAddressed);
-  const getAddressedCount = useAppStore((state) => state.getAddressedCount);
   const addressedComments = useAppStore((state) => state.addressedComments);
   
   const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(null);
@@ -285,7 +284,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
 
   const getCommentId = (comment: PRComment): string => {
     if (comment.comment_type === 'review_thread') {
-      return `thread:${comment.path}:${comment.line}:${comment.author}`;
+      return `thread:${comment.created_at}:${comment.author}`;
     }
     return `issue:${comment.created_at}:${comment.author}`;
   };
@@ -299,8 +298,11 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
   }
   const totalActionable = allActionableComments.length;
 
+  // addressedComments subscription triggers re-render on toggle
   void addressedComments;
-  const addressedCount = repoPath && prNumber ? getAddressedCount(repoPath, prNumber) : 0;
+  const addressedCount = repoPath && prNumber
+    ? allActionableComments.filter(c => isCommentAddressed(repoPath, prNumber, getCommentId(c))).length
+    : 0;
 
   const markdownComponents = {
     a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
@@ -526,13 +528,17 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
               >
                 {nestedThreads
                   .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+                  .filter((thread) => {
+                    if (!hideAddressed) return true;
+                    const threadId = getCommentId(thread);
+                    return !(repoPath && prNumber && isCommentAddressed(repoPath, prNumber, threadId));
+                  })
                   .map((thread, idx) => {
                     const threadId = getCommentId(thread);
                     const threadAddressed = repoPath && prNumber ? isCommentAddressed(repoPath, prNumber, threadId) : false;
-                    if (hideAddressed && threadAddressed) return null;
                     return (
                       <div 
-                        key={idx}
+                        key={threadId}
                         className="px-3 py-2.5"
                         style={{ 
                           borderTop: idx > 0 ? `1px solid ${theme.border.subtle}` : undefined 
