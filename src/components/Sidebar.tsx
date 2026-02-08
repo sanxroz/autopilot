@@ -15,7 +15,8 @@ import { useAppStore } from "../store";
 import type { WorktreeInfo } from "../types";
 import { NewWorktreeDialog } from "./NewWorktreeDialog";
 import { WorktreeItem } from "./WorktreeItem";
-import { useTheme, useThemeMode } from "../hooks/useTheme";
+import { useThemeMode } from "../hooks/useTheme";
+import { cn } from "../utils/cn";
 
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 480;
@@ -48,7 +49,6 @@ export function Sidebar({ isOpen }: SidebarProps) {
     prStatusByBranch,
     processStatusByPath,
   } = useAppStore();
-  const theme = useTheme();
   const themeMode = useThemeMode();
   const reducedMotion = useReducedMotion();
   const [showWorktreeDialog, setShowWorktreeDialog] = useState<string | null>(
@@ -171,33 +171,32 @@ export function Sidebar({ isOpen }: SidebarProps) {
   return (
     <div
       ref={containerRef}
-      className="relative flex-shrink-0 h-full"
+      className={cn(
+        "relative flex-shrink-0 h-full overflow-hidden",
+        isOpen ? "pointer-events-auto" : "pointer-events-none"
+      )}
       style={{
         width: isOpen ? `${width}px` : 0,
         minWidth: isOpen ? `${MIN_WIDTH}px` : 0,
         maxWidth: `${MAX_WIDTH}px`,
         transition: reducedMotion || isResizing ? "none" : "width 0.2s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
-        overflow: "hidden",
-        pointerEvents: isOpen ? "auto" : "none",
       }}
     >
       <div
         ref={innerRef}
-        className="flex flex-col h-full pt-8 select-none"
+        className="flex flex-col h-full pt-8 select-none bg-secondary border-r border-border"
         style={{
           width: `${width}px`,
           minWidth: `${MIN_WIDTH}px`,
           maxWidth: `${MAX_WIDTH}px`,
-          background: theme.bg.secondary,
-          borderRight: `1px solid ${theme.border.default}`,
         }}
       >
       <div
         onMouseDown={handleMouseDown}
-        className="absolute top-0 right-0 w-1 h-full cursor-col-resize z-10 transition-colors"
-        style={{
-          backgroundColor: isResizing ? theme.border.strong : "transparent",
-        }}
+        className={cn(
+          "absolute top-0 right-0 w-1 h-full cursor-col-resize z-10 transition-colors",
+          isResizing ? "bg-border-strong" : "bg-transparent"
+        )}
       />
 
       <div
@@ -211,14 +210,11 @@ export function Sidebar({ isOpen }: SidebarProps) {
             return (
               <div key={group.repoPath} className="w-full min-w-0">
                 {groupIndex > 0 && (
-                  <div
-                    className="h-px -mx-2 w-[calc(100%+1rem)] mt-1.5 mb-1"
-                    style={{ background: theme.border.subtle }}
-                  />
+                  <div className="h-px -mx-2 w-[calc(100%+1rem)] mt-1.5 mb-1 bg-border-subtle" />
                 )}
 
                 <div
-                   className="flex items-center justify-between px-3 py-1.5 mt-0.5 mb-1 group w-full min-w-0 rounded-md cursor-pointer"
+                   className="flex items-center justify-between px-3 py-1.5 mt-0.5 mb-1 group w-full min-w-0 rounded-md cursor-pointer bg-transparent hover:bg-hover"
                    role="button"
                    tabIndex={0}
                    onClick={() => toggleRepoCollapsed(group.repoPath)}
@@ -229,34 +225,18 @@ export function Sidebar({ isOpen }: SidebarProps) {
                        toggleRepoCollapsed(group.repoPath);
                      }
                    }}
-                   style={{ background: "transparent" }}
-                   onMouseEnter={(e) => {
-                     e.currentTarget.style.background = theme.bg.hover;
-                   }}
-                   onMouseLeave={(e) => {
-                     e.currentTarget.style.background = "transparent";
-                   }}
                    aria-expanded={!isCollapsed}
                    aria-label={`${group.repoName} repository, ${isCollapsed ? "collapsed" : "expanded"}`}
                  >
                    <div className="flex items-center gap-1.5 min-w-0">
-                     <span
-                       className=" font-medium text-sm truncate min-w-0"
-                       style={{ color: theme.text.primary }}
-                     >
+                     <span className="font-medium text-sm truncate min-w-0 text-primary">
                        {group.repoName}
                      </span>
                      <span className="opacity-0 group-hover:opacity-100 transition-opacity">
                        {isCollapsed ? (
-                         <ChevronRight
-                           className="h-3.5 w-3.5"
-                           style={{ color: theme.text.tertiary }}
-                         />
+                         <ChevronRight className="h-3.5 w-3.5 text-tertiary" />
                        ) : (
-                         <ChevronDown
-                           className="h-3.5 w-3.5"
-                           style={{ color: theme.text.tertiary }}
-                         />
+                         <ChevronDown className="h-3.5 w-3.5 text-tertiary" />
                        )}
                      </span>
                    </div>
@@ -266,16 +246,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
                           e.stopPropagation();
                           handleCreateWorktree(group.repoPath);
                         }}
-                        className="p-1 -m-1 rounded-sm transition-colors"
-                        style={{ color: theme.text.tertiary }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.color = theme.text.primary;
-                          e.currentTarget.style.background = theme.bg.hover;
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.color = theme.text.tertiary;
-                          e.currentTarget.style.background = "transparent";
-                        }}
+                        className="p-1 -m-1 rounded-sm transition-colors text-tertiary hover:text-primary hover:bg-hover"
                         title="New workspace"
                         aria-label="Create new workspace"
                       >
@@ -283,16 +254,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
                      </button>
                       <button
                         onClick={(e) => handleRemoveRepository(e, group.repoPath)}
-                        className="p-1 -m-1 rounded-sm transition-colors"
-                        style={{ color: theme.text.tertiary }}
-                        onMouseEnter={(e) => {
-                          e.currentTarget.style.color = theme.text.primary;
-                          e.currentTarget.style.background = theme.bg.hover;
-                        }}
-                        onMouseLeave={(e) => {
-                          e.currentTarget.style.color = theme.text.tertiary;
-                          e.currentTarget.style.background = "transparent";
-                        }}
+                        className="p-1 -m-1 rounded-sm transition-colors text-tertiary hover:text-primary hover:bg-hover"
                         title="Archive repository"
                         aria-label="Archive repository"
                       >
@@ -328,10 +290,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
           })}
 
           {repositories.length === 0 && (
-            <div
-              className="px-4 py-8 text-center text-sm"
-              style={{ color: theme.text.secondary }}
-            >
+            <div className="px-4 py-8 text-center text-sm text-secondary">
               No repositories added yet
             </div>
           )}
@@ -339,14 +298,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
       </div>
 
       {error && (
-        <div
-          className="mx-3 mb-2 p-2 text-xs rounded border"
-          style={{
-            color: theme.semantic.error,
-            background: theme.semantic.errorMuted,
-            borderColor: theme.semantic.error,
-          }}
-        >
+        <div className="mx-3 mb-2 p-2 text-xs rounded border text-semantic-error bg-semantic-error-muted border-semantic-error">
           {error}
         </div>
       )}
@@ -355,14 +307,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
         <div className="flex items-center gap-0.5 mb-3">
           <button
             onClick={toggleSettings}
-            className="p-0.5 rounded-full transition-colors"
-            style={{ background: "transparent" }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = theme.bg.hover;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "transparent";
-            }}
+            className="p-0.5 rounded-full transition-colors bg-transparent hover:bg-hover"
             title={githubSettings.ghAuthUser ? `Signed in as ${githubSettings.ghAuthUser}` : "GitHub Setup"}
             aria-label={githubSettings.ghAuthUser ? `Account settings for ${githubSettings.ghAuthUser}` : "GitHub Setup"}
           >
@@ -373,11 +318,8 @@ export function Sidebar({ isOpen }: SidebarProps) {
                 className="w-5 h-5 rounded-full"
               />
             ) : (
-              <div
-                className="w-5 h-5 rounded-full flex items-center justify-center"
-                style={{ background: theme.bg.tertiary }}
-              >
-                <User className="w-3.5 h-3.5" style={{ color: theme.text.tertiary }} />
+              <div className="w-5 h-5 rounded-full flex items-center justify-center bg-tertiary">
+                <User className="w-3.5 h-3.5 text-tertiary" />
               </div>
             )}
           </button>
@@ -385,19 +327,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
         <div className="flex items-center gap-1">
           <button
             onClick={handleToggleTheme}
-            className="p-2 transition-colors rounded-md"
-            style={{
-              background: "transparent",
-              color: theme.text.tertiary,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = theme.bg.hover;
-              e.currentTarget.style.color = theme.text.primary;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = theme.text.tertiary;
-            }}
+            className="p-2 transition-colors rounded-md bg-transparent text-tertiary hover:bg-hover hover:text-primary"
             aria-label={themeMode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
           >
             {themeMode === "dark" ? (
@@ -411,19 +341,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
         </div>
         <button
           onClick={handleAddRepository}
-          className="px-2 py-1.5 text-sm transition-colors flex items-center gap-2 rounded-md"
-          style={{
-            background: "transparent",
-            color: theme.text.secondary,
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.background = theme.bg.hover;
-            e.currentTarget.style.color = theme.text.primary;
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.background = "transparent";
-            e.currentTarget.style.color = theme.text.secondary;
-          }}
+          className="px-2 py-1.5 text-sm transition-colors flex items-center gap-2 rounded-md bg-transparent text-secondary hover:bg-hover hover:text-primary"
         >
           <PackagePlus className="w-3.5 h-3.5" />
           <span className='font-medium'>Add repository</span>

@@ -8,9 +8,8 @@ import {
   AlertTriangle,
   Loader,
 } from "lucide-react";
-import { useTheme } from "../hooks/useTheme";
-import type { Theme } from "../theme";
 import type { PRStatus } from "../types/github";
+import { cn } from "../utils/cn";
 
 interface PRStatusBadgeProps {
   prStatus: PRStatus;
@@ -19,17 +18,17 @@ interface PRStatusBadgeProps {
 
 type BadgeVariant = {
   icon: typeof GitPullRequest;
-  color: string;
-  bgColor: string;
+  colorClass: string;
+  bgClass: string;
   label: string;
 };
 
-function getBadgeVariant(prStatus: PRStatus, theme: Theme): BadgeVariant {
+function getBadgeVariant(prStatus: PRStatus): BadgeVariant {
   if (prStatus.merged) {
     return {
       icon: GitMerge,
-      color: theme.terminal.magenta,
-      bgColor: `${theme.terminal.magenta}26`,
+      colorClass: "text-semantic-merged",
+      bgClass: "bg-semantic-merged-muted",
       label: "Merged",
     };
   }
@@ -37,8 +36,8 @@ function getBadgeVariant(prStatus: PRStatus, theme: Theme): BadgeVariant {
   if (prStatus.state === "closed") {
     return {
       icon: X,
-      color: theme.semantic.error,
-      bgColor: theme.semantic.errorMuted,
+      colorClass: "text-semantic-error",
+      bgClass: "bg-semantic-error-muted",
       label: "Closed",
     };
   }
@@ -46,8 +45,8 @@ function getBadgeVariant(prStatus: PRStatus, theme: Theme): BadgeVariant {
   if (prStatus.draft) {
     return {
       icon: CircleDashed,
-      color: theme.text.tertiary,
-      bgColor: theme.bg.tertiary,
+      colorClass: "text-tertiary",
+      bgClass: "bg-tertiary",
       label: "Draft",
     };
   }
@@ -55,8 +54,8 @@ function getBadgeVariant(prStatus: PRStatus, theme: Theme): BadgeVariant {
   if (prStatus.checks_status === "failure") {
     return {
       icon: X,
-      color: theme.semantic.error,
-      bgColor: theme.semantic.errorMuted,
+      colorClass: "text-semantic-error",
+      bgClass: "bg-semantic-error-muted",
       label: "Failing",
     };
   }
@@ -64,8 +63,8 @@ function getBadgeVariant(prStatus: PRStatus, theme: Theme): BadgeVariant {
   if (prStatus.checks_status === "pending") {
     return {
       icon: Loader,
-      color: theme.semantic.warning,
-      bgColor: theme.semantic.warningMuted,
+      colorClass: "text-semantic-warning",
+      bgClass: "bg-semantic-warning-muted",
       label: "Running",
     };
   }
@@ -74,22 +73,22 @@ function getBadgeVariant(prStatus: PRStatus, theme: Theme): BadgeVariant {
     case "APPROVED":
       return {
         icon: Check,
-        color: theme.semantic.success,
-        bgColor: theme.semantic.successMuted,
+        colorClass: "text-semantic-success",
+        bgClass: "bg-semantic-success-muted",
         label: "Approved",
       };
     case "CHANGES_REQUESTED":
       return {
         icon: AlertTriangle,
-        color: theme.semantic.warning,
-        bgColor: theme.semantic.warningMuted,
+        colorClass: "text-semantic-warning",
+        bgClass: "bg-semantic-warning-muted",
         label: "Changes",
       };
     default:
       return {
         icon: Clock,
-        color: theme.semantic.info,
-        bgColor: theme.semantic.infoMuted,
+        colorClass: "text-semantic-info",
+        bgClass: "bg-semantic-info-muted",
         label: "Review",
       };
   }
@@ -99,21 +98,21 @@ export function PRStatusBadge({
   prStatus,
   compact = false,
 }: PRStatusBadgeProps) {
-  const theme = useTheme();
-  const variant = getBadgeVariant(prStatus, theme);
+  const variant = getBadgeVariant(prStatus);
   const Icon = variant.icon;
 
   if (compact) {
     return (
       <div
-        className="flex items-center gap-1 text-sm font-medium px-1.5 py-0.5 rounded"
-        style={{ color: variant.color, background: variant.bgColor }}
+        className={cn(
+          "flex items-center gap-1 text-sm font-medium px-1.5 py-0.5 rounded",
+          variant.colorClass,
+          variant.bgClass
+        )}
         title={`PR #${prStatus.number}: ${prStatus.title}`}
       >
         <Icon
-          className={`w-2.5 h-2.5 ${
-            variant.icon === Loader ? "animate-spin" : ""
-          }`}
+          className={cn("w-2.5 h-2.5", variant.icon === Loader && "animate-spin")}
         />
         <span>#{prStatus.number}</span>
       </div>
@@ -125,12 +124,15 @@ export function PRStatusBadge({
       href={prStatus.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded transition-opacity hover:opacity-80"
-      style={{ color: variant.color, background: variant.bgColor }}
+      className={cn(
+        "flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded transition-opacity hover:opacity-80",
+        variant.colorClass,
+        variant.bgClass
+      )}
       title={prStatus.title}
     >
       <Icon
-        className={`w-3 h-3 ${variant.icon === Loader ? "animate-spin" : ""}`}
+        className={cn("w-3 h-3", variant.icon === Loader && "animate-spin")}
       />
       <span>#{prStatus.number}</span>
       <span className="opacity-70">{variant.label}</span>

@@ -1,5 +1,7 @@
+import { cn } from "../utils/cn";
+
 interface TerminalAnimationProps {
-  color: string;
+  className?: string;
 }
 
 const ASCII_LOGO = `
@@ -11,16 +13,13 @@ const ASCII_LOGO = `
 ╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ╚═╝     ╚═╝╚══════╝ ╚═════╝    ╚═╝   
 `.trim();
 
-export function TerminalAnimation({ color }: TerminalAnimationProps) {
+export function TerminalAnimation({ className }: TerminalAnimationProps) {
   return (
     <pre
-      style={{
-        color,
-        fontFamily: "monospace",
-        fontSize: "10px",
-        lineHeight: "1.1",
-        opacity: 0.8,
-      }}
+      className={cn(
+        "font-mono text-[10px] leading-tight opacity-80",
+        className
+      )}
     >
       {ASCII_LOGO}
     </pre>

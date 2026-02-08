@@ -2,7 +2,7 @@ import * as React from "react";
 import { Search, FolderPlus, Plus, GitCompare, Settings, Sun, Moon, GitBranch } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import * as CommandMenuUI from "./ui/command-menu";
-import { useTheme, useThemeMode } from "../hooks/useTheme";
+import { useThemeMode } from "../hooks/useTheme";
 import { useAppStore } from "../store";
 
 interface CommandMenuProps {
@@ -11,7 +11,6 @@ interface CommandMenuProps {
 }
 
 export function CommandMenu({ open: isOpen, onOpenChange }: CommandMenuProps) {
-  const theme = useTheme();
   const themeMode = useThemeMode();
   const [search, setSearch] = React.useState("");
 
@@ -90,20 +89,17 @@ export function CommandMenu({ open: isOpen, onOpenChange }: CommandMenuProps) {
 
   return (
     <CommandMenuUI.Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <div
-        className="group/cmd-input flex items-center gap-3 px-4 py-3"
-        style={{ borderBottom: `1px solid ${theme.border.subtle}` }}
-      >
-        <Search className="h-4 w-4 shrink-0" style={{ color: theme.text.tertiary }} />
+      <div className="group/cmd-input flex items-center gap-3 px-4 py-3 border-b border-subtle">
+        <Search className="h-4 w-4 shrink-0 text-tertiary" />
         <CommandMenuUI.Input
           value={search}
           onValueChange={setSearch}
           placeholder="Search commands..."
-          style={{ color: theme.text.primary }}
+          className="text-primary"
         />
       </div>
 
-      <CommandMenuUI.List className="max-h-80 overflow-y-auto" style={{ background: theme.bg.secondary }}>
+      <CommandMenuUI.List className="max-h-80 overflow-y-auto bg-secondary">
         {allWorktrees.length > 0 && (
           <CommandMenuUI.Group heading="Workspaces">
             {allWorktrees.map((wt) => {
@@ -112,14 +108,13 @@ export function CommandMenu({ open: isOpen, onOpenChange }: CommandMenuProps) {
                 <CommandMenuUI.Item
                   key={wt.path}
                   onSelect={() => handleSelectWorktree(wt)}
-                  style={{ color: theme.text.primary }}
-                  className={isCurrentWorktree ? "!bg-[var(--item-active-bg)]" : ""}
+                  className={`text-primary ${isCurrentWorktree ? "!bg-active" : ""}`}
                   data-active={isCurrentWorktree}
                 >
-                  <CommandMenuUI.ItemIcon as={GitBranch} style={{ color: theme.text.tertiary }} />
+                  <CommandMenuUI.ItemIcon as={GitBranch} className="text-tertiary" />
                   <div className="flex flex-col">
                     <span>{wt.branch || wt.name}</span>
-                    <span className="text-xs" style={{ color: theme.text.tertiary }}>
+                    <span className="text-xs text-tertiary">
                       {wt.repoName}
                     </span>
                   </div>
@@ -130,53 +125,42 @@ export function CommandMenu({ open: isOpen, onOpenChange }: CommandMenuProps) {
         )}
 
         <CommandMenuUI.Group heading="Actions">
-          <CommandMenuUI.Item onSelect={handleAddRepository} style={{ color: theme.text.primary }}>
-            <CommandMenuUI.ItemIcon as={FolderPlus} style={{ color: theme.text.tertiary }} />
+          <CommandMenuUI.Item onSelect={handleAddRepository} className="text-primary">
+            <CommandMenuUI.ItemIcon as={FolderPlus} className="text-tertiary" />
             Add Repository
           </CommandMenuUI.Item>
-          <CommandMenuUI.Item onSelect={handleNewWorkspace} style={{ color: theme.text.primary }}>
-            <CommandMenuUI.ItemIcon as={Plus} style={{ color: theme.text.tertiary }} />
+          <CommandMenuUI.Item onSelect={handleNewWorkspace} className="text-primary">
+            <CommandMenuUI.ItemIcon as={Plus} className="text-tertiary" />
             New Workspace
           </CommandMenuUI.Item>
         </CommandMenuUI.Group>
 
         <CommandMenuUI.Group heading="Navigation">
-          <CommandMenuUI.Item onSelect={handleToggleCodeReview} style={{ color: theme.text.primary }}>
-            <CommandMenuUI.ItemIcon as={GitCompare} style={{ color: theme.text.tertiary }} />
+          <CommandMenuUI.Item onSelect={handleToggleCodeReview} className="text-primary">
+            <CommandMenuUI.ItemIcon as={GitCompare} className="text-tertiary" />
             Toggle Code Review
           </CommandMenuUI.Item>
-          <CommandMenuUI.Item onSelect={handleOpenSettings} style={{ color: theme.text.primary }}>
-            <CommandMenuUI.ItemIcon as={Settings} style={{ color: theme.text.tertiary }} />
+          <CommandMenuUI.Item onSelect={handleOpenSettings} className="text-primary">
+            <CommandMenuUI.ItemIcon as={Settings} className="text-tertiary" />
             Open Settings
           </CommandMenuUI.Item>
         </CommandMenuUI.Group>
 
         <CommandMenuUI.Group heading="Theme">
-          <CommandMenuUI.Item onSelect={handleToggleTheme} style={{ color: theme.text.primary }}>
+          <CommandMenuUI.Item onSelect={handleToggleTheme} className="text-primary">
             <CommandMenuUI.ItemIcon
               as={themeMode === "dark" ? Sun : Moon}
-              style={{ color: theme.text.tertiary }}
+              className="text-tertiary"
             />
             Switch to {themeMode === "dark" ? "Light" : "Dark"} Mode
           </CommandMenuUI.Item>
         </CommandMenuUI.Group>
       </CommandMenuUI.List>
 
-      <CommandMenuUI.Footer
-        className="text-xs"
-        style={{
-          borderTop: `1px solid ${theme.border.subtle}`,
-          color: theme.text.tertiary,
-        }}
-      >
+      <CommandMenuUI.Footer className="text-xs border-t border-subtle text-tertiary">
         <span>Type to search</span>
         <div className="flex items-center gap-2">
-          <CommandMenuUI.FooterKeyBox
-            style={{
-              background: theme.bg.hover,
-              color: theme.text.secondary,
-            }}
-          >
+          <CommandMenuUI.FooterKeyBox className="bg-hover text-secondary">
             <span className="text-[10px]">esc</span>
           </CommandMenuUI.FooterKeyBox>
           <span>to close</span>
