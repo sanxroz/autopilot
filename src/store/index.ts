@@ -22,6 +22,8 @@ interface PRDataCache {
   lastUpdated: number;
 }
 
+type AddressedCommentsMap = Record<string, Set<string>>;
+
 interface AppStore {
   repositories: Repository[];
   selectedWorktree: WorktreeInfo | null;
@@ -40,6 +42,7 @@ interface AppStore {
   gitFileDiffPreview: { filePath: string; worktreePath: string; isStaged: boolean } | null;
   processStatusByPath: Record<string, ProcessStatus>;
   defaultAIAgent: AIAgent;
+  addressedComments: AddressedCommentsMap;
 
   initialize: () => Promise<void>;
   addRepository: (path: string) => Promise<void>;
@@ -74,17 +77,29 @@ interface AppStore {
   getProcessStatus: (worktreePath: string) => ProcessStatus;
   setDefaultAIAgent: (agent: AIAgent) => Promise<void>;
   updateWorktreeDiffStats: (stats: Array<{ path: string; diff_stats: { additions: number; deletions: number } | null }>) => void;
+  toggleAddressedComment: (repoPath: string, prNumber: number, commentId: string) => void;
+  isCommentAddressed: (repoPath: string, prNumber: number, commentId: string) => boolean;
+  getAddressedCount: (repoPath: string, prNumber: number) => number;
+  clearAddressedComments: (repoPath: string, prNumber: number) => void;
 }
 
 const STORE_PATH = 'autopilot-settings.json';
 
-async function loadPersistedState(): Promise<PersistedState & { themeMode?: ThemeMode }> {
+async function loadPersistedState(): Promise<PersistedState & { themeMode?: ThemeMode; addressedComments?: AddressedCommentsMap }> {
   try {
     const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
     const paths = await store.get<string[]>('repositoryPaths');
     const themeMode = await store.get<ThemeMode>('themeMode');
     const defaultAIAgent = await store.get<AIAgent>('defaultAIAgent');
-    return { repositoryPaths: paths || [], themeMode, defaultAIAgent };
+    const rawAddressed = await store.get<Record<string, string[]>>('addressedComments');
+    let addressedComments: AddressedCommentsMap | undefined;
+    if (rawAddressed) {
+      addressedComments = {};
+      for (const [key, arr] of Object.entries(rawAddressed)) {
+        addressedComments[key] = new Set(arr);
+      }
+    }
+    return { repositoryPaths: paths || [], themeMode, defaultAIAgent, addressedComments };
   } catch {
     return { repositoryPaths: [] };
   }
@@ -97,6 +112,20 @@ async function savePersistedState(state: PersistedState): Promise<void> {
     await store.save();
   } catch (e) {
     console.error('Failed to save state:', e);
+  }
+}
+
+async function saveAddressedComments(addressedComments: AddressedCommentsMap): Promise<void> {
+  try {
+    const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
+    const serialized: Record<string, string[]> = {};
+    for (const [key, set] of Object.entries(addressedComments)) {
+      serialized[key] = Array.from(set);
+    }
+    await store.set('addressedComments', serialized);
+    await store.save();
+  } catch (e) {
+    console.error('Failed to save addressed comments:', e);
   }
 }
 
@@ -118,6 +147,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   gitFileDiffPreview: null,
   processStatusByPath: {},
   defaultAIAgent: 'opencode',
+  addressedComments: {},
 
   initialize: async () => {
     if (get().isInitialized) return;
@@ -130,6 +160,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     if (persisted.defaultAIAgent) {
       set({ defaultAIAgent: persisted.defaultAIAgent });
+    }
+
+    if (persisted.addressedComments) {
+      set({ addressedComments: persisted.addressedComments });
     }
     
     for (const path of persisted.repositoryPaths) {
@@ -565,5 +599,43 @@ export const useAppStore = create<AppStore>((set, get) => ({
         }),
       })),
     }));
+  },
+
+  toggleAddressedComment: (repoPath: string, prNumber: number, commentId: string) => {
+    const cacheKey = `${repoPath}:${prNumber}`;
+    set((state) => {
+      const existing = state.addressedComments[cacheKey] || new Set<string>();
+      const next = new Set(existing);
+      if (next.has(commentId)) {
+        next.delete(commentId);
+      } else {
+        next.add(commentId);
+      }
+      const updated = {
+        ...state.addressedComments,
+        [cacheKey]: next,
+      };
+      saveAddressedComments(updated);
+      return { addressedComments: updated };
+    });
+  },
+
+  isCommentAddressed: (repoPath: string, prNumber: number, commentId: string) => {
+    const cacheKey = `${repoPath}:${prNumber}`;
+    return get().addressedComments[cacheKey]?.has(commentId) ?? false;
+  },
+
+  getAddressedCount: (repoPath: string, prNumber: number) => {
+    const cacheKey = `${repoPath}:${prNumber}`;
+    return get().addressedComments[cacheKey]?.size ?? 0;
+  },
+
+  clearAddressedComments: (repoPath: string, prNumber: number) => {
+    const cacheKey = `${repoPath}:${prNumber}`;
+    set((state) => {
+      const { [cacheKey]: _, ...rest } = state.addressedComments;
+      saveAddressedComments(rest);
+      return { addressedComments: rest };
+    });
   },
 }));

@@ -1,11 +1,12 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Loader, MessageSquare, Copy, Check, X, CheckCircle2, XCircle, Code2, ChevronDown } from "lucide-react";
+import { Loader, MessageSquare, Copy, Check, X, CheckCircle2, XCircle, Code2, ChevronDown, Eye, EyeOff } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { useTheme } from "../../hooks/useTheme";
 import { useAppStore } from "../../store";
+import { Checkbox } from "../ui/checkbox";
 import type { PRDetailedInfo, PRStatus, PRComment } from "../../types/github";
 
 const AVATAR_COLORS = [
@@ -128,6 +129,9 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
   const theme = useTheme();
   const getPRDataCache = useAppStore((state) => state.getPRDataCache);
   const setPRDataCache = useAppStore((state) => state.setPRDataCache);
+  const toggleAddressedComment = useAppStore((state) => state.toggleAddressedComment);
+  const isCommentAddressed = useAppStore((state) => state.isCommentAddressed);
+  const addressedComments = useAppStore((state) => state.addressedComments);
   
   const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -135,6 +139,7 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
   const [expandedImage, setExpandedImage] = useState<{ src: string; alt: string } | null>(null);
   const [collapsedReviews, setCollapsedReviews] = useState<Set<string>>(new Set());
   const [copiedReviewId, setCopiedReviewId] = useState<string | null>(null);
+  const [hideAddressed, setHideAddressed] = useState(false);
   const lastPrStatusRef = useRef<PRStatus | null>(null);
   const initialFetchDoneRef = useRef(false);
 
@@ -260,55 +265,44 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
 
   const comments = prDetails?.comments || [];
 
-  console.log('[CommentsTab] Total comments received:', comments.length);
-  console.log('[CommentsTab] Comment breakdown:', {
-    issue: comments.filter(c => c.comment_type === 'issue').length,
-    review: comments.filter(c => c.comment_type === 'review').length,
-    review_thread: comments.filter(c => c.comment_type === 'review_thread').length,
-  });
-
   const threadsByReviewId = new Map<string, PRComment[]>();
   const topLevelComments: PRComment[] = [];
   
   for (const comment of comments) {
     if (comment.comment_type === 'review_thread' && comment.review_id) {
-      console.log('[CommentsTab] Found review thread:', {
-        author: comment.author,
-        review_id: comment.review_id,
-        path: comment.path,
-        line: comment.line
-      });
       const existing = threadsByReviewId.get(comment.review_id) || [];
       existing.push(comment);
       threadsByReviewId.set(comment.review_id, existing);
     } else {
       topLevelComments.push(comment);
-      if (comment.comment_type === 'review') {
-        console.log('[CommentsTab] Found review:', {
-          author: comment.author,
-          state: comment.state,
-          review_id: comment.review_id,
-          body_length: comment.body?.length || 0
-        });
-      }
     }
   }
-  
-  console.log('[CommentsTab] Threads by review ID:', Array.from(threadsByReviewId.entries()).map(([id, threads]) => ({
-    review_id: id,
-    thread_count: threads.length
-  })));
-  console.log('[CommentsTab] Top level comments:', topLevelComments.length);
-  
-  console.log('[CommentsTab] Review IDs in top-level comments:', 
-    topLevelComments
-      .filter(c => c.comment_type === 'review')
-      .map(c => c.review_id)
-  );
   
   topLevelComments.sort((a, b) => 
     new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
   );
+
+  const getCommentId = (comment: PRComment): string => {
+    if (comment.comment_type === 'review_thread') {
+      return `thread:${comment.created_at}:${comment.author}`;
+    }
+    return `issue:${comment.created_at}:${comment.author}`;
+  };
+
+  const isActionable = (comment: PRComment): boolean =>
+    comment.comment_type === 'issue' || comment.comment_type === 'review_thread';
+
+  const allActionableComments: PRComment[] = [];
+  for (const c of comments) {
+    if (isActionable(c)) allActionableComments.push(c);
+  }
+  const totalActionable = allActionableComments.length;
+
+  // addressedComments subscription triggers re-render on toggle
+  void addressedComments;
+  const addressedCount = repoPath && prNumber
+    ? allActionableComments.filter(c => isCommentAddressed(repoPath, prNumber, getCommentId(c))).length
+    : 0;
 
   const markdownComponents = {
     a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
@@ -534,41 +528,64 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
               >
                 {nestedThreads
                   .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-                  .map((thread, idx) => (
-                    <div 
-                      key={idx}
-                      className="px-3 py-2.5"
-                      style={{ 
-                        borderTop: idx > 0 ? `1px solid ${theme.border.subtle}` : undefined 
-                      }}
-                    >
-                      {thread.path && (
-                        <div 
-                          className="flex items-center gap-1.5 mb-2 text-[11px] font-mono"
-                          style={{ color: theme.text.tertiary }}
-                        >
-                          <span className="truncate">{thread.path}</span>
-                          {thread.line && (
-                            <span style={{ color: theme.text.muted }}>:{thread.line}</span>
-                          )}
-                        </div>
-                      )}
-                      <div className="flex items-start gap-2">
-                        <Avatar name={thread.author} size="sm" />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 mb-1">
-                            <span className="text-[12px] font-medium" style={{ color: theme.text.primary }}>
-                              {thread.author}
-                            </span>
-                            <span className="text-[11px]" style={{ color: theme.text.muted }}>
-                              {formatDate(thread.created_at)}
-                            </span>
+                  .filter((thread) => {
+                    if (!hideAddressed) return true;
+                    const threadId = getCommentId(thread);
+                    return !(repoPath && prNumber && isCommentAddressed(repoPath, prNumber, threadId));
+                  })
+                  .map((thread, idx) => {
+                    const threadId = getCommentId(thread);
+                    const threadAddressed = repoPath && prNumber ? isCommentAddressed(repoPath, prNumber, threadId) : false;
+                    return (
+                      <div 
+                        key={threadId}
+                        className="px-3 py-2.5"
+                        style={{ 
+                          borderTop: idx > 0 ? `1px solid ${theme.border.subtle}` : undefined 
+                        }}
+                      >
+                        {thread.path && (
+                          <div 
+                            className="flex items-center gap-1.5 mb-2 text-[11px] font-mono"
+                            style={{ color: theme.text.tertiary }}
+                          >
+                            <span className="truncate">{thread.path}</span>
+                            {thread.line && (
+                              <span style={{ color: theme.text.muted }}>:{thread.line}</span>
+                            )}
                           </div>
-                          {thread.body && renderCommentBody(thread.body)}
+                        )}
+                        <div className="flex items-start gap-2">
+                          <Checkbox
+                            size="sm"
+                            checked={threadAddressed}
+                            onCheckedChange={() => repoPath && prNumber && toggleAddressedComment(repoPath, prNumber, threadId)}
+                            className="mt-0.5 shrink-0"
+                          />
+                          <div
+                            className="flex items-start gap-2 flex-1 min-w-0"
+                            style={{
+                              opacity: threadAddressed ? 0.45 : 1,
+                              transition: 'opacity 150ms',
+                            }}
+                          >
+                            <Avatar name={thread.author} size="sm" />
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <span className="text-[12px] font-medium" style={{ color: theme.text.primary }}>
+                                  {thread.author}
+                                </span>
+                                <span className="text-[11px]" style={{ color: theme.text.muted }}>
+                                  {formatDate(thread.created_at)}
+                                </span>
+                              </div>
+                              {thread.body && renderCommentBody(thread.body)}
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
               </div>
             )}
           </div>
@@ -579,6 +596,8 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
 
   const renderComment = (comment: PRComment) => {
     const hasBody = comment.body && comment.body.trim().length > 0;
+    const commentId = getCommentId(comment);
+    const addressed = repoPath && prNumber ? isCommentAddressed(repoPath, prNumber, commentId) : false;
 
     return (
       <div 
@@ -586,31 +605,45 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
         style={{ background: theme.bg.secondary }}
       >
         <div className="flex items-start gap-2.5">
-          <Avatar name={comment.author} />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 mb-1">
-              <span className="text-[13px] font-medium" style={{ color: theme.text.primary }}>
-                {comment.author}
-              </span>
-              <span className="text-[12px]" style={{ color: theme.text.muted }}>
-                {formatDate(comment.created_at)}
-              </span>
-            </div>
-            
-            {comment.comment_type === 'review_thread' && comment.path && (
-              <div 
-                className="flex items-center gap-1.5 mb-2 text-[11px] font-mono"
-                style={{ color: theme.text.tertiary }}
-              >
-                <Code2 className="w-3 h-3 shrink-0" />
-                <span className="truncate">{comment.path}</span>
-                {comment.line && (
-                  <span style={{ color: theme.text.muted }}>:{comment.line}</span>
-                )}
+          <Checkbox
+            size="sm"
+            checked={addressed}
+            onCheckedChange={() => repoPath && prNumber && toggleAddressedComment(repoPath, prNumber, commentId)}
+            className="mt-1 shrink-0"
+          />
+          <div
+            className="flex items-start gap-2.5 flex-1 min-w-0"
+            style={{
+              opacity: addressed ? 0.45 : 1,
+              transition: 'opacity 150ms',
+            }}
+          >
+            <Avatar name={comment.author} />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="text-[13px] font-medium" style={{ color: theme.text.primary }}>
+                  {comment.author}
+                </span>
+                <span className="text-[12px]" style={{ color: theme.text.muted }}>
+                  {formatDate(comment.created_at)}
+                </span>
               </div>
-            )}
-            
-            {hasBody && renderCommentBody(comment.body)}
+              
+              {comment.comment_type === 'review_thread' && comment.path && (
+                <div 
+                  className="flex items-center gap-1.5 mb-2 text-[11px] font-mono"
+                  style={{ color: theme.text.tertiary }}
+                >
+                  <Code2 className="w-3 h-3 shrink-0" />
+                  <span className="truncate">{comment.path}</span>
+                  {comment.line && (
+                    <span style={{ color: theme.text.muted }}>:{comment.line}</span>
+                  )}
+                </div>
+              )}
+              
+              {hasBody && renderCommentBody(comment.body)}
+            </div>
           </div>
         </div>
       </div>
@@ -639,20 +672,60 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
         />
       )}
       <div className="flex flex-col h-full overflow-auto">
+        {totalActionable > 0 && (
+          <div
+            className="flex items-center justify-between px-3 py-2 shrink-0 sticky top-0 z-10"
+            style={{ background: theme.bg.primary }}
+          >
+            <div className="flex items-center gap-2.5">
+              <span
+                className="text-[12px] font-medium tabular-nums"
+                style={{ color: theme.text.secondary }}
+              >
+                {addressedCount} / {totalActionable} addressed
+              </span>
+              {totalActionable > 0 && (
+                <div
+                  className="h-1.5 w-16 rounded-full overflow-hidden"
+                  style={{ background: theme.bg.tertiary }}
+                >
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${(addressedCount / totalActionable) * 100}%`,
+                      background: addressedCount === totalActionable ? theme.semantic.success : theme.text.tertiary,
+                      transition: 'width 150ms ease-out, background 150ms ease-out',
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+            <button
+              onClick={() => setHideAddressed(prev => !prev)}
+              className="p-1 rounded transition-colors"
+              style={{ color: hideAddressed ? theme.text.primary : theme.text.muted }}
+              onMouseEnter={(e) => e.currentTarget.style.background = theme.bg.hover}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              aria-label={hideAddressed ? "Show all comments" : "Show remaining comments"}
+            >
+              {hideAddressed ? (
+                <EyeOff className="w-3.5 h-3.5" />
+              ) : (
+                <Eye className="w-3.5 h-3.5" />
+              )}
+            </button>
+          </div>
+        )}
         <div className="px-3 py-2 space-y-1">
           {topLevelComments.map((comment, index) => {
             const nestedThreads = comment.comment_type === 'review' && comment.review_id 
               ? threadsByReviewId.get(comment.review_id) || []
               : [];
-            
-            if (comment.comment_type === 'review') {
-              console.log('[CommentsTab] Rendering review:', {
-                author: comment.author,
-                review_id: comment.review_id,
-                hasBody: !!(comment.body && comment.body.trim().length > 0),
-                hasNestedThreads: nestedThreads.length > 0,
-                nestedCount: nestedThreads.length
-              });
+
+            if (comment.comment_type !== 'review' && isActionable(comment)) {
+              const commentId = getCommentId(comment);
+              const addressed = repoPath && prNumber ? isCommentAddressed(repoPath, prNumber, commentId) : false;
+              if (hideAddressed && addressed) return null;
             }
             
             return (
