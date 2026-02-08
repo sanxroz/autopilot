@@ -260,8 +260,8 @@ pub async fn oauth_get_status() -> Result<OAuthStatus, String> {
                 avatar_url: None,
             })
         }
-        Ok(resp) if resp.status().is_server_error() => {
-            // 5xx: GitHub is having issues — assume token still valid
+        Ok(resp) if resp.status() == 403 || resp.status().is_server_error() => {
+            // 5xx or 403 (rate limit): transient — assume token still valid
             Ok(OAuthStatus {
                 authenticated: true,
                 username: Some(creds.username),

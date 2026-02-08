@@ -54,7 +54,6 @@ export function useGitHubOAuth(): UseGitHubOAuthReturn {
 
     const cleanup = () => {
       completed = true;
-      loginInProgressRef.current = false;
       if (currentTimeoutId) clearTimeout(currentTimeoutId);
       if (expirationTimeoutId) clearTimeout(expirationTimeoutId);
       pollingRef.current = null;
@@ -69,6 +68,7 @@ export function useGitHubOAuth(): UseGitHubOAuthReturn {
       expirationTimeoutId = setTimeout(() => {
         if (completed) return;
         cleanup();
+        loginInProgressRef.current = false;
         setStatus('error');
         setError('Device code expired. Please try again.');
       }, expiresIn * 1000);
@@ -82,6 +82,7 @@ export function useGitHubOAuth(): UseGitHubOAuthReturn {
         
         if (completed) return;
         cleanup();
+        loginInProgressRef.current = false;
         
         setOAuthStatus(result);
         setStatus('success');
@@ -103,6 +104,7 @@ export function useGitHubOAuth(): UseGitHubOAuthReturn {
         }
         
         cleanup();
+        loginInProgressRef.current = false;
         setStatus('error');
         setError(errorMsg);
       }
