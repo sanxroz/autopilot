@@ -62,7 +62,7 @@ function getStatusFillClass(status: ChangedFile["status"]): string {
     case "copied":
       return "fill-semantic-warning";
     default:
-      return "fill-tertiary";
+      return "fill-text-tertiary";
   }
 }
 
