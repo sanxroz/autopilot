@@ -498,21 +498,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   checkGitHubCli: async () => {
-    let authUser: string | null = null;
+    let oauthUser: string | null = null;
+    let cliAuthUser: string | null = null;
 
     try {
       const oauthStatus = await invoke<OAuthStatus>('oauth_get_status');
       if (oauthStatus.authenticated && oauthStatus.username) {
-        authUser = oauthStatus.username;
+        oauthUser = oauthStatus.username;
       }
     } catch {}
 
     try {
       const available = await invoke<boolean>('check_gh_cli');
       
-      if (available && !authUser) {
+      if (available) {
         try {
-          authUser = await invoke<string>('check_gh_auth');
+          cliAuthUser = await invoke<string>('check_gh_auth');
         } catch {}
       }
       
@@ -520,7 +521,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         githubSettings: {
           ...state.githubSettings,
           ghCliAvailable: available,
-          ghAuthUser: authUser,
+          ghAuthUser: cliAuthUser || oauthUser,
         },
       }));
     } catch (e) {
@@ -529,7 +530,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         githubSettings: {
           ...state.githubSettings,
           ghCliAvailable: false,
-          ghAuthUser: authUser,
+          ghAuthUser: oauthUser,
         },
       }));
     }

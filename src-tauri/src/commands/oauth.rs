@@ -277,11 +277,11 @@ pub async fn oauth_get_status() -> Result<OAuthStatus, String> {
             })
         }
         Err(_) => {
-            // Network error — don't assume authenticated
+            // Network error — credentials exist but can't validate; assume still valid
             Ok(OAuthStatus {
-                authenticated: false,
-                username: None,
-                avatar_url: None,
+                authenticated: true,
+                username: Some(creds.username),
+                avatar_url: creds.avatar_url,
             })
         }
     }
