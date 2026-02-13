@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Archive,
   User,
+  Folder,
 } from "lucide-react";
 import { useAppStore } from "../store";
 import type { WorktreeInfo } from "../types";
@@ -99,6 +100,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
     return repositories.map((repo) => ({
       repoName: repo.info.name || basename(repo.info.path),
       repoPath: repo.info.path,
+      avatarUrl: repo.info.avatarUrl,
       worktrees: repo.worktrees
         .filter((wt) => wt.name !== "main")
         .sort((a, b) => {
@@ -225,13 +227,22 @@ export function Sidebar({ isOpen }: SidebarProps) {
                        toggleRepoCollapsed(group.repoPath);
                      }
                    }}
-                   aria-expanded={!isCollapsed}
-                   aria-label={`${group.repoName} repository, ${isCollapsed ? "collapsed" : "expanded"}`}
-                 >
-                   <div className="flex items-center gap-1.5 min-w-0">
-                     <span className="font-medium text-sm truncate min-w-0 text-primary">
-                       {group.repoName}
-                     </span>
+                    aria-expanded={!isCollapsed}
+                    aria-label={`${group.repoName} repository, ${isCollapsed ? "collapsed" : "expanded"}`}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {group.avatarUrl ? (
+                        <img
+                          src={group.avatarUrl}
+                          alt={group.repoName}
+                          className="h-3.5 w-3.5 rounded-sm flex-shrink-0"
+                        />
+                      ) : (
+                        <Folder className="h-3.5 w-3.5 text-tertiary flex-shrink-0" />
+                      )}
+                      <span className="font-medium text-sm truncate min-w-0 text-primary">
+                        {group.repoName}
+                      </span>
                      <span className="opacity-0 group-hover:opacity-100 transition-opacity">
                        {isCollapsed ? (
                          <ChevronRight className="h-3.5 w-3.5 text-tertiary" />

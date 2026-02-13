@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { load } from '@tauri-apps/plugin-store';
-import type { Repository, WorktreeInfo, TerminalInstance, ProcessStatus, DiffViewMode, AIAgent } from '../types';
+import type { Repository, RepoInfo, WorktreeInfo, TerminalInstance, ProcessStatus, DiffViewMode, AIAgent } from '../types';
 import type { GitHubSettings, PRStatus, PRChecksResult, PRDetailedInfo } from '../types/github';
 import { DEFAULT_GITHUB_SETTINGS } from '../types/github';
 import { setThemeMode as setGlobalThemeMode, getThemeMode, type ThemeMode } from '../theme';
@@ -129,6 +129,27 @@ async function saveAddressedComments(addressedComments: AddressedCommentsMap): P
   }
 }
 
+async function enrichRepoInfoWithAvatar(info: RepoInfo): Promise<RepoInfo> {
+  try {
+    const nameWithOwner = await invoke<string | null>('get_repo_from_remote', { repoPath: info.path });
+    if (!nameWithOwner) {
+      return info;
+    }
+
+    const [owner] = nameWithOwner.split('/');
+    if (!owner) {
+      return info;
+    }
+
+    return {
+      ...info,
+      avatarUrl: `https://github.com/${owner}.png?size=64`,
+    };
+  } catch {
+    return info;
+  }
+}
+
 export const useAppStore = create<AppStore>((set, get) => ({
   repositories: [],
   selectedWorktree: null,
@@ -168,7 +189,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     
     for (const path of persisted.repositoryPaths) {
       try {
-        const info = await invoke<{ path: string; name: string }>('discover_repository', { path });
+        const discovered = await invoke<RepoInfo>('discover_repository', { path });
+        const info = await enrichRepoInfoWithAvatar(discovered);
         const worktrees = await invoke<WorktreeInfo[]>('list_worktrees', { repoPath: info.path });
 
         set((state) => ({
@@ -189,7 +211,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   addRepository: async (path: string) => {
     try {
-      const info = await invoke<{ path: string; name: string }>('discover_repository', { path });
+      const discovered = await invoke<RepoInfo>('discover_repository', { path });
+      const info = await enrichRepoInfoWithAvatar(discovered);
       const worktrees = await invoke<WorktreeInfo[]>('list_worktrees', { repoPath: info.path });
 
       set((state) => {
