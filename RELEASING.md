@@ -119,7 +119,7 @@ Verify `TAURI_SIGNING_PRIVATE_KEY` secret is set correctly in GitHub.
 If keys are compromised or lost:
 
 ```bash
-npx tauri signer generate -w ~/.tauri/autopilot.key --ci
+bunx tauri signer generate -w ~/.tauri/autopilot.key --ci
 ```
 
 Then update:

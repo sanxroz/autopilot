@@ -42,6 +42,37 @@ export interface Repository {
 
 export type ProcessStatus = 'dev_server' | 'agent_running' | 'none';
 
+export type AgentRunStatus =
+  | 'idle'
+  | 'starting'
+  | 'running'
+  | 'waiting_input'
+  | 'completed'
+  | 'error';
+
+export interface AgentRunState {
+  worktreePath: string;
+  sessionId: string;
+  terminalId?: string;
+  status: AgentRunStatus;
+  startedAt: number;
+  lastEventAt: number;
+  endedAt?: number;
+  agent?: AIAgent;
+  label?: string;
+  error?: string;
+}
+
+export interface AgentStatusEvent {
+  worktreePath: string;
+  sessionId: string;
+  terminalId?: string;
+  status: Exclude<AgentRunStatus, 'idle'>;
+  timestamp: number;
+  agent?: string;
+  message?: string;
+}
+
 export type DiffViewMode = 'overlay' | 'sidebar';
 
 export type FileStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'untracked';

@@ -177,9 +177,10 @@ pub fn find_cli_tool(name: &str) -> Result<String, String> {
          - /usr/local/bin/{} (Homebrew on Intel)\n\
          - nvm/fnm managed Node.js paths\n\n\
          Common install methods:\n\
+         - bun add -g {}\n\
          - npm install -g {}\n\
          - brew install {}",
-        name, name, home_hint, name, home_hint, name, name, name, name, name
+        name, name, home_hint, name, home_hint, name, name, name, name, name, name
     ))
 }
 
