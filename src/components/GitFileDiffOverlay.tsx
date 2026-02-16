@@ -1,10 +1,15 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { codeToTokens, type BundledLanguage } from "shiki";
-import { X, Loader } from "lucide-react";
+import { X, Loader, Eye, Code2, ChevronsRight, ChevronsLeft } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
 import { useThemeMode } from "../hooks/useTheme";
 import { useAppStore } from "../store";
 import { cn } from "../utils/cn";
+import { markdownSanitizeSchema, MarkdownErrorBoundary, markdownComponents } from "../lib/markdown-components";
 import type { FileDiffData } from "../types";
 
 interface LineInfo {
@@ -166,6 +171,13 @@ function getFileName(path: string): string {
   return parts[parts.length - 1];
 }
 
+function isMarkdownFile(filePath: string): boolean {
+  const lower = filePath.toLowerCase();
+  return lower.endsWith(".md") || lower.endsWith(".mdx");
+}
+
+
+
 interface HighlightedLine {
   tokens: Array<{ content: string; color?: string }>;
 }
@@ -178,17 +190,25 @@ export function GitFileDiffOverlay() {
   
   const preview = useAppStore((state) => state.gitFileDiffPreview);
   const setPreview = useAppStore((state) => state.setGitFileDiffPreview);
+  const codeReviewOpen = useAppStore((state) => state.codeReviewOpen);
+  const setCodeReviewOpen = useAppStore((state) => state.setCodeReviewOpen);
   
   const [diffData, setDiffData] = useState<FileDiffData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [highlightedLines, setHighlightedLines] = useState<Map<number, HighlightedLine>>(new Map());
+  const [viewMode, setViewMode] = useState<"diff" | "preview">("diff");
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasScrolledRef = useRef(false);
 
   const filePath = preview?.filePath ?? null;
   const worktreePath = preview?.worktreePath ?? null;
   const isStaged = preview?.isStaged ?? false;
+  const isMd = filePath ? isMarkdownFile(filePath) : false;
+
+  useEffect(() => {
+    setViewMode(isMd ? "preview" : "diff");
+  }, [filePath, isMd]);
 
   useEffect(() => {
     if (!filePath || !worktreePath) {
@@ -275,12 +295,13 @@ export function GitFileDiffOverlay() {
   }, [fileLines]);
 
   useEffect(() => {
+    if (viewMode === "preview") return;
     if (firstEditIndex >= 0 && scrollContainerRef.current && !hasScrolledRef.current && !isLoading) {
       hasScrolledRef.current = true;
       const scrollTop = Math.max(0, (firstEditIndex - 3) * LINE_HEIGHT);
       scrollContainerRef.current.scrollTop = scrollTop;
     }
-  }, [firstEditIndex, isLoading]);
+  }, [firstEditIndex, isLoading, viewMode]);
 
   const editIndicators = useMemo(() => {
     if (fileLines.length === 0) return [];
@@ -360,13 +381,49 @@ export function GitFileDiffOverlay() {
             </span>
           )}
         </div>
-        <button
-          onClick={handleClose}
-          className="p-1 rounded transition-colors text-tertiary hover:bg-hover hover:text-primary"
-          aria-label="Close diff preview"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-1">
+          {isMd && (
+            <button
+              onClick={() => setViewMode(viewMode === "preview" ? "diff" : "preview")}
+              className={cn(
+                "p-1 rounded transition-colors",
+                "text-tertiary hover:bg-hover hover:text-primary"
+              )}
+              aria-label={viewMode === "preview" ? "Show diff" : "Show preview"}
+              title={viewMode === "preview" ? "Show diff" : "Show preview"}
+            >
+              {viewMode === "preview" ? (
+                <Code2 className="w-3.5 h-3.5" />
+              ) : (
+                <Eye className="w-3.5 h-3.5" />
+              )}
+            </button>
+          )}
+          <button
+            onClick={handleClose}
+            className="p-1 rounded transition-colors text-tertiary hover:bg-hover hover:text-primary"
+            aria-label="Close diff preview"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => setCodeReviewOpen(!codeReviewOpen)}
+            className={cn(
+              "p-1 rounded transition-colors",
+              codeReviewOpen
+                ? "text-accent-primary"
+                : "text-tertiary hover:bg-hover hover:text-primary"
+            )}
+            title={codeReviewOpen ? "Close panel" : "Open panel"}
+            aria-label={codeReviewOpen ? "Close checks and review panel" : "Open checks and review panel"}
+          >
+            {codeReviewOpen ? (
+              <ChevronsRight className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronsLeft className="w-3.5 h-3.5" />
+            )}
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 flex overflow-hidden relative">
@@ -383,6 +440,28 @@ export function GitFileDiffOverlay() {
             <div className="px-4 py-12 text-center text-sm text-semantic-error">
               {error}
             </div>
+          ) : viewMode === "preview" && isMd && diffData?.new_content != null ? (
+            <MarkdownErrorBoundary key={filePath} rawContent={diffData.new_content ?? ""}>
+            <article
+              className="mx-auto"
+              style={{
+                maxWidth: 720,
+                padding: "2.5em 2em 4em",
+                fontFamily: "Georgia, 'Times New Roman', serif",
+                fontSize: "16.5px",
+                lineHeight: 1.85,
+                WebkitFontSmoothing: "antialiased",
+              }}
+            >
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema]]}
+                components={markdownComponents}
+              >
+                {diffData.new_content}
+              </ReactMarkdown>
+            </article>
+            </MarkdownErrorBoundary>
           ) : fileLines.length > 0 ? (
             <div className="font-mono text-[13px]" style={{ lineHeight: `${LINE_HEIGHT}px` }}>
               {fileLines.map((line) => {
