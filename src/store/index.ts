@@ -400,8 +400,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const worktree = state.selectedWorktree;
     if (!worktree) return null;
 
-    console.log('[autopilot] addTerminalWithCommand', { command, cwd: worktree.path });
-
     const result = await invoke<{ terminal_id: string }>('spawn_terminal_with_command', {
       cwd: worktree.path,
       command,
@@ -410,8 +408,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       rows: 24,
       isDarkMode: getThemeMode() === 'dark',
     });
-
-    console.log('[autopilot] terminal spawned', { terminalId: result.terminal_id });
 
     const terminal: TerminalInstance = {
       id: result.terminal_id,

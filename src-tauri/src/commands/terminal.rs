@@ -493,12 +493,23 @@ fn install_hooks_to_claude_global_settings(notify_script_path: &str) {
 
     for key in &["UserPromptSubmit", "Stop"] {
         if !entry_has_command(hooks_obj, key, notify_script_path) {
-            hooks_obj.insert(key.to_string(), hook_entry.clone());
+            if let Some(existing) = hooks_obj.get_mut(*key).and_then(|v| v.as_array_mut()) {
+                existing.push(hook_entry[0].clone());
+            } else {
+                hooks_obj.insert(key.to_string(), hook_entry.clone());
+            }
             changed = true;
         }
     }
     if !entry_has_command(hooks_obj, "PermissionRequest", notify_script_path) {
-        hooks_obj.insert("PermissionRequest".to_string(), permission_entry);
+        if let Some(existing) = hooks_obj
+            .get_mut("PermissionRequest")
+            .and_then(|v| v.as_array_mut())
+        {
+            existing.push(permission_entry[0].clone());
+        } else {
+            hooks_obj.insert("PermissionRequest".to_string(), permission_entry);
+        }
         changed = true;
     }
 
@@ -675,7 +686,11 @@ fn install_hooks_to_droid_global_settings(notify_script_path: &str) {
         "SessionEnd",
     ] {
         if !entry_has_command(hooks_obj, key, notify_script_path) {
-            hooks_obj.insert(key.to_string(), hook_entry.clone());
+            if let Some(existing) = hooks_obj.get_mut(*key).and_then(|v| v.as_array_mut()) {
+                existing.push(hook_entry[0].clone());
+            } else {
+                hooks_obj.insert(key.to_string(), hook_entry.clone());
+            }
             changed = true;
         }
     }
@@ -1265,18 +1280,20 @@ pub fn spawn_terminal_with_command(
                                     );
                                 }
                             }
-                        } else if let Some(ref ws) = watchdog_state {
-                            if ws.is_waiting.load(Ordering::Relaxed) {
-                                ws.is_waiting.store(false, Ordering::Relaxed);
-                                emit_agent_status(
-                                    &app_clone,
-                                    &cwd_for_events,
-                                    &session_for_events,
-                                    &tid,
-                                    "running",
-                                    Some(agent),
-                                    Some("Output resumed after idle".to_string()),
-                                );
+                        } else if !is_hook_enabled {
+                            if let Some(ref ws) = watchdog_state {
+                                if ws.is_waiting.load(Ordering::Relaxed) {
+                                    ws.is_waiting.store(false, Ordering::Relaxed);
+                                    emit_agent_status(
+                                        &app_clone,
+                                        &cwd_for_events,
+                                        &session_for_events,
+                                        &tid,
+                                        "running",
+                                        Some(agent),
+                                        Some("Output resumed after idle".to_string()),
+                                    );
+                                }
                             }
                         }
                     }
