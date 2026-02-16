@@ -656,8 +656,8 @@ export function GitFileDiffOverlay() {
             <div className="px-4 py-12 text-center text-sm text-semantic-error">
               {error}
             </div>
-          ) : viewMode === "preview" && isMd && diffData?.new_content !== undefined ? (
-            <MarkdownErrorBoundary rawContent={diffData.new_content ?? ""}>
+          ) : viewMode === "preview" && isMd && diffData?.new_content != null ? (
+            <MarkdownErrorBoundary key={filePath} rawContent={diffData.new_content ?? ""}>
             <article
               className="mx-auto"
               style={{
