@@ -1,8 +1,10 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { PackagePlus } from "lucide-react";
 import { useAppStore } from "../store";
 import { Terminal } from "./Terminal";
+import type { TerminalHandle } from "./Terminal";
+import { TerminalSearchBar } from "./TerminalSearchBar";
 import { TerminalAnimation } from "./TerminalAnimation";
 
 export function TerminalGrid() {
@@ -16,6 +18,9 @@ export function TerminalGrid() {
   const addTerminal = useAppStore((state) => state.addTerminal);
   const removeTerminal = useAppStore((state) => state.removeTerminal);
   const addRepository = useAppStore((state) => state.addRepository);
+
+  const terminalRefs = useRef<Map<string, TerminalHandle>>(new Map());
+  const [searchOpenIds, setSearchOpenIds] = useState<Set<string>>(new Set());
 
   const handleAddRepository = async () => {
     try {
@@ -46,6 +51,11 @@ export function TerminalGrid() {
         if (activeTerminalId) {
           removeTerminal(activeTerminalId);
         }
+      }
+
+      if (isMeta && e.key === "f" && activeTerminalId) {
+        e.preventDefault();
+        setSearchOpenIds((prev) => new Set(prev).add(activeTerminalId));
       }
     },
     [activeTerminalId, addTerminal, removeTerminal]
@@ -124,9 +134,16 @@ export function TerminalGrid() {
             {worktreeTerminals.map((terminal, index) => (
               <div
                 key={terminal.id}
-                className={`min-w-0 min-h-0 bg-transparent overflow-hidden ${index > 0 ? "border-l border-border" : ""}`}
+                className={`min-w-0 min-h-0 bg-transparent overflow-hidden relative ${index > 0 ? "border-l border-border" : ""}`}
               >
                 <Terminal
+                  ref={(handle) => {
+                    if (handle) {
+                      terminalRefs.current.set(terminal.id, handle);
+                    } else {
+                      terminalRefs.current.delete(terminal.id);
+                    }
+                  }}
                   terminalId={terminal.id}
                   isActive={
                     isCurrentWorktree && activeTerminalId === terminal.id
@@ -134,6 +151,20 @@ export function TerminalGrid() {
                   isVisible={isCurrentWorktree}
                   onFocus={() => setActiveTerminal(terminal.id)}
                 />
+                {searchOpenIds.has(terminal.id) && isCurrentWorktree && (
+                  <TerminalSearchBar
+                    terminalHandle={
+                      terminalRefs.current.get(terminal.id) ?? null
+                    }
+                    onClose={() =>
+                      setSearchOpenIds((prev) => {
+                        const next = new Set(prev);
+                        next.delete(terminal.id);
+                        return next;
+                      })
+                    }
+                  />
+                )}
               </div>
             ))}
           </div>

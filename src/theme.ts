@@ -58,6 +58,14 @@ const darkTheme = {
     brightCyan: "#22D3EE",
     brightWhite: "#F5F5F4",
   },
+  search: {
+    matchBackground: "#785000",
+    matchBorder: "#F59E0B",
+    matchOverviewRuler: "#F59E0B",
+    activeMatchBackground: "#F59E0B",
+    activeMatchBorder: "#FBBF24",
+    activeMatchColorOverviewRuler: "#FBBF24",
+  },
   ui: {
     scrollbarThumb: "rgba(168, 159, 145, 0.2)",
     scrollbarThumbHover: "rgba(168, 159, 145, 0.35)",
@@ -122,6 +130,14 @@ const lightTheme = {
     brightMagenta: "#c084fc",
     brightCyan: "#22d3ee",
     brightWhite: "#262521",
+  },
+  search: {
+    matchBackground: "#FEF3C7",
+    matchBorder: "#D97706",
+    matchOverviewRuler: "#D97706",
+    activeMatchBackground: "#FCD34D",
+    activeMatchBorder: "#B45309",
+    activeMatchColorOverviewRuler: "#B45309",
   },
   ui: {
     scrollbarThumb: "rgba(38, 37, 33, 0.15)",
