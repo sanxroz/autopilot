@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Archive,
   User,
+  Folder,
 } from "lucide-react";
 import { useAppStore } from "../store";
 import type { WorktreeInfo } from "../types";
@@ -56,6 +57,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
   const [showWorktreeDialog, setShowWorktreeDialog] = useState<string | null>(
     null
   );
+  const [failedAvatarUrls, setFailedAvatarUrls] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -101,6 +103,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
     return repositories.map((repo) => ({
       repoName: repo.info.name || basename(repo.info.path),
       repoPath: repo.info.path,
+      avatarUrl: repo.info.avatarUrl,
       worktrees: repo.worktrees
         .filter((wt) => wt.name !== "main")
         .sort((a, b) => {
@@ -208,6 +211,8 @@ export function Sidebar({ isOpen }: SidebarProps) {
         <div className="flex flex-col gap-1">
           {repoGroups.map((group, groupIndex) => {
             const isCollapsed = collapsedRepos.has(group.repoPath);
+            const avatarUrl = group.avatarUrl;
+            const showAvatar = avatarUrl !== undefined && !failedAvatarUrls.has(avatarUrl);
 
             return (
               <div key={group.repoPath} className="w-full min-w-0">
@@ -227,13 +232,30 @@ export function Sidebar({ isOpen }: SidebarProps) {
                        toggleRepoCollapsed(group.repoPath);
                      }
                    }}
-                   aria-expanded={!isCollapsed}
-                   aria-label={`${group.repoName} repository, ${isCollapsed ? "collapsed" : "expanded"}`}
-                 >
-                   <div className="flex items-center gap-1.5 min-w-0">
-                     <span className="font-medium text-sm truncate min-w-0 text-primary">
-                       {group.repoName}
-                     </span>
+                    aria-expanded={!isCollapsed}
+                    aria-label={`${group.repoName} repository, ${isCollapsed ? "collapsed" : "expanded"}`}
+                  >
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      {showAvatar ? (
+                        <img
+                          src={avatarUrl}
+                          alt={group.repoName}
+                          className="h-3.5 w-3.5 rounded-sm flex-shrink-0"
+                          onError={() => {
+                            setFailedAvatarUrls((prev) => {
+                              if (!avatarUrl) return prev;
+                              const next = new Set(prev);
+                              next.add(avatarUrl);
+                              return next;
+                            });
+                          }}
+                        />
+                      ) : (
+                        <Folder className="h-3.5 w-3.5 text-tertiary flex-shrink-0" />
+                      )}
+                      <span className="font-medium text-sm truncate min-w-0 text-primary">
+                        {group.repoName}
+                      </span>
                      <span className="opacity-0 group-hover:opacity-100 transition-opacity">
                        {isCollapsed ? (
                          <ChevronRight className="h-3.5 w-3.5 text-tertiary" />

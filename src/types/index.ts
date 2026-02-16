@@ -1,6 +1,7 @@
 export interface RepoInfo {
   path: string;
   name: string;
+  avatarUrl?: string;
 }
 
 export interface WorktreeInfo {

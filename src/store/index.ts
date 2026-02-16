@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { load } from '@tauri-apps/plugin-store';
 import type {
   Repository,
+  RepoInfo,
   WorktreeInfo,
   TerminalInstance,
   ProcessStatus,
@@ -18,6 +19,7 @@ import { setThemeMode as setGlobalThemeMode, getThemeMode, type ThemeMode } from
 interface PersistedState {
   repositoryPaths: string[];
   defaultAIAgent?: AIAgent;
+  repoAvatarCache?: Record<string, string>;
 }
 
 interface WorktreeTerminals {
@@ -155,6 +157,7 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
     const paths = await store.get<string[]>('repositoryPaths');
     const themeMode = await store.get<ThemeMode>('themeMode');
     const defaultAIAgent = await store.get<AIAgent>('defaultAIAgent');
+    const repoAvatarCache = await store.get<Record<string, string>>('repoAvatarCache');
     const rawAddressed = await store.get<Record<string, string[]>>('addressedComments');
     let addressedComments: AddressedCommentsMap | undefined;
     if (rawAddressed) {
@@ -163,9 +166,9 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
         addressedComments[key] = new Set(arr);
       }
     }
-    return { repositoryPaths: paths || [], themeMode, defaultAIAgent, addressedComments };
+    return { repositoryPaths: paths || [], themeMode, defaultAIAgent, addressedComments, repoAvatarCache: repoAvatarCache || {} };
   } catch {
-    return { repositoryPaths: [] };
+    return { repositoryPaths: [], repoAvatarCache: {} };
   }
 }
 
@@ -190,6 +193,42 @@ async function saveAddressedComments(addressedComments: AddressedCommentsMap): P
     await store.save();
   } catch (e) {
     console.error('Failed to save addressed comments:', e);
+  }
+}
+
+async function saveRepoAvatarCacheEntry(repoPath: string, avatarUrl: string | null): Promise<void> {
+  try {
+    const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
+    const existing = (await store.get<Record<string, string>>('repoAvatarCache')) || {};
+
+    if (avatarUrl) {
+      existing[repoPath] = avatarUrl;
+    } else {
+      delete existing[repoPath];
+    }
+
+    await store.set('repoAvatarCache', existing);
+    await store.save();
+  } catch (e) {
+    console.error('Failed to save repo avatar cache:', e);
+  }
+}
+
+async function fetchRepoAvatarUrl(repoPath: string): Promise<string | null> {
+  try {
+    const nameWithOwner = await invoke<string | null>('get_repo_from_remote', { repoPath });
+    if (!nameWithOwner) {
+      return null;
+    }
+
+    const [owner] = nameWithOwner.split('/');
+    if (!owner) {
+      return null;
+    }
+
+    return `https://github.com/${owner}.png?size=64`;
+  } catch {
+    return null;
   }
 }
 
@@ -232,10 +271,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set({ addressedComments: persisted.addressedComments });
     }
     
+    const repoAvatarCache = persisted.repoAvatarCache || {};
+    const reposNeedingAvatar: string[] = [];
+
     for (const path of persisted.repositoryPaths) {
       try {
-        const info = await invoke<{ path: string; name: string }>('discover_repository', { path });
+        const discovered = await invoke<RepoInfo>('discover_repository', { path });
+        const cachedAvatarUrl = repoAvatarCache[discovered.path] || repoAvatarCache[path];
+        const info = cachedAvatarUrl ? { ...discovered, avatarUrl: cachedAvatarUrl } : discovered;
         const worktrees = await invoke<WorktreeInfo[]>('list_worktrees', { repoPath: info.path });
+
+        if (!cachedAvatarUrl) {
+          reposNeedingAvatar.push(info.path);
+        }
 
         set((state) => ({
           repositories: [
@@ -249,13 +297,35 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
 
     set({ isInitialized: true });
+
+    if (reposNeedingAvatar.length > 0) {
+      void Promise.allSettled(
+        reposNeedingAvatar.map(async (repoPath) => {
+          const avatarUrl = await fetchRepoAvatarUrl(repoPath);
+          if (!avatarUrl) return;
+
+          set((state) => ({
+            repositories: state.repositories.map((repo) =>
+              repo.info.path === repoPath
+                ? { ...repo, info: { ...repo.info, avatarUrl } }
+                : repo
+            ),
+          }));
+
+          await saveRepoAvatarCacheEntry(repoPath, avatarUrl);
+        })
+      );
+    }
     
     get().checkGitHubCli();
   },
 
   addRepository: async (path: string) => {
     try {
-      const info = await invoke<{ path: string; name: string }>('discover_repository', { path });
+      const persisted = await loadPersistedState();
+      const discovered = await invoke<RepoInfo>('discover_repository', { path });
+      const cachedAvatarUrl = persisted.repoAvatarCache?.[discovered.path] || persisted.repoAvatarCache?.[path];
+      const info = cachedAvatarUrl ? { ...discovered, avatarUrl: cachedAvatarUrl } : discovered;
       const worktrees = await invoke<WorktreeInfo[]>('list_worktrees', { repoPath: info.path });
 
       set((state) => {
@@ -268,6 +338,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
         
         return { repositories: newRepos };
       });
+
+      if (!cachedAvatarUrl) {
+        void (async () => {
+          const avatarUrl = await fetchRepoAvatarUrl(info.path);
+          if (!avatarUrl) return;
+
+          set((state) => ({
+            repositories: state.repositories.map((repo) =>
+              repo.info.path === info.path
+                ? { ...repo, info: { ...repo.info, avatarUrl } }
+                : repo
+            ),
+          }));
+
+          await saveRepoAvatarCacheEntry(info.path, avatarUrl);
+        })();
+      }
     } catch (e) {
       console.error('Failed to add repository:', e);
       throw e;
@@ -278,6 +365,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => {
       const newRepos = state.repositories.filter((r) => r.info.path !== path);
       savePersistedState({ repositoryPaths: newRepos.map((r) => r.info.path) });
+      saveRepoAvatarCacheEntry(path, null);
       return { repositories: newRepos };
     });
   },
