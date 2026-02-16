@@ -1,7 +1,17 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { load } from '@tauri-apps/plugin-store';
-import type { Repository, RepoInfo, WorktreeInfo, TerminalInstance, ProcessStatus, DiffViewMode, AIAgent } from '../types';
+import type {
+  Repository,
+  RepoInfo,
+  WorktreeInfo,
+  TerminalInstance,
+  ProcessStatus,
+  DiffViewMode,
+  AIAgent,
+  AgentRunState,
+  AgentStatusEvent,
+} from '../types';
 import type { GitHubSettings, PRStatus, PRChecksResult, PRDetailedInfo } from '../types/github';
 import { DEFAULT_GITHUB_SETTINGS } from '../types/github';
 import { setThemeMode as setGlobalThemeMode, getThemeMode, type ThemeMode } from '../theme';
@@ -42,6 +52,8 @@ interface AppStore {
   diffViewMode: DiffViewMode;
   gitFileDiffPreview: { filePath: string; worktreePath: string; isStaged: boolean } | null;
   processStatusByPath: Record<string, ProcessStatus>;
+  agentRunByWorktreePath: Record<string, AgentRunState | undefined>;
+  agentSidebarLifecycleEnabled: boolean;
   defaultAIAgent: AIAgent;
   addressedComments: AddressedCommentsMap;
 
@@ -76,6 +88,10 @@ interface AppStore {
   checkGitHubCli: () => Promise<void>;
   refreshProcessStatuses: () => Promise<void>;
   getProcessStatus: (worktreePath: string) => ProcessStatus;
+  setAgentRunState: (event: AgentStatusEvent) => void;
+  clearAgentRunState: (worktreePath: string) => void;
+  markAgentRunError: (worktreePath: string, error: string) => void;
+  reconcileAgentRunWithProcessPolling: (worktreePath: string, processStatus: ProcessStatus) => void;
   setDefaultAIAgent: (agent: AIAgent) => Promise<void>;
   updateWorktreeDiffStats: (stats: Array<{ path: string; diff_stats: { additions: number; deletions: number } | null }>) => void;
   toggleAddressedComment: (repoPath: string, prNumber: number, commentId: string) => void;
@@ -85,6 +101,55 @@ interface AppStore {
 }
 
 const STORE_PATH = 'autopilot-settings.json';
+const AGENT_COMPLETED_TTL_MS = 5000;
+
+const KNOWN_AGENTS: AIAgent[] = ['opencode', 'claude', 'droid', 'amp', 'codex'];
+
+function isKnownAgent(value: string | undefined): value is AIAgent {
+  return !!value && KNOWN_AGENTS.includes(value as AIAgent);
+}
+
+function isAgentActiveStatus(status: AgentRunState['status']): boolean {
+  return status === 'starting' || status === 'running' || status === 'waiting_input';
+}
+
+function reconcileOneAgentRunState(
+  _path: string,
+  processStatus: ProcessStatus,
+  currentState: AgentRunState | undefined,
+  now: number
+): AgentRunState | undefined {
+  if (processStatus === 'agent_running') {
+    // Don't create lifecycle state from process polling alone.
+    // Lifecycle is driven by hooks (for hook-enabled agents) or
+    // the inactivity watchdog (for others). Process polling can only
+    // keep existing state alive — never fabricate new state.
+    return currentState;
+  }
+
+  if (!currentState) return undefined;
+
+  // Agent process is gone — mark completed immediately.
+  // If process detection is briefly wrong, hooks will restore the correct
+  // state on the next event.
+  if (isAgentActiveStatus(currentState.status)) {
+    return {
+      ...currentState,
+      status: 'completed',
+      lastEventAt: now,
+      endedAt: now,
+      label: 'Agent process exited',
+    };
+  }
+
+  if ((currentState.status === 'completed' || currentState.status === 'error') && currentState.endedAt) {
+    if (now - currentState.endedAt > AGENT_COMPLETED_TTL_MS) {
+      return undefined;
+    }
+  }
+
+  return currentState;
+}
 
 async function loadPersistedState(): Promise<PersistedState & { themeMode?: ThemeMode; addressedComments?: AddressedCommentsMap }> {
   try {
@@ -184,6 +249,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   diffViewMode: 'overlay',
   gitFileDiffPreview: null,
   processStatusByPath: {},
+  agentRunByWorktreePath: {},
+  agentSidebarLifecycleEnabled: true,
   defaultAIAgent: 'opencode',
   addressedComments: {},
 
@@ -656,10 +723,158 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  refreshProcessStatuses: async () => {},
+  refreshProcessStatuses: async () => {
+    const state = get();
+    const worktreePaths = state.repositories.flatMap((repo) => repo.worktrees.map((wt) => wt.path));
+    const now = Date.now();
+
+    if (worktreePaths.length === 0) {
+      set({ processStatusByPath: {}, agentRunByWorktreePath: {} });
+      return;
+    }
+
+    try {
+      const statuses = await invoke<Record<string, ProcessStatus>>('get_all_worktrees_process_status', {
+        worktreePaths,
+      });
+
+      set((current) => {
+        const nextProcessStatus: Record<string, ProcessStatus> = {};
+        for (const path of worktreePaths) {
+          nextProcessStatus[path] = statuses[path] ?? 'none';
+        }
+
+        const nextAgentRun: Record<string, AgentRunState | undefined> = {};
+        for (const path of worktreePaths) {
+          const reconciled = reconcileOneAgentRunState(
+            path,
+            nextProcessStatus[path],
+            current.agentRunByWorktreePath[path],
+            now
+          );
+          if (reconciled) {
+            nextAgentRun[path] = reconciled;
+          }
+        }
+
+        return {
+          processStatusByPath: nextProcessStatus,
+          agentRunByWorktreePath: nextAgentRun,
+        };
+      });
+    } catch (e) {
+      console.error('Failed to refresh process statuses:', e);
+    }
+  },
 
   getProcessStatus: (worktreePath: string): ProcessStatus => {
     return get().processStatusByPath[worktreePath] || 'none';
+  },
+
+  setAgentRunState: (event: AgentStatusEvent) => {
+    set((state) => {
+      const current = state.agentRunByWorktreePath[event.worktreePath];
+      const isNewSession = !current || current.sessionId !== event.sessionId;
+      const canStartSession = event.status === 'starting' || event.status === 'running' || event.status === 'waiting_input';
+
+      if (!canStartSession && isNewSession) {
+        return state;
+      }
+
+      const timestamp = event.timestamp || Date.now();
+      const fromStatus = current?.status ?? 'idle';
+      const normalizedAgent = isKnownAgent(event.agent) ? event.agent : current?.agent;
+      const nextState: AgentRunState = {
+        worktreePath: event.worktreePath,
+        sessionId: event.sessionId,
+        terminalId: event.terminalId ?? current?.terminalId,
+        status: event.status,
+        startedAt: isNewSession ? timestamp : (current?.startedAt ?? timestamp),
+        lastEventAt: timestamp,
+        agent: normalizedAgent,
+        label: event.message,
+        error: event.status === 'error' ? event.message ?? current?.error : undefined,
+        endedAt: event.status === 'completed' || event.status === 'error' ? timestamp : undefined,
+      };
+
+      console.debug('[agent-status]', {
+        worktreePath: event.worktreePath,
+        sessionId: event.sessionId,
+        from: fromStatus,
+        to: nextState.status,
+        reason: event.message ?? 'event',
+      });
+
+      return {
+        agentRunByWorktreePath: {
+          ...state.agentRunByWorktreePath,
+          [event.worktreePath]: nextState,
+        },
+      };
+    });
+  },
+
+  clearAgentRunState: (worktreePath: string) => {
+    set((state) => {
+      const { [worktreePath]: _, ...rest } = state.agentRunByWorktreePath;
+      return { agentRunByWorktreePath: rest };
+    });
+  },
+
+  markAgentRunError: (worktreePath: string, error: string) => {
+    const now = Date.now();
+    set((state) => {
+      const current = state.agentRunByWorktreePath[worktreePath];
+      const next: AgentRunState = current
+        ? {
+            ...current,
+            status: 'error',
+            error,
+            label: error,
+            lastEventAt: now,
+            endedAt: now,
+          }
+        : {
+            worktreePath,
+            sessionId: `error-${worktreePath}-${now}`,
+            status: 'error',
+            startedAt: now,
+            lastEventAt: now,
+            endedAt: now,
+            error,
+            label: error,
+          };
+
+      return {
+        agentRunByWorktreePath: {
+          ...state.agentRunByWorktreePath,
+          [worktreePath]: next,
+        },
+      };
+    });
+  },
+
+  reconcileAgentRunWithProcessPolling: (worktreePath: string, processStatus: ProcessStatus) => {
+    const now = Date.now();
+    set((state) => {
+      const current = state.agentRunByWorktreePath[worktreePath];
+      const reconciled = reconcileOneAgentRunState(worktreePath, processStatus, current, now);
+      if (reconciled === current) {
+        return state;
+      }
+
+      if (!reconciled) {
+        const { [worktreePath]: _, ...rest } = state.agentRunByWorktreePath;
+        return { agentRunByWorktreePath: rest };
+      }
+
+      return {
+        agentRunByWorktreePath: {
+          ...state.agentRunByWorktreePath,
+          [worktreePath]: reconciled,
+        },
+      };
+    });
   },
 
   setDefaultAIAgent: async (agent: AIAgent) => {

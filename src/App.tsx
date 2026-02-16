@@ -9,11 +9,14 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { CommandMenu } from "./components/CommandMenu";
 import { UpdateNotification } from "./components/UpdateNotification";
 import { Toaster } from "sonner";
+import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "./store";
 import { usePRStatusPolling } from "./hooks/usePRStatus";
 import { useGitWatcher } from "./hooks/useGitWatcher";
 import { useUpdater } from "./hooks/useUpdater";
 import { useDiffStatsLoader } from "./hooks/useDiffStats";
+import { useProcessStatusPolling } from "./hooks/useProcessStatus";
+import type { AgentStatusEvent } from "./types";
 
 function App() {
   const initialize = useAppStore((state) => state.initialize);
@@ -25,6 +28,8 @@ function App() {
   const diffViewMode = useAppStore((state) => state.diffViewMode);
   const settingsOpen = useAppStore((state) => state.settingsOpen);
   const toggleSettings = useAppStore((state) => state.toggleSettings);
+  const setAgentRunState = useAppStore((state) => state.setAgentRunState);
+  const agentSidebarLifecycleEnabled = useAppStore((state) => state.agentSidebarLifecycleEnabled);
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -45,8 +50,39 @@ function App() {
   }, []);
 
   usePRStatusPolling();
+  useProcessStatusPolling();
   useGitWatcher();
   useDiffStatsLoader();
+
+  useEffect(() => {
+    if (!agentSidebarLifecycleEnabled) return;
+
+    let isMounted = true;
+    let unlisten: (() => void) | null = null;
+
+    listen<AgentStatusEvent>("agent-status-changed", (event) => {
+      if (!isMounted) return;
+      console.log('[autopilot:event]', event.payload.status, event.payload.agent, event.payload.worktreePath, event.payload.message);
+      setAgentRunState(event.payload);
+    })
+      .then((fn) => {
+        if (isMounted) {
+          unlisten = fn;
+          return;
+        }
+        fn();
+      })
+      .catch((error) => {
+        console.error("Failed to subscribe to agent lifecycle events:", error);
+      });
+
+    return () => {
+      isMounted = false;
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, [agentSidebarLifecycleEnabled, setAgentRunState]);
 
   const {
     status: updateStatus,

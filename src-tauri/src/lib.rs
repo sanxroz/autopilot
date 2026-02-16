@@ -6,9 +6,10 @@ use commands::{git, github, process, terminal, watcher};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
+use tauri::Manager;
 
 #[cfg(target_os = "macos")]
-use tauri::{Manager, WebviewWindow, Listener};
+use tauri::{Listener, WebviewWindow};
 
 #[cfg(target_os = "macos")]
 fn position_traffic_lights(window: &WebviewWindow, x: f64, y: f64) {
@@ -61,18 +62,29 @@ fn position_traffic_lights(window: &WebviewWindow, x: f64, y: f64) {
 
 pub struct AppState {
     pub terminals: Arc<Mutex<HashMap<String, terminal::TerminalSession>>>,
+    pub agent_terminals: Arc<Mutex<HashMap<String, Arc<terminal::AgentTerminalInfo>>>>,
+    pub terminal_worktrees: Arc<Mutex<HashMap<String, String>>>,
+    pub agent_hook_runtime: Option<terminal::AgentHookRuntime>,
 }
 
 impl Default for AppState {
     fn default() -> Self {
         Self {
             terminals: Arc::new(Mutex::new(HashMap::new())),
+            agent_terminals: Arc::new(Mutex::new(HashMap::new())),
+            terminal_worktrees: Arc::new(Mutex::new(HashMap::new())),
+            agent_hook_runtime: None,
         }
     }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let terminals = Arc::new(Mutex::new(HashMap::new()));
+    let agent_terminals = Arc::new(Mutex::new(HashMap::new()));
+    let terminal_worktrees: Arc<Mutex<HashMap<String, String>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -80,7 +92,20 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .setup(|app| {
+        .setup(move |app| {
+            let hook_runtime = terminal::initialize_agent_hook_runtime(
+                app.handle().clone(),
+                agent_terminals.clone(),
+                terminal_worktrees.clone(),
+            );
+
+            app.manage(AppState {
+                terminals: terminals.clone(),
+                agent_terminals: agent_terminals.clone(),
+                terminal_worktrees: terminal_worktrees.clone(),
+                agent_hook_runtime: hook_runtime,
+            });
+
             #[cfg(target_os = "macos")]
             {
                 let window = app.get_webview_window("main").unwrap();
@@ -93,7 +118,6 @@ pub fn run() {
             }
             Ok(())
         })
-        .manage(AppState::default())
         .manage(watcher::WatcherState::default())
         .invoke_handler(tauri::generate_handler![
             git::discover_repository,

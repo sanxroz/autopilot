@@ -1,12 +1,12 @@
 import { memo } from "react";
-import { GitBranch, Trash2 } from "lucide-react";
-import type { ProcessStatus, DiffStats } from "../types";
+import { CircleAlert, CircleCheck, GitBranch, Loader, Trash2 } from "lucide-react";
+import type { ProcessStatus, DiffStats, AgentRunState } from "../types";
 import type { PRStatus } from "../types/github";
 import { cn } from "../utils/cn";
 
 const PROCESS_STATUS_LABELS: Record<ProcessStatus, string> = {
   dev_server: "Dev server running",
-  agent_running: "AI agent running",
+  agent_running: "",
   none: "",
 };
 
@@ -21,6 +21,12 @@ function getProcessStatusColor(status: ProcessStatus): string | null {
 }
 
 type StatusInfo = { label: string; colorClass: string } | null;
+type AgentStatusDisplay = {
+  label: string;
+  colorClass: string;
+  icon: 'spinner' | 'ready' | 'completed' | 'error';
+  title?: string;
+};
 
 function getStatusInfo(prStatus: PRStatus | null): StatusInfo {
   if (!prStatus) return null;
@@ -62,9 +68,54 @@ interface WorktreeItemProps {
   diffStats: DiffStats | undefined;
   prStatus: PRStatus | null;
   processStatus: ProcessStatus;
+  agentRunState?: AgentRunState;
   isActive: boolean;
   onSelect: () => void;
   onDelete: (e: React.MouseEvent) => void;
+}
+
+function getAgentStatusDisplay(agentRunState: AgentRunState | undefined): AgentStatusDisplay | null {
+  if (!agentRunState) return null;
+
+  if (agentRunState.status === 'completed' && agentRunState.endedAt) {
+    if (Date.now() - agentRunState.endedAt > 5000) {
+      return null;
+    }
+  }
+
+  switch (agentRunState.status) {
+    case 'starting':
+    case 'running':
+      return {
+        label: 'Agent running',
+        colorClass: 'text-semantic-warning',
+        icon: 'spinner',
+        title: agentRunState.label,
+      };
+    case 'waiting_input':
+      return {
+        label: 'Waiting for input',
+        colorClass: 'text-semantic-success',
+        icon: 'ready',
+        title: agentRunState.label,
+      };
+    case 'completed':
+      return {
+        label: 'Agent finished',
+        colorClass: 'text-semantic-success',
+        icon: 'completed',
+        title: agentRunState.label,
+      };
+    case 'error':
+      return {
+        label: 'Agent error',
+        colorClass: 'text-semantic-error',
+        icon: 'error',
+        title: agentRunState.error ?? agentRunState.label,
+      };
+    default:
+      return null;
+  }
 }
 
 function formatTimeAgo(dateStr: string | null | undefined): string {
@@ -90,6 +141,7 @@ export const WorktreeItem = memo(function WorktreeItem({
   diffStats,
   prStatus,
   processStatus,
+  agentRunState,
   isActive,
   onSelect,
   onDelete,
@@ -100,6 +152,11 @@ export const WorktreeItem = memo(function WorktreeItem({
   const statusInfo = getStatusInfo(prStatus);
   const processStatusColorClass = getProcessStatusColor(processStatus);
   const processStatusLabel = PROCESS_STATUS_LABELS[processStatus];
+  const agentStatus = getAgentStatusDisplay(agentRunState);
+
+  const fallbackProcessLabel = processStatusLabel || null;
+  const secondaryStatusLabel = fallbackProcessLabel;
+  const secondaryStatusClass = processStatus === 'agent_running' ? 'text-semantic-warning' : 'text-secondary';
 
   return (
     <div
@@ -124,12 +181,19 @@ export const WorktreeItem = memo(function WorktreeItem({
           <div className="flex items-center justify-center flex-shrink-0">
             <GitBranch className={cn("w-3.5 h-3.5", statusInfo?.colorClass || "text-tertiary")} />
           </div>
-          {processStatusColorClass && (
+          {agentStatus ? (
+            <div className={cn("flex-shrink-0", agentStatus.colorClass)} title={agentStatus.title || agentStatus.label}>
+              {agentStatus.icon === 'spinner' && <Loader className="w-3 h-3 animate-spin" />}
+              {agentStatus.icon === 'ready' && <div className="w-2 h-2 rounded-full bg-semantic-success" />}
+              {agentStatus.icon === 'completed' && <CircleCheck className="w-3 h-3" />}
+              {agentStatus.icon === 'error' && <CircleAlert className="w-3 h-3" />}
+            </div>
+          ) : processStatusColorClass ? (
             <div
               className={cn("w-2 h-2 rounded-full flex-shrink-0", processStatusColorClass)}
               title={processStatusLabel}
             />
-          )}
+          ) : null}
           <div className="truncate min-w-0 font-medium text-sm flex-1 text-primary">
             {branch || name}
           </div>
@@ -171,6 +235,14 @@ export const WorktreeItem = memo(function WorktreeItem({
               <span className={statusInfo?.colorClass}>{statusInfo?.label}</span>
               <span className="font-mono text-xs font-bold">·</span>
               <span>PR #{prStatus.number}</span>
+              <span className="font-mono text-xs font-bold">·</span>
+            </>
+          )}
+          {secondaryStatusLabel && (
+            <>
+              <span className={cn('truncate', secondaryStatusClass)} title={agentStatus?.title || secondaryStatusLabel}>
+                {secondaryStatusLabel}
+              </span>
               <span className="font-mono text-xs font-bold">·</span>
             </>
           )}
