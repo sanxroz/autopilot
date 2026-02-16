@@ -1,6 +1,8 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
+import { SearchAddon } from "@xterm/addon-search";
+import type { ISearchOptions } from "@xterm/addon-search";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import "@xterm/xterm/css/xterm.css";
@@ -15,13 +17,40 @@ interface Props {
   onFocus: () => void;
 }
 
-export function Terminal({ terminalId, isActive, isVisible, onFocus }: Props) {
+export interface TerminalHandle {
+  findNext: (query: string, opts?: ISearchOptions) => boolean;
+  findPrevious: (query: string, opts?: ISearchOptions) => boolean;
+  clearSearch: () => void;
+  onDidChangeResults: (cb: (e: { resultIndex: number; resultCount: number }) => void) => { dispose: () => void } | undefined;
+  focus: () => void;
+}
+
+export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ terminalId, isActive, isVisible, onFocus }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const searchAddonRef = useRef<SearchAddon | null>(null);
   const prevVisibleRef = useRef(isVisible);
   const isVisibleRef = useRef(isVisible);
   const theme = useTheme();
+
+  useImperativeHandle(ref, () => ({
+    findNext: (query: string, opts?: ISearchOptions) => {
+      return searchAddonRef.current?.findNext(query, opts) ?? false;
+    },
+    findPrevious: (query: string, opts?: ISearchOptions) => {
+      return searchAddonRef.current?.findPrevious(query, opts) ?? false;
+    },
+    clearSearch: () => {
+      searchAddonRef.current?.clearDecorations();
+    },
+    onDidChangeResults: (cb: (e: { resultIndex: number; resultCount: number }) => void) => {
+      return searchAddonRef.current?.onDidChangeResults(cb);
+    },
+    focus: () => {
+      terminalRef.current?.focus();
+    },
+  }));
 
   // Keep ref in sync with prop to avoid stale closure in resize observer
   isVisibleRef.current = isVisible;
@@ -51,7 +80,10 @@ export function Terminal({ terminalId, isActive, isVisible, onFocus }: Props) {
       cursorBlink: true,
       fontSize: 13,
       fontFamily: '"SF Mono", ui-monospace, Menlo, Monaco, "Courier New", monospace',
+      scrollback: 10000,
       allowTransparency: true,
+      // Required for SearchAddon decorations — registerDecoration is experimental in xterm v6
+      allowProposedApi: true,
       theme: {
         background: theme.terminal.background,
         foreground: theme.terminal.foreground,
@@ -79,10 +111,15 @@ export function Terminal({ terminalId, isActive, isVisible, onFocus }: Props) {
 
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
+
+    const searchAddon = new SearchAddon();
+    term.loadAddon(searchAddon);
+
     term.open(containerRef.current);
 
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
+    searchAddonRef.current = searchAddon;
 
     setTimeout(fit, 50);
 
@@ -233,4 +270,4 @@ export function Terminal({ terminalId, isActive, isVisible, onFocus }: Props) {
       )}
     </div>
   );
-}
+});
