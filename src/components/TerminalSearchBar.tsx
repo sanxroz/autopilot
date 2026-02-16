@@ -50,14 +50,14 @@ export function TerminalSearchBar({
 
   const getSearchDecorations = useCallback(() => {
     return {
-      matchBackground: "#785000",
-      matchBorder: "#F59E0B",
-      matchOverviewRuler: "#F59E0B",
-      activeMatchBackground: "#F59E0B",
-      activeMatchBorder: "#FBBF24",
-      activeMatchColorOverviewRuler: "#FBBF24",
+      matchBackground: theme.search.matchBackground,
+      matchBorder: theme.search.matchBorder,
+      matchOverviewRuler: theme.search.matchOverviewRuler,
+      activeMatchBackground: theme.search.activeMatchBackground,
+      activeMatchBorder: theme.search.activeMatchBorder,
+      activeMatchColorOverviewRuler: theme.search.activeMatchColorOverviewRuler,
     };
-  }, []);
+  }, [theme]);
 
   const getSearchOptions = useCallback(
     (incremental = false): ISearchOptions => ({

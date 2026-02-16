@@ -80,8 +80,9 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       cursorBlink: true,
       fontSize: 13,
       fontFamily: '"SF Mono", ui-monospace, Menlo, Monaco, "Courier New", monospace',
-      scrollback: 50000,
+      scrollback: 10000,
       allowTransparency: true,
+      // Required for SearchAddon decorations — registerDecoration is experimental in xterm v6
       allowProposedApi: true,
       theme: {
         background: theme.terminal.background,
