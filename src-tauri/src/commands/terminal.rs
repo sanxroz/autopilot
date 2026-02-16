@@ -865,6 +865,7 @@ pub fn spawn_terminal(
     let tid = terminal_id.clone();
     let app_clone = app.clone();
     let state_terminals = state.terminals.clone();
+    let state_agent_terminals = state.agent_terminals.clone();
     let state_terminal_worktrees = state.terminal_worktrees.clone();
 
     let event_name = format!("terminal-output-{}", terminal_id);
@@ -886,6 +887,7 @@ pub fn spawn_terminal(
         }
 
         state_terminals.lock().remove(&tid);
+        state_agent_terminals.lock().remove(&tid);
         state_terminal_worktrees.lock().remove(&tid);
         let _ = app_clone.emit(&close_event_name, ());
     });
@@ -956,6 +958,7 @@ pub fn close_terminal(state: State<'_, AppState>, terminal_id: String) -> Result
     if let Some(info) = state.agent_terminals.lock().remove(&terminal_id) {
         info.is_alive.store(false, Ordering::Relaxed);
     }
+    state.terminal_worktrees.lock().remove(&terminal_id);
 
     let mut terminals = state.terminals.lock();
     if let Some(session) = terminals.remove(&terminal_id) {
