@@ -1,10 +1,12 @@
-import { useEffect, useState, useMemo, useCallback, useRef } from "react";
+import { Component, useEffect, useState, useMemo, useCallback, useRef } from "react";
+import type { ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { codeToTokens, type BundledLanguage } from "shiki";
-import { X, Loader, Eye, Code2, ChevronsRight, ChevronsLeft } from "lucide-react";
+import { X, Loader, Eye, Code2, ChevronsRight, ChevronsLeft, AlertTriangle } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import { useThemeMode } from "../hooks/useTheme";
 import { useAppStore } from "../store";
 import { cn } from "../utils/cn";
@@ -172,6 +174,60 @@ function getFileName(path: string): string {
 function isMarkdownFile(filePath: string): boolean {
   const lower = filePath.toLowerCase();
   return lower.endsWith(".md") || lower.endsWith(".mdx");
+}
+
+const markdownSanitizeSchema = {
+  ...defaultSchema,
+  attributes: {
+    ...defaultSchema.attributes,
+    input: [...(defaultSchema.attributes?.input || []), "checked", "disabled", "type"],
+    img: [...(defaultSchema.attributes?.img || []), "src", "alt"],
+    a: [...(defaultSchema.attributes?.a || []), "href", "target", "rel"],
+    code: [...(defaultSchema.attributes?.code || []), "className"],
+  },
+};
+
+interface MarkdownErrorBoundaryProps {
+  children: ReactNode;
+  rawContent: string;
+}
+
+interface MarkdownErrorBoundaryState {
+  hasError: boolean;
+}
+
+class MarkdownErrorBoundary extends Component<
+  MarkdownErrorBoundaryProps,
+  MarkdownErrorBoundaryState
+> {
+  constructor(props: MarkdownErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(): MarkdownErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="space-y-3">
+          <div
+            className="flex items-center gap-2 p-3 text-sm rounded-md"
+            style={{ color: "#fbbf24", background: "rgba(251, 191, 36, 0.1)" }}
+          >
+            <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+            <span>Failed to render markdown preview. Showing raw content instead.</span>
+          </div>
+          <pre className="font-mono text-[13px] text-secondary whitespace-pre-wrap p-4 overflow-auto">
+            {this.props.rawContent}
+          </pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 const markdownComponents = {
@@ -455,12 +511,13 @@ export function GitFileDiffOverlay() {
   }, [fileLines]);
 
   useEffect(() => {
+    if (viewMode === "preview") return;
     if (firstEditIndex >= 0 && scrollContainerRef.current && !hasScrolledRef.current && !isLoading) {
       hasScrolledRef.current = true;
       const scrollTop = Math.max(0, (firstEditIndex - 3) * LINE_HEIGHT);
       scrollContainerRef.current.scrollTop = scrollTop;
     }
-  }, [firstEditIndex, isLoading]);
+  }, [firstEditIndex, isLoading, viewMode]);
 
   const editIndicators = useMemo(() => {
     if (fileLines.length === 0) return [];
@@ -599,7 +656,8 @@ export function GitFileDiffOverlay() {
             <div className="px-4 py-12 text-center text-sm text-semantic-error">
               {error}
             </div>
-          ) : viewMode === "preview" && isMd && diffData?.new_content ? (
+          ) : viewMode === "preview" && isMd && diffData?.new_content !== undefined ? (
+            <MarkdownErrorBoundary rawContent={diffData.new_content ?? ""}>
             <article
               className="mx-auto"
               style={{
@@ -613,12 +671,13 @@ export function GitFileDiffOverlay() {
             >
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeRaw]}
+                rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema]]}
                 components={markdownComponents}
               >
                 {diffData.new_content}
               </ReactMarkdown>
             </article>
+            </MarkdownErrorBoundary>
           ) : fileLines.length > 0 ? (
             <div className="font-mono text-[13px]" style={{ lineHeight: `${LINE_HEIGHT}px` }}>
               {fileLines.map((line) => {
