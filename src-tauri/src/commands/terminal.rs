@@ -197,9 +197,10 @@ fn percent_decode(input: &str) -> String {
 fn parse_query_param(url: &str, key: &str) -> Option<String> {
     let (_, query) = url.split_once('?')?;
     for part in query.split('&') {
-        let (k, v) = part.split_once('=')?;
-        if k == key {
-            return Some(percent_decode(v));
+        if let Some((k, v)) = part.split_once('=') {
+            if k == key {
+                return Some(percent_decode(v));
+            }
         }
     }
     None
@@ -442,6 +443,9 @@ fn install_hooks_to_claude_global_settings(notify_script_path: &str) {
         }
         json!({})
     };
+    if !settings.is_object() {
+        settings = json!({});
+    }
 
     let hook_entry = json!([{
         "hooks": [{
@@ -554,6 +558,9 @@ fn install_hooks_to_amp_global_settings(delegate_path: &str) {
         }
         json!({})
     };
+    if !settings.is_object() {
+        settings = json!({});
+    }
 
     let permissions = settings
         .as_object_mut()
@@ -636,6 +643,9 @@ fn install_hooks_to_droid_global_settings(notify_script_path: &str) {
         }
         json!({})
     };
+    if !settings.is_object() {
+        settings = json!({});
+    }
 
     let hook_entry = json!([{
         "hooks": [{
