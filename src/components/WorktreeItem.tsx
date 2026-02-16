@@ -1,12 +1,12 @@
 import { memo } from "react";
-import { CircleAlert, CircleCheck, GitBranch, Loader2, Trash2 } from "lucide-react";
+import { CircleAlert, CircleCheck, GitBranch, Loader, Trash2 } from "lucide-react";
 import type { ProcessStatus, DiffStats, AgentRunState } from "../types";
 import type { PRStatus } from "../types/github";
 import { cn } from "../utils/cn";
 
 const PROCESS_STATUS_LABELS: Record<ProcessStatus, string> = {
   dev_server: "Dev server running",
-  agent_running: "Agent active",
+  agent_running: "",
   none: "",
 };
 
@@ -155,8 +155,8 @@ export const WorktreeItem = memo(function WorktreeItem({
   const agentStatus = getAgentStatusDisplay(agentRunState);
 
   const fallbackProcessLabel = processStatusLabel || null;
-  const secondaryStatusLabel = agentStatus?.label ?? fallbackProcessLabel;
-  const secondaryStatusClass = agentStatus?.colorClass ?? (processStatus === 'agent_running' ? 'text-semantic-warning' : 'text-secondary');
+  const secondaryStatusLabel = fallbackProcessLabel;
+  const secondaryStatusClass = processStatus === 'agent_running' ? 'text-semantic-warning' : 'text-secondary';
 
   return (
     <div
@@ -183,7 +183,7 @@ export const WorktreeItem = memo(function WorktreeItem({
           </div>
           {agentStatus ? (
             <div className={cn("flex-shrink-0", agentStatus.colorClass)} title={agentStatus.title || agentStatus.label}>
-              {agentStatus.icon === 'spinner' && <Loader2 className="w-3 h-3 animate-spin" />}
+              {agentStatus.icon === 'spinner' && <Loader className="w-3 h-3 animate-spin" />}
               {agentStatus.icon === 'ready' && <div className="w-2 h-2 rounded-full bg-semantic-success" />}
               {agentStatus.icon === 'completed' && <CircleCheck className="w-3 h-3" />}
               {agentStatus.icon === 'error' && <CircleAlert className="w-3 h-3" />}

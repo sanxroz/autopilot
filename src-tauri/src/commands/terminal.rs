@@ -209,9 +209,10 @@ fn write_hook_file(path: &Path, contents: &str) -> Result<(), String> {
     fs::write(path, contents).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-fn setup_hook_files(hooks_dir: &Path) -> (Option<String>, Option<String>) {
+fn setup_hook_files(hooks_dir: &Path) -> (Option<String>, Option<String>, Option<String>) {
     let notify_path = hooks_dir.join("notify.sh");
     let claude_settings_path = hooks_dir.join("claude-settings.json");
+    let amp_delegate_path = hooks_dir.join("amp-delegate.sh");
 
     let notify_script = r#"#!/bin/bash
 # Autopilot agent notification hook
@@ -239,6 +240,28 @@ curl -sG "http://127.0.0.1:${AUTOPILOT_HOOK_PORT}/hook/complete" \
 exit 0
 "#;
 
+    // AMP permission delegate: always allows (exit 0), notifies lifecycle
+    // server as a side-effect.  AMP hooks (tool:pre-execute/post-execute)
+    // cannot run external commands, so we piggyback on the permission
+    // delegation mechanism instead.  The delegate is registered for a set
+    // of safe, always-allowed tools (Read, Grep, edit_file, …) so it does
+    // not weaken AMP's built-in security rules.
+    let amp_delegate_script = r#"#!/bin/bash
+# Autopilot AMP permission delegate — always allows, notifies lifecycle server
+# Stdin: tool parameters (JSON) — consumed to prevent broken pipe
+# Exit 0 = allow
+cat > /dev/null 2>&1
+[ -z "$AUTOPILOT_TERMINAL_ID" ] && exit 0
+[ -z "$AUTOPILOT_HOOK_PORT" ] && exit 0
+
+curl -sG "http://127.0.0.1:${AUTOPILOT_HOOK_PORT}/hook/complete" \
+  --connect-timeout 1 --max-time 2 \
+  --data-urlencode "terminalId=$AUTOPILOT_TERMINAL_ID" \
+  --data-urlencode "eventType=Start" \
+  > /dev/null 2>&1 &
+exit 0
+"#;
+
     let mut notify_script_path = None;
     if let Err(e) = write_hook_file(&notify_path, notify_script) {
         eprintln!("[autopilot] warning: failed to write notify hook script ({e})");
@@ -256,6 +279,27 @@ exit 0
         }
 
         notify_script_path = Some(notify_path.to_string_lossy().to_string());
+    }
+
+    let mut amp_delegate = None;
+    if let Err(e) = write_hook_file(&amp_delegate_path, amp_delegate_script) {
+        eprintln!("[autopilot] warning: failed to write amp delegate script ({e})");
+    } else {
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            if let Err(e) =
+                fs::set_permissions(&amp_delegate_path, fs::Permissions::from_mode(0o755))
+            {
+                eprintln!(
+                    "[autopilot] warning: failed to set amp delegate script permissions ({}: {e})",
+                    amp_delegate_path.display()
+                );
+            }
+        }
+
+        amp_delegate = Some(amp_delegate_path.to_string_lossy().to_string());
     }
 
     let mut claude_settings = None;
@@ -282,7 +326,7 @@ exit 0
         }
     }
 
-    (notify_script_path, claude_settings)
+    (notify_script_path, claude_settings, amp_delegate)
 }
 
 fn map_hook_event(event_type: &str) -> Option<(&'static str, bool)> {
@@ -480,6 +524,89 @@ fn install_hooks_to_claude_global_settings(notify_script_path: &str) {
     }
 }
 
+fn install_hooks_to_amp_global_settings(delegate_path: &str) {
+    let Some(home_dir) = dirs::home_dir() else {
+        return;
+    };
+    let config_dir = home_dir.join(".config").join("amp");
+    let settings_path = config_dir.join("settings.json");
+
+    let mut settings: serde_json::Value = if settings_path.exists() {
+        match fs::read_to_string(&settings_path) {
+            Ok(contents) => serde_json::from_str(&contents).unwrap_or_else(|_| json!({})),
+            Err(_) => json!({}),
+        }
+    } else {
+        if let Err(e) = fs::create_dir_all(&config_dir) {
+            eprintln!("[autopilot] warning: failed to create ~/.config/amp directory ({e})");
+            return;
+        }
+        json!({})
+    };
+
+    let permissions = settings
+        .as_object_mut()
+        .unwrap()
+        .entry("amp.permissions")
+        .or_insert_with(|| json!([]));
+
+    let arr = match permissions.as_array_mut() {
+        Some(a) => a,
+        None => {
+            *permissions = json!([]);
+            permissions.as_array_mut().unwrap()
+        }
+    };
+
+    let already_installed = arr.iter().any(|entry| {
+        entry
+            .get("to")
+            .and_then(|v| v.as_str())
+            .map_or(false, |to| to == delegate_path)
+    });
+
+    if already_installed {
+        return;
+    }
+
+    let delegate_tools = [
+        "Read",
+        "Grep",
+        "glob",
+        "finder",
+        "edit_file",
+        "create_file",
+        "undo_edit",
+        "Task",
+    ];
+    for tool in &delegate_tools {
+        arr.push(json!({
+            "tool": tool,
+            "action": "delegate",
+            "to": delegate_path
+        }));
+    }
+
+    match serde_json::to_string_pretty(&settings) {
+        Ok(contents) => {
+            if let Err(e) = fs::write(&settings_path, contents) {
+                eprintln!(
+                    "[autopilot] warning: failed to write amp settings ({}: {e})",
+                    settings_path.display()
+                );
+            } else {
+                eprintln!(
+                    "[autopilot] installed hooks into {}",
+                    settings_path.display()
+                );
+            }
+        }
+        Err(e) => {
+            eprintln!("[autopilot] warning: failed to serialize amp settings ({e})");
+        }
+    }
+}
+
 fn install_hooks_to_droid_global_settings(notify_script_path: &str) {
     let Some(home_dir) = dirs::home_dir() else {
         return;
@@ -619,13 +746,16 @@ pub fn initialize_agent_hook_runtime(
                 hooks_dir.display()
             );
         } else {
-            let (notify, claude) = setup_hook_files(&hooks_dir);
+            let (notify, claude, amp_delegate) = setup_hook_files(&hooks_dir);
             notify_script_path = notify.clone();
             claude_settings_path = claude;
 
             if let Some(ref notify_path) = notify {
                 install_hooks_to_claude_global_settings(notify_path);
                 install_hooks_to_droid_global_settings(notify_path);
+            }
+            if let Some(ref delegate_path) = amp_delegate {
+                install_hooks_to_amp_global_settings(delegate_path);
             }
         }
     } else {
@@ -923,6 +1053,12 @@ pub fn spawn_terminal_with_command(
                     opencode_dir.display()
                 );
             }
+        } else if agent == "amp" {
+            // AMP uses permission delegation installed in ~/.config/amp/settings.json.
+            // The delegate fires "Start" events on tool calls, giving us "running" signals.
+            // We keep hooks_injected=false so the inactivity watchdog stays active for
+            // "waiting_input" detection — AMP's hook system cannot send lifecycle events.
+            eprintln!("[autopilot] amp lifecycle via permission delegate + watchdog");
         } else {
             eprintln!("[autopilot] agent={agent} has no hook support, using watchdog fallback");
         }
