@@ -92,6 +92,13 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+fn emit_terminal_output(app: &AppHandle, event_name: &str, data: String) {
+    if data.is_empty() {
+        return;
+    }
+    let _ = app.emit(event_name, data);
+}
+
 fn detect_agent_from_command(command: &str) -> Option<&'static str> {
     let lower = command.trim().to_lowercase();
     if lower.is_empty() {
@@ -879,8 +886,11 @@ pub fn spawn_terminal(
             match reader.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                    let _ = app_clone.emit(&event_name, data);
+                    emit_terminal_output(
+                        &app_clone,
+                        &event_name,
+                        String::from_utf8_lossy(&buf[..n]).to_string(),
+                    );
                 }
                 Err(_) => break,
             }
@@ -1311,7 +1321,7 @@ pub fn spawn_terminal_with_command(
                         }
                     }
 
-                    let _ = app_clone.emit(&event_name, data);
+                    emit_terminal_output(&app_clone, &event_name, data);
                 }
                 Err(e) => {
                     if let Some(agent) = agent_for_events.as_deref() {

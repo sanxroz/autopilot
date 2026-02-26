@@ -114,6 +114,7 @@ export function TerminalGrid() {
         const isCurrentWorktree = selectedWorktree?.path === worktreePath;
         const worktreeTerminals = worktreeData.terminals;
 
+        if (!isCurrentWorktree) return null;
         if (worktreeTerminals.length === 0) return null;
 
         const terminalCount = worktreeTerminals.length;
@@ -127,8 +128,8 @@ export function TerminalGrid() {
             style={{
               gridTemplateColumns: `repeat(${cols}, 1fr)`,
               gridTemplateRows: `repeat(${rows}, 1fr)`,
-              visibility: isCurrentWorktree ? "visible" : "hidden",
-              zIndex: isCurrentWorktree ? 1 : 0,
+              visibility: "visible",
+              zIndex: 1,
             }}
           >
             {worktreeTerminals.map((terminal, index) => (
