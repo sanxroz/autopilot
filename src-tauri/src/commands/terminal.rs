@@ -92,6 +92,71 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+fn emit_terminal_output(app: &AppHandle, event_name: &str, data: String) {
+    if data.is_empty() {
+        return;
+    }
+    let _ = app.emit(event_name, data);
+}
+
+struct Utf8StreamDecoder {
+    pending: Vec<u8>,
+}
+
+impl Utf8StreamDecoder {
+    fn new() -> Self {
+        Self {
+            pending: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, bytes: &[u8]) -> String {
+        self.pending.extend_from_slice(bytes);
+        let mut out = String::new();
+
+        loop {
+            match std::str::from_utf8(&self.pending) {
+                Ok(valid) => {
+                    out.push_str(valid);
+                    self.pending.clear();
+                    break;
+                }
+                Err(err) => {
+                    let valid_up_to = err.valid_up_to();
+                    if valid_up_to > 0 {
+                        if let Ok(valid) = std::str::from_utf8(&self.pending[..valid_up_to]) {
+                            out.push_str(valid);
+                        }
+                        self.pending.drain(..valid_up_to);
+                        continue;
+                    }
+
+                    match err.error_len() {
+                        None => break,
+                        Some(invalid_len) => {
+                            let replacement = String::from_utf8_lossy(&self.pending[..invalid_len]);
+                            out.push_str(&replacement);
+                            self.pending.drain(..invalid_len);
+                        }
+                    }
+                }
+            }
+        }
+
+        out
+    }
+
+    fn flush(&mut self) -> String {
+        if self.pending.is_empty() {
+            return String::new();
+        }
+
+        let out = String::from_utf8_lossy(&self.pending).to_string();
+        self.pending.clear();
+        out
+    }
+}
+
 fn detect_agent_from_command(command: &str) -> Option<&'static str> {
     let lower = command.trim().to_lowercase();
     if lower.is_empty() {
@@ -874,15 +939,24 @@ pub fn spawn_terminal(
     thread::spawn(move || {
         let mut reader = reader;
         let mut buf = [0u8; 4096];
+        let mut utf8_decoder = Utf8StreamDecoder::new();
 
         loop {
             match reader.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                    let _ = app_clone.emit(&event_name, data);
+                Ok(0) => {
+                    let flushed = utf8_decoder.flush();
+                    emit_terminal_output(&app_clone, &event_name, flushed);
+                    break;
                 }
-                Err(_) => break,
+                Ok(n) => {
+                    let decoded = utf8_decoder.push(&buf[..n]);
+                    emit_terminal_output(&app_clone, &event_name, decoded);
+                }
+                Err(_) => {
+                    let flushed = utf8_decoder.flush();
+                    emit_terminal_output(&app_clone, &event_name, flushed);
+                    break;
+                }
             }
         }
 
@@ -1244,14 +1318,23 @@ pub fn spawn_terminal_with_command(
     thread::spawn(move || {
         let mut reader = reader;
         let mut buf = [0u8; 4096];
+        let mut utf8_decoder = Utf8StreamDecoder::new();
         let mut has_emitted_initial = false;
         let mut has_emitted_error = false;
 
         loop {
             match reader.read(&mut buf) {
-                Ok(0) => break,
+                Ok(0) => {
+                    let flushed = utf8_decoder.flush();
+                    emit_terminal_output(&app_clone, &event_name, flushed);
+                    break;
+                }
                 Ok(n) => {
-                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let data = utf8_decoder.push(&buf[..n]);
+
+                    if data.is_empty() {
+                        continue;
+                    }
 
                     if let Some(agent) = agent_for_events.as_deref() {
                         let now = now_ms();
@@ -1338,9 +1421,11 @@ pub fn spawn_terminal_with_command(
                         }
                     }
 
-                    let _ = app_clone.emit(&event_name, data);
+                    emit_terminal_output(&app_clone, &event_name, data);
                 }
                 Err(e) => {
+                    let flushed = utf8_decoder.flush();
+                    emit_terminal_output(&app_clone, &event_name, flushed);
                     if let Some(agent) = agent_for_events.as_deref() {
                         emit_agent_status(
                             &app_clone,
