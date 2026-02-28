@@ -204,13 +204,14 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     if (!wasHidden || !isNowVisible) return;
     if (!terminalRef.current) return;
 
-    requestAnimationFrame(() => {
+    const frameId = requestAnimationFrame(() => {
+      if (!terminalRef.current) return;
       fit();
-      if (terminalRef.current) {
-        terminalRef.current.refresh(0, terminalRef.current.rows - 1);
-        terminalRef.current.scrollToBottom();
-      }
+      terminalRef.current.refresh(0, terminalRef.current.rows - 1);
+      terminalRef.current.scrollToBottom();
     });
+
+    return () => cancelAnimationFrame(frameId);
   }, [isVisible, fit]);
 
   useEffect(() => {
