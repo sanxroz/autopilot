@@ -953,15 +953,14 @@ pub fn resize_terminal(
     Ok(())
 }
 
-#[tauri::command]
-pub fn close_terminal(state: State<'_, AppState>, terminal_id: String) -> Result<(), String> {
-    if let Some(info) = state.agent_terminals.lock().remove(&terminal_id) {
+fn close_terminal_inner(state: &AppState, terminal_id: &str) -> Result<(), String> {
+    if let Some(info) = state.agent_terminals.lock().remove(terminal_id) {
         info.is_alive.store(false, Ordering::Relaxed);
     }
-    state.terminal_worktrees.lock().remove(&terminal_id);
+    state.terminal_worktrees.lock().remove(terminal_id);
 
     let mut terminals = state.terminals.lock();
-    if let Some(session) = terminals.remove(&terminal_id) {
+    if let Some(session) = terminals.remove(terminal_id) {
         if let Some(pid) = session.child.process_id() {
             #[cfg(unix)]
             {
@@ -980,6 +979,34 @@ pub fn close_terminal(state: State<'_, AppState>, terminal_id: String) -> Result
         }
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn close_terminal(state: State<'_, AppState>, terminal_id: String) -> Result<(), String> {
+    close_terminal_inner(&state, &terminal_id)
+}
+
+#[tauri::command]
+pub fn close_terminals_for_worktree(
+    state: State<'_, AppState>,
+    worktree_path: String,
+) -> Result<usize, String> {
+    let terminal_ids: Vec<String> = {
+        let map = state.terminal_worktrees.lock();
+        map.iter()
+            .filter(|(_, path)| *path == &worktree_path)
+            .map(|(id, _)| id.clone())
+            .collect()
+    };
+
+    let mut closed = 0;
+    for terminal_id in terminal_ids {
+        if close_terminal_inner(&state, &terminal_id).is_ok() {
+            closed += 1;
+        }
+    }
+
+    Ok(closed)
 }
 
 /// Spawns a terminal that runs a specific command instead of a shell.
