@@ -160,6 +160,7 @@ pub fn run() {
             terminal::write_to_terminal,
             terminal::resize_terminal,
             terminal::close_terminal,
+            terminal::close_terminals_for_worktree,
             watcher::start_watching_repository,
             watcher::stop_watching_repository,
             watcher::stop_all_watchers,

@@ -633,6 +633,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   deleteWorktree: async (repoPath: string, worktreeName: string) => {
     try {
+      const worktreePath = get()
+        .repositories
+        .find((repo) => repo.info.path === repoPath)
+        ?.worktrees.find((wt) => wt.name === worktreeName)?.path;
+
+      if (worktreePath) {
+        try {
+          await invoke<number>('close_terminals_for_worktree', { worktreePath });
+        } catch (e) {
+          console.error('Failed to close terminals for worktree:', e);
+        }
+      }
+
       await invoke('delete_worktree', { repoPath, worktreeName, force: true });
       await get().refreshWorktrees(repoPath);
     } catch (e) {
