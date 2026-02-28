@@ -1,0 +1,38 @@
+src/components/Terminal.tsx
+  727877df0baeceba 207-208,211,213-214
+src/components/TerminalGrid.tsx
+  e5903e6b1f2c987c 130-131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.6",
+  "base_commit_sha": "a185a78484a403e454dc35b5595cc92112fcf06b",
+  "prompts": {
+    "727877df0baeceba": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "opencode-transcript-ses_35ba5ba31ffeOArHP0cYvXdqoR-d9823b6b-fee3-410a-aa7a-b5167df1cdd1",
+        "model": "unknown"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>",
+      "messages": [],
+      "total_additions": 6,
+      "total_deletions": 5,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    },
+    "e5903e6b1f2c987c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "opencode-transcript-ses_35ba5ba31ffeOArHP0cYvXdqoR-bf03f5d2-377f-450c-94ab-371c516aae2b",
+        "model": "unknown"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 3,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    }
+  }
+}
