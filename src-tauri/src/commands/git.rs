@@ -52,6 +52,28 @@ pub struct FileDiffData {
     pub patch: String,
 }
 
+fn build_synthetic_new_file_patch(file_path: &str, content: &str) -> String {
+    let normalized_path = file_path.replace('\\', "/");
+    let lines: Vec<&str> = content.lines().collect();
+    let line_count = lines.len();
+
+    let mut patch = format!(
+        "diff --git a/{0} b/{0}\nnew file mode 100644\n--- /dev/null\n+++ b/{0}\n",
+        normalized_path
+    );
+
+    if line_count > 0 {
+        patch.push_str(&format!("@@ -0,0 +1,{} @@\n", line_count));
+        for line in lines {
+            patch.push('+');
+            patch.push_str(line);
+            patch.push('\n');
+        }
+    }
+
+    patch
+}
+
 fn get_last_modified(path: &std::path::Path) -> Option<String> {
     std::fs::metadata(path)
         .and_then(|m| m.modified())
@@ -619,6 +641,17 @@ pub async fn get_file_diff(worktree_path: String, file_path: String) -> Result<F
             }
             true
         }).map_err(|e| e.message().to_string())?;
+
+        let is_new_file = old_content.is_none();
+        let patch = if patch.is_empty() && is_new_file {
+            if let Some(ref content) = new_content {
+                build_synthetic_new_file_patch(&file_path, content)
+            } else {
+                patch
+            }
+        } else {
+            patch
+        };
         
         Ok::<FileDiffData, String>(FileDiffData {
             path: file_path,
@@ -700,7 +733,11 @@ pub async fn get_uncommitted_files(worktree_path: String) -> Result<Vec<ChangedF
 }
 
 #[tauri::command]
-pub async fn get_uncommitted_diff(worktree_path: String, file_path: String, is_staged: bool) -> Result<FileDiffData, String> {
+pub async fn get_uncommitted_diff(
+    worktree_path: String,
+    file_path: String,
+    is_staged: Option<bool>,
+) -> Result<FileDiffData, String> {
     tokio::task::spawn_blocking(move || {
         let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
         
@@ -728,24 +765,44 @@ pub async fn get_uncommitted_diff(worktree_path: String, file_path: String, is_s
         
         let workdir_content = std::fs::read_to_string(&full_path).ok();
         
-        let (old_content, new_content) = if is_staged {
-            (head_content, index_content.clone().or_else(|| workdir_content.clone()))
-        } else {
-            (index_content.or(head_content), workdir_content)
-        };
-        
-        let is_new_file = old_content.is_none();
-        
-        let mut diff_opts = DiffOptions::new();
-        diff_opts.pathspec(&file_path);
-        diff_opts.include_untracked(true);
-        
-        let diff = if is_staged {
-            repo.diff_tree_to_index(Some(&head_tree), Some(&index), Some(&mut diff_opts))
-                .map_err(|e| e.message().to_string())?
-        } else {
-            repo.diff_index_to_workdir(Some(&index), Some(&mut diff_opts))
-                .map_err(|e| e.message().to_string())?
+        let (old_content, new_content, diff, is_new_file) = match is_staged {
+            Some(true) => {
+                let old_content = head_content;
+                let new_content = index_content.clone().or_else(|| workdir_content.clone());
+                let mut diff_opts = DiffOptions::new();
+                diff_opts.pathspec(&file_path);
+                diff_opts.include_untracked(true);
+                let diff = repo
+                    .diff_tree_to_index(Some(&head_tree), Some(&index), Some(&mut diff_opts))
+                    .map_err(|e| e.message().to_string())?;
+                let is_new_file = old_content.is_none();
+                (old_content, new_content, diff, is_new_file)
+            }
+            Some(false) => {
+                let old_content = index_content.or(head_content);
+                let new_content = workdir_content;
+                let mut diff_opts = DiffOptions::new();
+                diff_opts.pathspec(&file_path);
+                diff_opts.include_untracked(true);
+                let diff = repo
+                    .diff_index_to_workdir(Some(&index), Some(&mut diff_opts))
+                    .map_err(|e| e.message().to_string())?;
+                let is_new_file = old_content.is_none();
+                (old_content, new_content, diff, is_new_file)
+            }
+            None => {
+                let old_content = head_content;
+                let new_content = workdir_content.clone().or(index_content.clone());
+                let mut diff_opts = DiffOptions::new();
+                diff_opts.pathspec(&file_path);
+                diff_opts.include_untracked(true);
+                diff_opts.recurse_untracked_dirs(true);
+                let diff = repo
+                    .diff_tree_to_workdir_with_index(Some(&head_tree), Some(&mut diff_opts))
+                    .map_err(|e| e.message().to_string())?;
+                let is_new_file = old_content.is_none();
+                (old_content, new_content, diff, is_new_file)
+            }
         };
         
         let mut patch = String::new();
@@ -762,15 +819,7 @@ pub async fn get_uncommitted_diff(worktree_path: String, file_path: String, is_s
         
         let patch = if patch.is_empty() && is_new_file {
             if let Some(ref content) = new_content {
-                let lines: Vec<&str> = content.lines().collect();
-                let line_count = lines.len();
-                let mut synthetic_patch = format!("@@ -0,0 +1,{} @@\n", line_count);
-                for line in lines {
-                    synthetic_patch.push('+');
-                    synthetic_patch.push_str(line);
-                    synthetic_patch.push('\n');
-                }
-                synthetic_patch
+                build_synthetic_new_file_patch(&file_path, content)
             } else {
                 patch
             }
