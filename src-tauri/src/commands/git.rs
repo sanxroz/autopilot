@@ -1182,24 +1182,66 @@ pub async fn git_revert_file(
 ) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let worktree = PathBuf::from(&worktree_path);
-        let full_path = worktree.join(&file_path);
+
+        // Path traversal guard: reject absolute paths and '..' components
+        let candidate = PathBuf::from(&file_path);
+        if candidate.is_absolute()
+            || candidate
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return Err(format!("Invalid file path: {}", file_path));
+        }
+        let full_path = worktree.join(&candidate);
 
         if status == "untracked" {
-            if full_path.is_dir() {
-                std::fs::remove_dir_all(&full_path)
-                    .map_err(|e| format!("Failed to remove untracked directory {}: {}", file_path, e))?;
-            } else if full_path.exists() {
-                std::fs::remove_file(&full_path)
-                    .map_err(|e| format!("Failed to remove untracked file {}: {}", file_path, e))?;
+            // Use symlink_metadata to avoid following symlinks into directories outside worktree
+            match std::fs::symlink_metadata(&full_path) {
+                Ok(metadata) => {
+                    if metadata.file_type().is_symlink() {
+                        std::fs::remove_file(&full_path)
+                            .map_err(|e| format!("Failed to remove untracked symlink {}: {}", file_path, e))?;
+                    } else if metadata.is_dir() {
+                        std::fs::remove_dir_all(&full_path)
+                            .map_err(|e| format!("Failed to remove untracked directory {}: {}", file_path, e))?;
+                    } else {
+                        std::fs::remove_file(&full_path)
+                            .map_err(|e| format!("Failed to remove untracked file {}: {}", file_path, e))?;
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    return Err(format!(
+                        "Failed to read metadata for untracked path {}: {}",
+                        file_path, e
+                    ));
+                }
+            }
+            return Ok::<(), String>(());
+        }
+
+        // Handle staged 'added' files that don't exist in HEAD
+        if is_staged && status == "added" {
+            let output = Command::new("git")
+                .args(["rm", "--cached", "--", &file_path])
+                .current_dir(&worktree)
+                .output()
+                .map_err(|e| format!("Failed to run git rm --cached: {}", e))?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("git rm --cached failed for {}: {}", file_path, stderr));
             }
             return Ok::<(), String>(());
         }
 
         let mut args: Vec<&str> = vec!["restore"];
         if is_staged {
+            // Only restore the index entry; preserve working-tree changes
             args.push("--staged");
+        } else {
+            // Only restore the working tree; preserve staged changes
+            args.push("--worktree");
         }
-        args.push("--worktree");
         args.push("--");
         args.push(&file_path);
 

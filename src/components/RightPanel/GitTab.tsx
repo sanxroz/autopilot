@@ -59,14 +59,14 @@ export function GitTab({ worktreePath }: GitTabProps) {
   const [error, setError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isStaging, setIsStaging] = useState(false);
-  const [isReverting, setIsReverting] = useState(false);
+  const [revertingFile, setRevertingFile] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const defaultAIAgent = useAppStore((state) => state.defaultAIAgent);
   const gitFileDiffPreview = useAppStore((state) => state.gitFileDiffPreview);
   const setGitFileDiffPreview = useAppStore((state) => state.setGitFileDiffPreview);
 
   const isOperationInProgress =
-    isStaging || isReverting || isCommitting || isPushing || isGenerating;
+    isStaging || revertingFile !== null || isCommitting || isPushing || isGenerating;
 
   const fetchStatus = useCallback(async () => {
     if (!worktreePath) {
@@ -184,7 +184,11 @@ export function GitTab({ worktreePath }: GitTabProps) {
   const handleRevertFile = useCallback(
     async (file: GitStatusFile, isStaged: boolean) => {
       if (!worktreePath || isOperationInProgress) return;
-      setIsReverting(true);
+      const confirmed = window.confirm(
+        `Are you sure you want to revert "${file.path}"? This action cannot be undone.`
+      );
+      if (!confirmed) return;
+      setRevertingFile(file.path);
       setError(null);
       try {
         await invoke("git_revert_file", {
@@ -197,7 +201,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
       } catch (e) {
         setError(String(e));
       } finally {
-        setIsReverting(false);
+        setRevertingFile(null);
       }
     },
     [worktreePath, fetchStatus, isOperationInProgress]
@@ -353,7 +357,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
             aria-label={`Revert ${fileName}`}
             title={`Revert ${fileName}`}
           >
-            {isReverting ? (
+            {revertingFile === file.path ? (
               <Loader className="w-4 h-4 animate-spin" />
             ) : (
               <RotateCcw className="w-3.5 h-3.5" />
