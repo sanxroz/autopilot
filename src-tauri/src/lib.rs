@@ -141,6 +141,7 @@ pub fn run() {
             git::git_push,
             git::git_stage_all,
             git::git_unstage_all,
+            git::git_revert_file,
             git::generate_commit_message,
             github::check_gh_cli,
             github::check_gh_auth,
