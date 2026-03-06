@@ -1174,6 +1174,53 @@ pub async fn git_unstage_all(worktree_path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn git_revert_file(
+    worktree_path: String,
+    file_path: String,
+    is_staged: bool,
+    status: String,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let worktree = PathBuf::from(&worktree_path);
+        let full_path = worktree.join(&file_path);
+
+        if status == "untracked" {
+            if full_path.is_dir() {
+                std::fs::remove_dir_all(&full_path)
+                    .map_err(|e| format!("Failed to remove untracked directory {}: {}", file_path, e))?;
+            } else if full_path.exists() {
+                std::fs::remove_file(&full_path)
+                    .map_err(|e| format!("Failed to remove untracked file {}: {}", file_path, e))?;
+            }
+            return Ok::<(), String>(());
+        }
+
+        let mut args: Vec<&str> = vec!["restore"];
+        if is_staged {
+            args.push("--staged");
+        }
+        args.push("--worktree");
+        args.push("--");
+        args.push(&file_path);
+
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(&worktree)
+            .output()
+            .map_err(|e| format!("Failed to run git restore: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("git restore failed for {}: {}", file_path, stderr));
+        }
+
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 pub async fn generate_commit_message(
     worktree_path: String,
     agent: String,
