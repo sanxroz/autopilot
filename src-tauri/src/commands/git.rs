@@ -52,15 +52,11 @@ pub struct FileDiffData {
     pub patch: String,
 }
 
-fn build_synthetic_new_file_patch(file_path: &str, content: &str) -> String {
-    let normalized_path = file_path.replace('\\', "/");
+fn build_synthetic_new_file_patch(_file_path: &str, content: &str) -> String {
     let lines: Vec<&str> = content.lines().collect();
     let line_count = lines.len();
 
-    let mut patch = format!(
-        "diff --git a/{0} b/{0}\nnew file mode 100644\n--- /dev/null\n+++ b/{0}\n",
-        normalized_path
-    );
+    let mut patch = String::new();
 
     if line_count > 0 {
         patch.push_str(&format!("@@ -0,0 +1,{} @@\n", line_count));
