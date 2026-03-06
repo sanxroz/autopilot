@@ -775,7 +775,7 @@ pub async fn get_uncommitted_diff(
         let (old_content, new_content, diff, is_new_file) = match is_staged {
             Some(true) => {
                 let old_content = head_content;
-                let new_content = index_content.clone().or_else(|| workdir_content.clone());
+                let new_content = index_content.clone();
                 let mut diff_opts = DiffOptions::new();
                 diff_opts.pathspec(&file_path);
                 diff_opts.include_untracked(true);
@@ -799,7 +799,7 @@ pub async fn get_uncommitted_diff(
             }
             None => {
                 let old_content = head_content;
-                let new_content = workdir_content.clone().or(index_content.clone());
+                let new_content = workdir_content.clone();
                 let mut diff_opts = DiffOptions::new();
                 diff_opts.pathspec(&file_path);
                 diff_opts.include_untracked(true);
