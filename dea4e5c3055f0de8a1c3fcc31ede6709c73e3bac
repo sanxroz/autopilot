@@ -1,0 +1,50 @@
+src-tauri/src/commands/git.rs
+  bfccde6c57a3d249 59
+  792511902d699cb0 55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.8",
+  "base_commit_sha": "dea4e5c3055f0de8a1c3fcc31ede6709c73e3bac",
+  "prompts": {
+    "4681c653319b307c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "opencode-transcript-ses_33f02a7bbffeolyR2EKJt1AMjS-41174e57-9ecc-4b48-aa55-c8fa90e9ba5c",
+        "model": "unknown"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>",
+      "messages": [],
+      "total_additions": 0,
+      "total_deletions": 1,
+      "accepted_lines": 0,
+      "overriden_lines": 0
+    },
+    "792511902d699cb0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "opencode-transcript-ses_33f02a7bbffeolyR2EKJt1AMjS-5f5ecc58-ab1e-48f7-9f96-d400d9f347c2",
+        "model": "unknown"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>",
+      "messages": [],
+      "total_additions": 1,
+      "total_deletions": 1,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    },
+    "bfccde6c57a3d249": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "opencode-transcript-ses_33f02a7bbffeolyR2EKJt1AMjS-b21603b2-7cc5-491c-bf51-bc58712ca4b2",
+        "model": "unknown"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>",
+      "messages": [],
+      "total_additions": 1,
+      "total_deletions": 4,
+      "accepted_lines": 1,
+      "overriden_lines": 0
+    }
+  }
+}
