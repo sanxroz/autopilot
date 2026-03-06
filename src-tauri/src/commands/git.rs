@@ -1236,8 +1236,9 @@ pub async fn git_revert_file(
 
         let mut args: Vec<&str> = vec!["restore"];
         if is_staged {
-            // Only restore the index entry; preserve working-tree changes
+            // Restore both index and working tree to fully discard staged changes
             args.push("--staged");
+            args.push("--worktree");
         } else {
             // Only restore the working tree; preserve staged changes
             args.push("--worktree");
