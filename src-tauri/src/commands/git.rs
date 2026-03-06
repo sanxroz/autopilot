@@ -763,7 +763,14 @@ pub async fn get_uncommitted_diff(
             .and_then(|entry| repo.find_blob(entry.id()).ok())
             .and_then(|blob| String::from_utf8(blob.content().to_vec()).ok());
         
-        let workdir_content = std::fs::read_to_string(&full_path).ok();
+        let workdir_content = match std::fs::read_to_string(&full_path) {
+            Ok(content) => Some(content),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => {
+                eprintln!("[autopilot] warning: failed to read working directory file {}: {e}", full_path.display());
+                None
+            }
+        };
         
         let (old_content, new_content, diff, is_new_file) = match is_staged {
             Some(true) => {

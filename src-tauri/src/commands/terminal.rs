@@ -992,11 +992,21 @@ pub fn close_terminals_for_worktree(
     worktree_path: String,
 ) -> Result<usize, String> {
     let terminal_ids: Vec<String> = {
-        let map = state.terminal_worktrees.lock();
-        map.iter()
-            .filter(|(_, path)| *path == &worktree_path)
-            .map(|(id, _)| id.clone())
-            .collect()
+        let canonical_worktree = fs::canonicalize(&worktree_path)
+            .unwrap_or_else(|_| std::path::PathBuf::from(&worktree_path));
+        let mut map = state.terminal_worktrees.lock();
+        let mut ids = Vec::new();
+        map.retain(|id, path| {
+            let canonical_path = fs::canonicalize(path.as_str())
+                .unwrap_or_else(|_| std::path::PathBuf::from(path.as_str()));
+            if canonical_path == canonical_worktree {
+                ids.push(id.clone());
+                false
+            } else {
+                true
+            }
+        });
+        ids
     };
 
     let mut closed = 0;
