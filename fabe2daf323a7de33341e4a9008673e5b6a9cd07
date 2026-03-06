@@ -1,0 +1,23 @@
+src-tauri/src/commands/git.rs
+  6a54bf861be8bbb1 1239,1241
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.8",
+  "base_commit_sha": "fabe2daf323a7de33341e4a9008673e5b6a9cd07",
+  "prompts": {
+    "6a54bf861be8bbb1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "opencode-transcript-ses_33efedb36ffeo5LWFf6t3zD73C-f1023735-712d-45e4-a073-beb364501738",
+        "model": "unknown"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 1,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    }
+  }
+}
