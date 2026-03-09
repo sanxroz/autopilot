@@ -118,6 +118,19 @@ export function useGitWatcher() {
 
   useEffect(() => {
     return () => {
+      // Clear all pending branch update timeouts
+      for (const timeout of pendingBranchUpdates.current.values()) {
+        clearTimeout(timeout);
+      }
+      pendingBranchUpdates.current.clear();
+
+      // Clear all pending worktree update timeouts
+      for (const timeout of pendingWorktreeUpdates.current.values()) {
+        clearTimeout(timeout);
+      }
+      pendingWorktreeUpdates.current.clear();
+
+      // Clear event listeners
       if (unlistenHeadRef.current) {
         unlistenHeadRef.current();
         unlistenHeadRef.current = null;
@@ -126,6 +139,8 @@ export function useGitWatcher() {
         unlistenWorktreeRef.current();
         unlistenWorktreeRef.current = null;
       }
+      
+      // Stop all file watchers
       invoke('stop_all_watchers').catch(console.error);
     };
   }, []);

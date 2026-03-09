@@ -1402,3 +1402,76 @@ pub async fn generate_commit_message(
     .await
     .map_err(|e| e.to_string())?
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_build_synthetic_patch_multiline() {
+        let patch = build_synthetic_new_file_patch("test.ts", "line1\nline2\nline3");
+        assert!(patch.starts_with("@@ -0,0 +1,3 @@\n"));
+        assert!(patch.contains("+line1\n"));
+        assert!(patch.contains("+line2\n"));
+        assert!(patch.contains("+line3\n"));
+    }
+
+    #[test]
+    fn test_build_synthetic_patch_single_line() {
+        let patch = build_synthetic_new_file_patch("test.ts", "hello");
+        assert!(patch.starts_with("@@ -0,0 +1,1 @@\n"));
+        assert!(patch.contains("+hello\n"));
+    }
+
+    #[test]
+    fn test_build_synthetic_patch_empty_content() {
+        let patch = build_synthetic_new_file_patch("test.ts", "");
+        assert_eq!(patch, "");
+    }
+
+    #[test]
+    fn test_get_last_modified_valid_path() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let file_path = dir.path().join("test.txt");
+        std::fs::write(&file_path, "hello").unwrap();
+
+        let result = get_last_modified(&file_path);
+        assert!(result.is_some());
+        // Should be ISO 8601 format
+        let ts = result.unwrap();
+        assert!(ts.ends_with('Z'));
+        assert!(ts.contains('T'));
+    }
+
+    #[test]
+    fn test_get_last_modified_nonexistent_path() {
+        let result = get_last_modified(std::path::Path::new("/nonexistent/path/file.txt"));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_get_worktree_branch_valid_repo() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let repo = git2::Repository::init(dir.path()).unwrap();
+
+        // Create initial commit so HEAD exists
+        let sig = repo.signature().unwrap_or_else(|_| {
+            git2::Signature::now("Test", "test@test.com").unwrap()
+        });
+        let tree_id = repo.index().unwrap().write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "init", &tree, &[]).unwrap();
+
+        let branch = get_worktree_branch(dir.path());
+        assert!(branch.is_some());
+        // Default branch name varies by git config, but should be non-empty
+        assert!(!branch.unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_get_worktree_branch_not_a_repo() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let branch = get_worktree_branch(dir.path());
+        assert!(branch.is_none());
+    }
+}

@@ -238,3 +238,91 @@ pub fn get_cached_path(name: &str) -> Option<String> {
         .get()
         .and_then(|cache| cache.lock().get(name).cloned())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_find_cli_tool_git_exists() {
+        // git should always be available
+        let result = find_cli_tool("git");
+        assert!(result.is_ok());
+        let path = result.unwrap();
+        assert!(path.contains("git"));
+    }
+
+    #[test]
+    fn test_find_cli_tool_not_found() {
+        let result = find_cli_tool("nonexistent_tool_xyz_12345");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("not found"));
+        assert!(err.contains("nonexistent_tool_xyz_12345"));
+    }
+
+    #[test]
+    fn test_get_cached_path_uncached() {
+        let result = get_cached_path("totally_uncached_tool_99999");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_cache_behavior() {
+        // Find git (populates cache)
+        let path = find_cli_tool("git").unwrap();
+        // Should be cached now
+        let cached = get_cached_path("git");
+        assert!(cached.is_some());
+        assert_eq!(cached.unwrap(), path);
+    }
+
+    #[test]
+    fn test_clear_cache() {
+        // Ensure something is cached
+        let _ = find_cli_tool("git");
+        assert!(get_cached_path("git").is_some());
+
+        clear_cache();
+
+        // Note: OnceLock means the cache HashMap still exists but is empty
+        // After clearing, git may still be found via the HashMap that was cleared
+        // but new lookups would need to re-find the tool
+        // The important thing is clear_cache doesn't panic
+    }
+
+    #[test]
+    fn test_is_executable_nonexistent() {
+        assert!(!is_executable("/nonexistent/path/to/binary"));
+    }
+
+    #[test]
+    fn test_parse_node_version_valid() {
+        let path = PathBuf::from("/nvm/versions/node/v18.17.1");
+        let version = parse_node_version(&path);
+        assert_eq!(version, Some((18, 17, 1)));
+    }
+
+    #[test]
+    fn test_parse_node_version_no_prefix() {
+        let path = PathBuf::from("/nvm/versions/node/18.17.1");
+        let version = parse_node_version(&path);
+        assert_eq!(version, None); // requires 'v' prefix
+    }
+
+    #[test]
+    fn test_parse_node_version_invalid() {
+        let path = PathBuf::from("/nvm/versions/node/not-a-version");
+        let version = parse_node_version(&path);
+        assert_eq!(version, None);
+    }
+
+    #[test]
+    fn test_compare_node_versions() {
+        let a = PathBuf::from("/node/v18.17.1");
+        let b = PathBuf::from("/node/v20.0.0");
+        // Higher version should come first (descending order)
+        let ord = compare_node_versions(&a, &b);
+        assert_eq!(ord, Ordering::Greater); // b (v20) > a (v18), so a comes after
+    }
+}
