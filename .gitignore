@@ -26,3 +26,4 @@ dist-ssr
 # Worktrees
 .worktrees
 .env
+.ant-colony/

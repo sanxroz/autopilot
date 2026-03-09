@@ -10,6 +10,7 @@ import {
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import { cn } from '../utils/cn';
+import { useAppStore } from '../store';
 import { useMergePR } from '../hooks/useMergePR';
 import { useThemeMode } from '../hooks/useTheme';
 import { PRStatusBadge } from './PRStatusBadge';
@@ -115,6 +116,7 @@ export function PRDetailView({
 }: PRDetailViewProps) {
   const themeMode = useThemeMode();
   const isLightMode = themeMode === 'light';
+  const githubSettings = useAppStore((state) => state.githubSettings);
 
   /* ── PR action state (preserved from original) ─────────────────── */
   const [commentText, setCommentText] = useState('');
@@ -522,7 +524,7 @@ export function PRDetailView({
             onCommentAdded={onRefresh}
             pendingReviewComments={pendingReviewComments}
             onPendingReviewCommentsChange={setPendingReviewComments}
-            currentUser={pr.author}
+            currentUser={githubSettings.ghAuthUser || pr.author}
           />
         </div>
 

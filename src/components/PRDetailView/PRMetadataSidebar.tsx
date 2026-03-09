@@ -14,6 +14,7 @@ import {
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
+import rehypeSanitize from 'rehype-sanitize';
 import { cn } from '../../utils/cn';
 import { markdownComponents } from '../../lib/markdown-components';
 import type { PRStatus, PRCommit, PRComment } from '../../types/github';
@@ -237,16 +238,19 @@ export function PRMetadataSidebar({
     if (reviewType === 'request_changes' && !text) return;
 
     setIsSubmittingReview(true);
-    const didSubmit = await onSubmitReview({
-      type: reviewType,
-      body: text,
-      pendingComments: pendingReviewComments,
-    });
-    setIsSubmittingReview(false);
+    try {
+      const didSubmit = await onSubmitReview({
+        type: reviewType,
+        body: text,
+        pendingComments: pendingReviewComments,
+      });
 
-    if (didSubmit) {
-      setReviewText('');
-      setIsReviewOpen(false);
+      if (didSubmit) {
+        setReviewText('');
+        setIsReviewOpen(false);
+      }
+    } finally {
+      setIsSubmittingReview(false);
     }
   };
 
@@ -466,7 +470,7 @@ export function PRMetadataSidebar({
           <div className="text-xs leading-relaxed text-secondary">
             <ReactMarkdown 
               remarkPlugins={[remarkGfm]} 
-              rehypePlugins={[rehypeRaw]}
+              rehypePlugins={[rehypeRaw, rehypeSanitize]}
               components={compactMdComponents}
             >
               {displayBody ?? ''}

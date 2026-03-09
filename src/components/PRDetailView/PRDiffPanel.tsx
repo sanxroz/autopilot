@@ -12,6 +12,7 @@ import '@git-diff-view/react/styles/diff-view.css';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
+import rehypeSanitize from 'rehype-sanitize';
 import { cn } from '../../utils/cn';
 import { markdownComponents } from '../../lib/markdown-components';
 import { getDiffHighlighter, type DiffHighlighter } from '../../lib/diff-highlighter';
@@ -157,7 +158,7 @@ function InlineComment({ comment, isPending = false }: { comment: PRComment; isP
           <div className="pr-inline-comment-body mt-1 text-xs leading-relaxed">
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
-              rehypePlugins={[rehypeRaw]}
+              rehypePlugins={[rehypeRaw, rehypeSanitize]}
               components={{
                 ...markdownComponents,
                 p: ({ children }) => <p className="my-1 first:mt-0 last:mb-0 text-[#D4D4D4]">{children}</p>,

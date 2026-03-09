@@ -443,6 +443,14 @@ export function PRHub() {
       const focused = col?.items[focusedRow];
       if (!focused) return;
 
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        if (selected.size > 0) {
+          void runBatch('merge');
+        }
+        return;
+      }
+
       if (e.key === 'Enter') {
         e.preventDefault();
         if (focused.type === 'pr') {
@@ -469,13 +477,6 @@ export function PRHub() {
           e.preventDefault();
           void runSingleAction(focused.repoPath, focused.pr.number, 'merge');
           return;
-        }
-      }
-
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault();
-        if (selected.size > 0) {
-          void runBatch('merge');
         }
       }
     };

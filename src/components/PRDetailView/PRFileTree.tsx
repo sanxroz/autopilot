@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   ChevronRight,
   FilePlus,
@@ -231,7 +231,7 @@ export function PRFileTree({
   const tree = useMemo(() => buildTree(filteredFiles), [filteredFiles]);
 
   // Auto-expand all folders on initial load or filter change
-  useMemo(() => {
+  useEffect(() => {
     const allFolderPaths = new Set<string>();
     function collectFolders(nodes: TreeNode[]) {
       for (const node of nodes) {

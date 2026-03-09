@@ -174,12 +174,13 @@ fn is_bot_author(author: &str, head_branch: &str) -> bool {
     let branch_lc = head_branch.to_lowercase();
 
     author_lc.ends_with("[bot]")
-        || author_lc.contains("bot")
-        || author_lc.contains("opencode")
-        || author_lc.contains("claude")
-        || author_lc.contains("codex")
-        || author_lc.contains("amp")
-        || author_lc.contains("droid")
+        || author_lc.ends_with("-bot")
+        || author_lc.ends_with("_bot")
+        || author_lc == "opencode"
+        || author_lc == "claude"
+        || author_lc == "codex"
+        || author_lc == "amp"
+        || author_lc == "droid"
         || branch_lc.starts_with("opencode/")
         || branch_lc.starts_with("claude/")
         || branch_lc.starts_with("codex/")
