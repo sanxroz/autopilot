@@ -119,10 +119,6 @@ export function PRDetailView({
   const githubSettings = useAppStore((state) => state.githubSettings);
 
   /* ── PR action state (preserved from original) ─────────────────── */
-  const [commentText, setCommentText] = useState('');
-  const [changeText, setChangeText] = useState('');
-  const [isCommenting, setIsCommenting] = useState(false);
-  const [isRequesting, setIsRequesting] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
 
@@ -161,25 +157,36 @@ export function PRDetailView({
       setCommits(commitsResult);
       setPrDetails(detailsResult);
 
-      // Auto-select first file
-      if (filesResult.length > 0 && !selectedFile) {
-        setSelectedFile(filesResult[0].path);
-      }
+      setSelectedFile((prevSelectedFile) => {
+        if (filesResult.length === 0) {
+          return null;
+        }
+
+        if (prevSelectedFile && filesResult.some((file) => file.path === prevSelectedFile)) {
+          return prevSelectedFile;
+        }
+
+        return filesResult[0].path;
+      });
     } catch (e) {
       console.error('Failed to fetch PR data:', e);
       toast.error(`Failed to load PR data: ${String(e)}`);
     } finally {
       setIsDataLoading(false);
     }
-  }, [repoPath, pr.number, selectedFile]);
+  }, [repoPath, pr.number]);
 
   useEffect(() => {
-    fetchData();
-  }, [repoPath, pr.number]); // eslint-disable-line react-hooks/exhaustive-deps
+    void fetchData();
+  }, [fetchData]);
 
   /* ── Fetch diff when we have files ─────────────────────────────── */
   const fetchDiff = useCallback(async () => {
-    if (files.length === 0) return;
+    if (files.length === 0) {
+      setFullDiff(null);
+      return;
+    }
+
     setIsDiffLoading(true);
     try {
       const diff = await invoke<string>('get_pr_file_diff', { repoPath, prNumber: pr.number });
@@ -192,10 +199,8 @@ export function PRDetailView({
   }, [repoPath, pr.number, files.length]);
 
   useEffect(() => {
-    if (files.length > 0) {
-      fetchDiff();
-    }
-  }, [files.length]); // eslint-disable-line react-hooks/exhaustive-deps
+    void fetchDiff();
+  }, [fetchDiff]);
 
   /* ── Resize handlers ───────────────────────────────────────────── */
   const handleResizeStart = useCallback(
@@ -243,42 +248,6 @@ export function PRDetailView({
   }, [resizingPanel]);
 
   /* ── PR actions (preserved from original) ──────────────────────── */
-  const handleComment = async (bodyOverride?: string) => {
-    const body = (bodyOverride ?? commentText).trim();
-    if (!body) return;
-    setIsCommenting(true);
-    try {
-      await invoke<boolean>('comment_on_pr', { repoPath, prNumber: pr.number, body });
-      if (!bodyOverride) {
-        setCommentText('');
-      }
-      toast.success('Comment posted');
-      onRefresh();
-    } catch (e) {
-      toast.error(`Failed to comment: ${String(e)}`);
-    } finally {
-      setIsCommenting(false);
-    }
-  };
-
-  const handleRequestChanges = async (bodyOverride?: string) => {
-    const body = (bodyOverride ?? changeText).trim();
-    if (!body) return;
-    setIsRequesting(true);
-    try {
-      await invoke<boolean>('request_changes_pr', { repoPath, prNumber: pr.number, body });
-      if (!bodyOverride) {
-        setChangeText('');
-      }
-      toast.success('Changes requested');
-      onRefresh();
-    } catch (e) {
-      toast.error(`Failed to request changes: ${String(e)}`);
-    } finally {
-      setIsRequesting(false);
-    }
-  };
-
   const handleApprove = async () => {
     setIsApproving(true);
     try {
@@ -320,56 +289,70 @@ export function PRDetailView({
     pendingComments: PendingReviewComment[];
   }): Promise<boolean> => {
     const trimmedBody = body.trim();
-    let hasSubmitted = false;
+    const normalizedPendingComments = pendingComments
+      .map((comment) => ({
+        ...comment,
+        path: comment.path.trim(),
+        body: comment.body.trim(),
+      }))
+      .filter((comment) => comment.path && comment.body);
+
+    const hasBody = trimmedBody.length > 0;
+    const hasComments = normalizedPendingComments.length > 0;
+
+    if (type === 'comment' && !hasBody && !hasComments) {
+      return false;
+    }
+
+    if (type === 'request_changes' && !hasBody && !hasComments) {
+      return false;
+    }
+
+    const event = {
+      comment: 'COMMENT',
+      approve: 'APPROVE',
+      request_changes: 'REQUEST_CHANGES',
+    }[type] as 'COMMENT' | 'APPROVE' | 'REQUEST_CHANGES';
 
     try {
-      for (const pendingComment of pendingComments) {
-        await invoke<boolean>('create_pr_review_comment', {
-          repoPath,
-          prNumber: pr.number,
-          body: pendingComment.body,
-          path: pendingComment.path,
-          line: pendingComment.line,
-        });
-      }
+      await invoke<boolean>('submit_pr_review', {
+        repoPath,
+        prNumber: pr.number,
+        event,
+        body: hasBody ? trimmedBody : null,
+        comments: normalizedPendingComments.map((comment) => ({
+          path: comment.path,
+          line: comment.line,
+          body: comment.body,
+          side: 'RIGHT' as const,
+        })),
+      });
 
-      if (pendingComments.length > 0) {
-        hasSubmitted = true;
-      }
+      setPendingReviewComments((prev) =>
+        prev.filter((comment) => {
+          const normalizedCommentBody = comment.body.trim();
+          const normalizedCommentPath = comment.path.trim();
 
-      if (type === 'comment' && trimmedBody) {
-        await handleComment(trimmedBody);
-        hasSubmitted = true;
-      }
+          return !normalizedPendingComments.some(
+            (submitted) =>
+              submitted.path === normalizedCommentPath &&
+              submitted.line === comment.line &&
+              submitted.body === normalizedCommentBody
+          );
+        })
+      );
 
-      if (type === 'approve') {
-        await handleApprove();
-        hasSubmitted = true;
-        if (trimmedBody) {
-          await handleComment(trimmedBody);
-        }
-      }
+      toast.success(
+        type === 'approve'
+          ? 'Review approved'
+          : type === 'request_changes'
+            ? 'Changes requested'
+            : 'Review submitted'
+      );
 
-      if (type === 'request_changes' && trimmedBody) {
-        await handleRequestChanges(trimmedBody);
-        hasSubmitted = true;
-      }
-
-      if (hasSubmitted) {
-        setPendingReviewComments((prev) =>
-          prev.filter(
-            (comment) =>
-              !pendingComments.some(
-                (submitted) =>
-                  submitted.path === comment.path &&
-                  submitted.line === comment.line &&
-                  submitted.body === comment.body
-              )
-          )
-        );
-        onRefresh();
-      }
-      return hasSubmitted;
+      void fetchData();
+      onRefresh();
+      return true;
     } catch (error) {
       toast.error(`Failed to submit review: ${String(error)}`);
       return false;
@@ -555,8 +538,6 @@ export function PRDetailView({
             isApproving={isApproving}
             isMerging={isMerging}
             isClosing={isClosing}
-            isCommenting={isCommenting}
-            isRequesting={isRequesting}
             pendingReviewComments={pendingReviewComments}
             onSubmitReview={handleSubmitReview}
           />

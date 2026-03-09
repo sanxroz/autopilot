@@ -283,8 +283,18 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
 
   const comments = prDetails?.comments || [];
 
-  const reviews = comments.filter(c => c.comment_type === 'review' && (c.state === 'APPROVED' || c.state === 'CHANGES_REQUESTED'));
+  const reviews = comments.filter(
+    (c) => c.comment_type === 'review' && (
+      c.state === 'APPROVED' ||
+      c.state === 'CHANGES_REQUESTED' ||
+      c.state === 'COMMENTED'
+    )
+  );
   const threadComments = comments.filter(c => c.comment_type === 'review_thread');
+
+  const getCommentKey = (comment: PRComment) => (
+    `${comment.review_id ?? 'thread'}:${comment.created_at}:${comment.author}:${comment.path ?? ''}:${comment.line ?? 0}`
+  );
   
   const commentsByFile = new Map<string, PRComment[]>();
   for (const comment of threadComments) {
@@ -349,19 +359,25 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
 
         {reviews.length > 0 && (
            <div className="border-b border-border bg-secondary/30">
-             {reviews.map((review, idx) => (
-               <div key={idx} className="px-4 py-3 border-b border-border last:border-0 flex items-start gap-3 group relative">
+             {reviews.map((review) => (
+               <div key={getCommentKey(review)} className="px-4 py-3 border-b border-border last:border-0 flex items-start gap-3 group relative">
                  <Avatar name={review.author} />
                  <div className="flex-1 min-w-0">
                    <div className="flex items-center gap-2 mb-1">
                      <span className="text-sm font-semibold text-primary">{review.author}</span>
                      <span className={cn(
                        "text-xs font-medium px-2 py-0.5 rounded-full border",
-                       review.state === 'APPROVED' 
+                       review.state === 'APPROVED'
                          ? "bg-semantic-success/10 text-semantic-success border-semantic-success/20"
-                         : "bg-semantic-error/10 text-semantic-error border-semantic-error/20"
+                         : review.state === 'CHANGES_REQUESTED'
+                           ? "bg-semantic-error/10 text-semantic-error border-semantic-error/20"
+                           : "bg-semantic-info/10 text-semantic-info border-semantic-info/20"
                      )}>
-                       {review.state === 'APPROVED' ? 'Approved' : 'Requested Changes'}
+                       {review.state === 'APPROVED'
+                         ? 'Approved'
+                         : review.state === 'CHANGES_REQUESTED'
+                           ? 'Requested Changes'
+                           : 'Commented'}
                      </span>
                      <span className="text-xs text-tertiary">{formatDate(review.created_at)}</span>
                      <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
@@ -401,9 +417,9 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
                 </div>
                 
                 <div className="divide-y divide-border/50">
-                  {fileComments.map((comment, idx) => (
+                  {fileComments.map((comment) => (
                     <CommentRow 
-                        key={idx} 
+                        key={getCommentKey(comment)} 
                         comment={comment} 
                         isResolved={comment.is_resolved}
                         renderBody={renderCommentBody}

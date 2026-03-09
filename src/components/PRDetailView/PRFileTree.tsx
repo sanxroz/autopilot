@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   ChevronRight,
   FilePlus,
@@ -221,6 +221,8 @@ export function PRFileTree({
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(
     new Set()
   );
+  const hasInitializedExpansionRef = useRef(false);
+  const previousFilterRef = useRef('');
 
   const filteredFiles = useMemo(() => {
     if (!filter.trim()) return files;
@@ -230,7 +232,7 @@ export function PRFileTree({
 
   const tree = useMemo(() => buildTree(filteredFiles), [filteredFiles]);
 
-  // Auto-expand all folders on initial load or filter change
+  // Auto-expand all folders on initial load or filter change, but preserve user toggles during refreshes
   useEffect(() => {
     const allFolderPaths = new Set<string>();
     function collectFolders(nodes: TreeNode[]) {
@@ -242,8 +244,25 @@ export function PRFileTree({
       }
     }
     collectFolders(tree);
-    setExpandedFolders(allFolderPaths);
-  }, [tree]);
+
+    const filterChanged = previousFilterRef.current !== filter;
+    previousFilterRef.current = filter;
+
+    setExpandedFolders((prev) => {
+      if (!hasInitializedExpansionRef.current || filterChanged) {
+        return allFolderPaths;
+      }
+
+      const next = new Set(Array.from(prev).filter((path) => allFolderPaths.has(path)));
+      if (prev.size > 0 && next.size === 0 && allFolderPaths.size > 0) {
+        return allFolderPaths;
+      }
+
+      return next;
+    });
+
+    hasInitializedExpansionRef.current = true;
+  }, [tree, filter]);
 
   const totalAdditions = files.reduce((sum, f) => sum + f.additions, 0);
   const totalDeletions = files.reduce((sum, f) => sum + f.deletions, 0);

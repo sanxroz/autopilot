@@ -242,14 +242,14 @@ export function PRHub() {
         const item: HubItem = { type: 'pr', id: `pr:${repoPath}#${pr.number}`, repoPath, pr };
         const isMine = authUser ? pr.author === authUser : false;
 
-        if (!isMine) {
-          colMap.needs_review.push(item);
-        } else if (pr.draft) {
+        if (pr.draft) {
           colMap.draft.push(item);
         } else if (pr.review_decision === 'CHANGES_REQUESTED') {
           colMap.changes_requested.push(item);
         } else if (pr.review_decision === 'APPROVED') {
           colMap.ready.push(item);
+        } else if (!isMine) {
+          colMap.needs_review.push(item);
         } else {
           colMap.in_review.push(item);
         }
@@ -291,7 +291,7 @@ export function PRHub() {
 
   // Clamp focus when columns change
   useEffect(() => {
-    setFocusedCol((c) => Math.min(c, visibleColumns.length - 1));
+    setFocusedCol((c) => Math.max(0, Math.min(c, visibleColumns.length - 1)));
   }, [visibleColumns.length]);
 
   useEffect(() => {
@@ -434,7 +434,7 @@ export function PRHub() {
       }
       if (e.key === 'l' || e.key === 'ArrowRight') {
         e.preventDefault();
-        setFocusedCol((c) => Math.min(c + 1, visibleColumns.length - 1));
+        setFocusedCol((c) => Math.max(0, Math.min(c + 1, visibleColumns.length - 1)));
         setFocusedRow(0);
         return;
       }
@@ -468,12 +468,12 @@ export function PRHub() {
       }
 
       if (focused.type === 'pr') {
-        if (e.key === 'a') {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
           e.preventDefault();
           void runSingleAction(focused.repoPath, focused.pr.number, 'approve');
           return;
         }
-        if (e.key === 'm') {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'm') {
           e.preventDefault();
           void runSingleAction(focused.repoPath, focused.pr.number, 'merge');
           return;

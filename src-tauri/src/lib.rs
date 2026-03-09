@@ -15,22 +15,22 @@ use tauri::{Listener, WebviewWindow};
 fn position_traffic_lights(window: &WebviewWindow, x: f64, y: f64) {
     use cocoa::appkit::{NSView, NSWindow, NSWindowButton};
     use cocoa::foundation::NSRect;
-    use objc::{msg_send, sel, sel_impl, runtime::YES};
-    
+    use objc::{msg_send, runtime::YES, sel, sel_impl};
+
     let ns_window = window.ns_window().unwrap() as cocoa::base::id;
-    
+
     unsafe {
         let close = ns_window.standardWindowButton_(NSWindowButton::NSWindowCloseButton);
         let minimize = ns_window.standardWindowButton_(NSWindowButton::NSWindowMiniaturizeButton);
         let zoom = ns_window.standardWindowButton_(NSWindowButton::NSWindowZoomButton);
-        
+
         let title_bar_container_view = close.superview().superview();
-        
+
         let close_rect: NSRect = msg_send![close, frame];
         let button_height = close_rect.size.height;
         let button_width = close_rect.size.width;
         let spacing = 6.0;
-        
+
         let title_bar_frame_height: f64 = {
             let frame: NSRect = msg_send![title_bar_container_view, frame];
             frame.size.height
@@ -110,7 +110,7 @@ pub fn run() {
             {
                 let window = app.get_webview_window("main").unwrap();
                 position_traffic_lights(&window, 12.0, 10.0);
-                
+
                 let window_clone = window.clone();
                 window.listen("tauri://resize", move |_| {
                     position_traffic_lights(&window_clone, 12.0, 10.0);
@@ -158,10 +158,11 @@ pub fn run() {
             github::request_changes_pr,
             github::comment_on_pr,
             github::create_pr_review_comment,
+            github::submit_pr_review,
             github::close_pr,
             github::rerequest_pr_review,
             github::create_pr,
-github::run_cubic_review,
+            github::run_cubic_review,
             github::merge_pr,
             github::get_assigned_issues,
             github::get_notifications,

@@ -108,8 +108,6 @@ interface PRMetadataSidebarProps {
   isApproving: boolean;
   isMerging: boolean;
   isClosing: boolean;
-  isCommenting: boolean;
-  isRequesting: boolean;
   pendingReviewComments: PendingReviewComment[];
   onSubmitReview: (payload: {
     type: 'comment' | 'approve' | 'request_changes';
@@ -128,8 +126,6 @@ export function PRMetadataSidebar({
   isApproving,
   isMerging,
   isClosing,
-  isCommenting,
-  isRequesting,
   pendingReviewComments,
   onSubmitReview,
 }: PRMetadataSidebarProps) {
@@ -230,12 +226,12 @@ export function PRMetadataSidebar({
   const isOpen = pr.state === 'open' && !pr.merged;
   const isApproved = pr.review_decision === 'APPROVED';
   const checksPass = pr.checks_status === 'success';
-  const reviewBusy = isCommenting || isApproving || isRequesting || isSubmittingReview;
+  const reviewBusy = isApproving || isSubmittingReview;
 
   const submitReview = async () => {
     const text = reviewText.trim();
     if (reviewType === 'comment' && !text && pendingReviewComments.length === 0) return;
-    if (reviewType === 'request_changes' && !text) return;
+    if (reviewType === 'request_changes' && !text && pendingReviewComments.length === 0) return;
 
     setIsSubmittingReview(true);
     try {
@@ -436,7 +432,7 @@ export function PRMetadataSidebar({
                     </button>
                     <button
                       onClick={() => void submitReview()}
-                      disabled={reviewBusy || (reviewType === 'request_changes' && !reviewText.trim()) || (reviewType === 'comment' && !reviewText.trim() && pendingReviewComments.length === 0)}
+                      disabled={reviewBusy || (reviewType !== 'approve' && !reviewText.trim() && pendingReviewComments.length === 0)}
                       className="rounded-md bg-black px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-black/90 disabled:opacity-50 dark:bg-white dark:text-black dark:hover:bg-white/90"
                     >
                       {reviewBusy ? <Loader className="inline size-3 animate-spin" /> : 'SUBMIT REVIEW'}

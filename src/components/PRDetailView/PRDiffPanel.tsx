@@ -98,6 +98,7 @@ function formatDate(dateStr: string): string {
 
 function extractFileDiff(fullDiff: string, filePath: string): string | null {
   const lines = fullDiff.split('\n');
+  const expectedHeader = `diff --git a/${filePath} b/${filePath}`;
   let capture = false;
   const result: string[] = [];
 
@@ -106,8 +107,7 @@ function extractFileDiff(fullDiff: string, filePath: string): string | null {
 
     if (line.startsWith('diff --git')) {
       if (capture) break; // finished capturing previous file
-      // Check if this diff block is for our file
-      if (line.includes(`a/${filePath}`) || line.includes(`b/${filePath}`)) {
+      if (line === expectedHeader) {
         capture = true;
       }
     }

@@ -1,9 +1,9 @@
 use chrono::{DateTime, Utc};
 use git2::{BranchType, Delta, DiffOptions, Repository, WorktreeAddOptions};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::process::Command;
-use regex::Regex;
 
 use super::cli_tools::find_cli_tool;
 
@@ -94,10 +94,10 @@ fn get_push_remote(repo: &Repository) -> Result<String, String> {
 
 fn get_diff_stats_vs_origin_default(repo_path: &std::path::Path) -> Option<DiffStats> {
     let repo = Repository::open(repo_path).ok()?;
-    
+
     let head = repo.head().ok()?;
     let head_commit = head.peel_to_commit().ok()?;
-    
+
     let base_commit = repo
         .find_branch("origin/main", BranchType::Remote)
         .or_else(|_| repo.find_branch("origin/master", BranchType::Remote))
@@ -107,17 +107,22 @@ fn get_diff_stats_vs_origin_default(repo_path: &std::path::Path) -> Option<DiffS
         .get()
         .peel_to_commit()
         .ok()?;
-    
+
     if head_commit.id() == base_commit.id() {
-        return Some(DiffStats { additions: 0, deletions: 0 });
+        return Some(DiffStats {
+            additions: 0,
+            deletions: 0,
+        });
     }
-    
+
     let base_tree = base_commit.tree().ok()?;
     let head_tree = head_commit.tree().ok()?;
-    
-    let diff = repo.diff_tree_to_tree(Some(&base_tree), Some(&head_tree), None).ok()?;
+
+    let diff = repo
+        .diff_tree_to_tree(Some(&base_tree), Some(&head_tree), None)
+        .ok()?;
     let stats = diff.stats().ok()?;
-    
+
     Some(DiffStats {
         additions: stats.insertions(),
         deletions: stats.deletions(),
@@ -221,7 +226,9 @@ pub struct WorktreeDiffStats {
 }
 
 #[tauri::command]
-pub async fn get_worktrees_diff_stats(worktree_paths: Vec<String>) -> Result<Vec<WorktreeDiffStats>, String> {
+pub async fn get_worktrees_diff_stats(
+    worktree_paths: Vec<String>,
+) -> Result<Vec<WorktreeDiffStats>, String> {
     let handles: Vec<_> = worktree_paths
         .into_iter()
         .map(|path| {
@@ -250,7 +257,10 @@ pub fn list_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
 
     let mut branches = Vec::new();
 
-    let head_name = repo.head().ok().and_then(|h| h.shorthand().map(String::from));
+    let head_name = repo
+        .head()
+        .ok()
+        .and_then(|h| h.shorthand().map(String::from));
 
     for branch_result in repo
         .branches(Some(BranchType::Local))
@@ -288,32 +298,98 @@ pub fn list_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
 }
 
 const CITY_NAMES: &[&str] = &[
-    "tokyo", "paris", "london", "berlin", "sydney", "toronto", "mumbai", "cairo",
-    "rio", "seoul", "dublin", "oslo", "vienna", "prague", "lisbon", "athens",
-    "rome", "madrid", "amsterdam", "brussels", "zurich", "stockholm", "helsinki",
-    "warsaw", "budapest", "bangkok", "singapore", "jakarta", "manila", "hanoi",
-    "beijing", "shanghai", "hongkong", "taipei", "osaka", "kyoto", "melbourne",
-    "auckland", "vancouver", "montreal", "chicago", "boston", "seattle", "denver",
-    "austin", "miami", "atlanta", "phoenix", "portland", "detroit", "dallas",
-    "houston", "philadelphia", "sandiego", "sanfrancisco", "losangeles", "newyork",
-    "nairobi", "lagos", "capetown", "casablanca", "tunis", "algiers", "accra",
-    "lima", "bogota", "santiago", "buenosaires", "montevideo", "quito", "caracas",
-    "havana", "mexicocity", "guadalajara", "panama", "sanjose", "kingston",
+    "tokyo",
+    "paris",
+    "london",
+    "berlin",
+    "sydney",
+    "toronto",
+    "mumbai",
+    "cairo",
+    "rio",
+    "seoul",
+    "dublin",
+    "oslo",
+    "vienna",
+    "prague",
+    "lisbon",
+    "athens",
+    "rome",
+    "madrid",
+    "amsterdam",
+    "brussels",
+    "zurich",
+    "stockholm",
+    "helsinki",
+    "warsaw",
+    "budapest",
+    "bangkok",
+    "singapore",
+    "jakarta",
+    "manila",
+    "hanoi",
+    "beijing",
+    "shanghai",
+    "hongkong",
+    "taipei",
+    "osaka",
+    "kyoto",
+    "melbourne",
+    "auckland",
+    "vancouver",
+    "montreal",
+    "chicago",
+    "boston",
+    "seattle",
+    "denver",
+    "austin",
+    "miami",
+    "atlanta",
+    "phoenix",
+    "portland",
+    "detroit",
+    "dallas",
+    "houston",
+    "philadelphia",
+    "sandiego",
+    "sanfrancisco",
+    "losangeles",
+    "newyork",
+    "nairobi",
+    "lagos",
+    "capetown",
+    "casablanca",
+    "tunis",
+    "algiers",
+    "accra",
+    "lima",
+    "bogota",
+    "santiago",
+    "buenosaires",
+    "montevideo",
+    "quito",
+    "caracas",
+    "havana",
+    "mexicocity",
+    "guadalajara",
+    "panama",
+    "sanjose",
+    "kingston",
 ];
 
 fn generate_unique_worktree_name(repo: &Repository) -> Result<String, String> {
     use rand::Rng;
-    
+
     let mut rng = rand::rng();
-    
+
     for _ in 0..100 {
         let city = CITY_NAMES[rng.random_range(0..CITY_NAMES.len())];
         let num: u32 = rng.random_range(100..999);
         let name = format!("{}-{}", num, city);
-        
+
         let branch_exists = repo.find_branch(&name, BranchType::Local).is_ok();
         let ref_exists = repo.find_reference(&format!("refs/heads/{}", name)).is_ok();
-        
+
         if !branch_exists && !ref_exists {
             return Ok(name);
         }
@@ -325,21 +401,24 @@ fn generate_unique_worktree_name(repo: &Repository) -> Result<String, String> {
 #[tauri::command]
 pub fn create_worktree_auto(repo_path: String) -> Result<WorktreeInfo, String> {
     use std::process::Command;
-    
+
     Command::new("git")
         .args(["worktree", "prune"])
         .current_dir(&repo_path)
         .output()
         .ok();
-    
+
     let repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
-    
+
     let worktree_name = generate_unique_worktree_name(&repo)?;
-    
+
     // Find default branch (origin/main or origin/master)
     let base_branch = if repo.find_branch("origin/main", BranchType::Remote).is_ok() {
         "main"
-    } else if repo.find_branch("origin/master", BranchType::Remote).is_ok() {
+    } else if repo
+        .find_branch("origin/master", BranchType::Remote)
+        .is_ok()
+    {
         "master"
     } else {
         return Err("Cannot find origin/main or origin/master".to_string());
@@ -349,7 +428,7 @@ pub fn create_worktree_auto(repo_path: String) -> Result<WorktreeInfo, String> {
     if !worktrees_dir.exists() {
         std::fs::create_dir_all(&worktrees_dir).map_err(|e| e.to_string())?;
     }
-    
+
     let wt_path = worktrees_dir.join(&worktree_name);
 
     let remote_name = format!("origin/{}", base_branch);
@@ -395,11 +474,9 @@ pub fn create_worktree(
 
     let wt_path = match target_path {
         Some(p) => PathBuf::from(p),
-        None => {
-            PathBuf::from(&repo_path)
-                .join(".worktrees")
-                .join(&worktree_name)
-        }
+        None => PathBuf::from(&repo_path)
+            .join(".worktrees")
+            .join(&worktree_name),
     };
 
     let branch_name = new_branch_name.unwrap_or_else(|| worktree_name.clone());
@@ -437,7 +514,11 @@ pub fn create_worktree(
 }
 
 #[tauri::command]
-pub async fn delete_worktree(repo_path: String, worktree_name: String, force: bool) -> Result<(), String> {
+pub async fn delete_worktree(
+    repo_path: String,
+    worktree_name: String,
+    force: bool,
+) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
         let worktree = repo
@@ -450,7 +531,7 @@ pub async fn delete_worktree(repo_path: String, worktree_name: String, force: bo
             if wt_path.exists() {
                 std::fs::remove_dir_all(&wt_path).map_err(|e| e.to_string())?;
             }
-            
+
             let git_worktrees_dir = PathBuf::from(&repo_path)
                 .join(".git")
                 .join("worktrees")
@@ -482,7 +563,7 @@ pub async fn delete_worktree(repo_path: String, worktree_name: String, force: bo
 pub async fn get_changed_files(worktree_path: String) -> Result<Vec<ChangedFile>, String> {
     tokio::task::spawn_blocking(move || {
         let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
-        
+
         let base_branch_commit = repo
             .find_branch("origin/main", BranchType::Remote)
             .or_else(|_| repo.find_branch("origin/master", BranchType::Remote))
@@ -490,31 +571,35 @@ pub async fn get_changed_files(worktree_path: String) -> Result<Vec<ChangedFile>
             .get()
             .peel_to_commit()
             .map_err(|e| format!("Cannot get base commit: {}", e.message()))?;
-        
-        let head_commit = repo.head()
+
+        let head_commit = repo
+            .head()
             .map_err(|e| format!("Cannot get HEAD: {}", e.message()))?
             .peel_to_commit()
             .map_err(|e| format!("Cannot get HEAD commit: {}", e.message()))?;
-        
+
         let merge_base_oid = repo
             .merge_base(base_branch_commit.id(), head_commit.id())
             .map_err(|e| format!("Cannot find merge base: {}", e.message()))?;
         let merge_base_commit = repo
             .find_commit(merge_base_oid)
             .map_err(|e| format!("Cannot get merge base commit: {}", e.message()))?;
-        let base_tree = merge_base_commit.tree().map_err(|e| e.message().to_string())?;
-        
+        let base_tree = merge_base_commit
+            .tree()
+            .map_err(|e| e.message().to_string())?;
+
         let head_tree = head_commit.tree().map_err(|e| e.message().to_string())?;
-        
+
         let mut diff_opts = DiffOptions::new();
-        
+
         let diff = repo
             .diff_tree_to_tree(Some(&base_tree), Some(&head_tree), Some(&mut diff_opts))
             .map_err(|e| e.message().to_string())?;
-        
+
         let mut files: Vec<ChangedFile> = Vec::new();
-        let mut path_to_idx: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-        
+        let mut path_to_idx: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+
         for delta in diff.deltas() {
             let status = match delta.status() {
                 Delta::Added => "added",
@@ -525,10 +610,16 @@ pub async fn get_changed_files(worktree_path: String) -> Result<Vec<ChangedFile>
                 Delta::Untracked => "untracked",
                 _ => "unknown",
             };
-            
-            let new_path = delta.new_file().path().map(|p| p.to_string_lossy().to_string());
-            let old_path = delta.old_file().path().map(|p| p.to_string_lossy().to_string());
-            
+
+            let new_path = delta
+                .new_file()
+                .path()
+                .map(|p| p.to_string_lossy().to_string());
+            let old_path = delta
+                .old_file()
+                .path()
+                .map(|p| p.to_string_lossy().to_string());
+
             if let Some(path) = new_path.clone().or(old_path.clone()) {
                 path_to_idx.insert(path.clone(), files.len());
                 files.push(ChangedFile {
@@ -540,7 +631,7 @@ pub async fn get_changed_files(worktree_path: String) -> Result<Vec<ChangedFile>
                 });
             }
         }
-        
+
         let _ = diff.print(git2::DiffFormat::Patch, |delta, _hunk, line| {
             if let Some(path) = delta.new_file().path().or(delta.old_file().path()) {
                 let path_str = path.to_string_lossy().to_string();
@@ -554,7 +645,7 @@ pub async fn get_changed_files(worktree_path: String) -> Result<Vec<ChangedFile>
             }
             true
         });
-        
+
         Ok::<Vec<ChangedFile>, String>(files)
     })
     .await
@@ -562,10 +653,13 @@ pub async fn get_changed_files(worktree_path: String) -> Result<Vec<ChangedFile>
 }
 
 #[tauri::command]
-pub async fn get_file_diff(worktree_path: String, file_path: String) -> Result<FileDiffData, String> {
+pub async fn get_file_diff(
+    worktree_path: String,
+    file_path: String,
+) -> Result<FileDiffData, String> {
     tokio::task::spawn_blocking(move || {
         let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
-        
+
         let base_branch_commit = repo
             .find_branch("origin/main", BranchType::Remote)
             .or_else(|_| repo.find_branch("origin/master", BranchType::Remote))
@@ -573,41 +667,44 @@ pub async fn get_file_diff(worktree_path: String, file_path: String) -> Result<F
             .get()
             .peel_to_commit()
             .map_err(|e| format!("Cannot get base commit: {}", e.message()))?;
-        
-        let head_commit = repo.head()
+
+        let head_commit = repo
+            .head()
             .map_err(|e| format!("Cannot get HEAD: {}", e.message()))?
             .peel_to_commit()
             .map_err(|e| format!("Cannot get HEAD commit: {}", e.message()))?;
-        
+
         let merge_base_oid = repo
             .merge_base(base_branch_commit.id(), head_commit.id())
             .map_err(|e| format!("Cannot find merge base: {}", e.message()))?;
         let merge_base_commit = repo
             .find_commit(merge_base_oid)
             .map_err(|e| format!("Cannot get merge base commit: {}", e.message()))?;
-        let base_tree = merge_base_commit.tree().map_err(|e| e.message().to_string())?;
-        
+        let base_tree = merge_base_commit
+            .tree()
+            .map_err(|e| e.message().to_string())?;
+
         let head_tree = head_commit.tree().map_err(|e| e.message().to_string())?;
-        
+
         let old_content = base_tree
             .get_path(std::path::Path::new(&file_path))
             .ok()
             .and_then(|entry| repo.find_blob(entry.id()).ok())
             .and_then(|blob| String::from_utf8(blob.content().to_vec()).ok());
-        
+
         let new_content = head_tree
             .get_path(std::path::Path::new(&file_path))
             .ok()
             .and_then(|entry| repo.find_blob(entry.id()).ok())
             .and_then(|blob| String::from_utf8(blob.content().to_vec()).ok());
-        
+
         let mut diff_opts = DiffOptions::new();
         diff_opts.pathspec(&file_path);
-        
+
         let diff = repo
             .diff_tree_to_tree(Some(&base_tree), Some(&head_tree), Some(&mut diff_opts))
             .map_err(|e| e.message().to_string())?;
-        
+
         let mut patch = String::new();
         diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
             if let Ok(content) = std::str::from_utf8(line.content()) {
@@ -618,8 +715,9 @@ pub async fn get_file_diff(worktree_path: String, file_path: String) -> Result<F
                 patch.push_str(content);
             }
             true
-        }).map_err(|e| e.message().to_string())?;
-        
+        })
+        .map_err(|e| e.message().to_string())?;
+
         Ok::<FileDiffData, String>(FileDiffData {
             path: file_path,
             old_content,
@@ -635,24 +733,26 @@ pub async fn get_file_diff(worktree_path: String, file_path: String) -> Result<F
 pub async fn get_uncommitted_files(worktree_path: String) -> Result<Vec<ChangedFile>, String> {
     tokio::task::spawn_blocking(move || {
         let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
-        
-        let head_commit = repo.head()
+
+        let head_commit = repo
+            .head()
             .map_err(|e| format!("Cannot get HEAD: {}", e.message()))?
             .peel_to_commit()
             .map_err(|e| format!("Cannot get HEAD commit: {}", e.message()))?;
         let head_tree = head_commit.tree().map_err(|e| e.message().to_string())?;
-        
+
         let mut diff_opts = DiffOptions::new();
         diff_opts.include_untracked(true);
         diff_opts.recurse_untracked_dirs(true);
-        
+
         let diff = repo
             .diff_tree_to_workdir_with_index(Some(&head_tree), Some(&mut diff_opts))
             .map_err(|e| e.message().to_string())?;
-        
+
         let mut files: Vec<ChangedFile> = Vec::new();
-        let mut path_to_idx: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-        
+        let mut path_to_idx: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+
         for delta in diff.deltas() {
             let status = match delta.status() {
                 Delta::Added => "added",
@@ -663,10 +763,16 @@ pub async fn get_uncommitted_files(worktree_path: String) -> Result<Vec<ChangedF
                 Delta::Untracked => "untracked",
                 _ => "unknown",
             };
-            
-            let new_path = delta.new_file().path().map(|p| p.to_string_lossy().to_string());
-            let old_path = delta.old_file().path().map(|p| p.to_string_lossy().to_string());
-            
+
+            let new_path = delta
+                .new_file()
+                .path()
+                .map(|p| p.to_string_lossy().to_string());
+            let old_path = delta
+                .old_file()
+                .path()
+                .map(|p| p.to_string_lossy().to_string());
+
             if let Some(path) = new_path.clone().or(old_path.clone()) {
                 path_to_idx.insert(path.clone(), files.len());
                 files.push(ChangedFile {
@@ -678,7 +784,7 @@ pub async fn get_uncommitted_files(worktree_path: String) -> Result<Vec<ChangedF
                 });
             }
         }
-        
+
         let _ = diff.print(git2::DiffFormat::Patch, |delta, _hunk, line| {
             if let Some(path) = delta.new_file().path().or(delta.old_file().path()) {
                 let path_str = path.to_string_lossy().to_string();
@@ -692,7 +798,7 @@ pub async fn get_uncommitted_files(worktree_path: String) -> Result<Vec<ChangedF
             }
             true
         });
-        
+
         Ok::<Vec<ChangedFile>, String>(files)
     })
     .await
@@ -700,46 +806,54 @@ pub async fn get_uncommitted_files(worktree_path: String) -> Result<Vec<ChangedF
 }
 
 #[tauri::command]
-pub async fn get_uncommitted_diff(worktree_path: String, file_path: String, is_staged: bool) -> Result<FileDiffData, String> {
+pub async fn get_uncommitted_diff(
+    worktree_path: String,
+    file_path: String,
+    is_staged: bool,
+) -> Result<FileDiffData, String> {
     tokio::task::spawn_blocking(move || {
         let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
-        
-        let head_commit = repo.head()
+
+        let head_commit = repo
+            .head()
             .map_err(|e| format!("Cannot get HEAD: {}", e.message()))?
             .peel_to_commit()
             .map_err(|e| format!("Cannot get HEAD commit: {}", e.message()))?;
         let head_tree = head_commit.tree().map_err(|e| e.message().to_string())?;
-        
+
         let workdir = repo.workdir().ok_or("No workdir")?;
         let full_path = workdir.join(&file_path);
-        
+
         let index = repo.index().map_err(|e| e.message().to_string())?;
-        
+
         let index_content = index
             .get_path(std::path::Path::new(&file_path), 0)
             .and_then(|entry| repo.find_blob(entry.id).ok())
             .and_then(|blob| String::from_utf8(blob.content().to_vec()).ok());
-        
+
         let head_content = head_tree
             .get_path(std::path::Path::new(&file_path))
             .ok()
             .and_then(|entry| repo.find_blob(entry.id()).ok())
             .and_then(|blob| String::from_utf8(blob.content().to_vec()).ok());
-        
+
         let workdir_content = std::fs::read_to_string(&full_path).ok();
-        
+
         let (old_content, new_content) = if is_staged {
-            (head_content, index_content.clone().or_else(|| workdir_content.clone()))
+            (
+                head_content,
+                index_content.clone().or_else(|| workdir_content.clone()),
+            )
         } else {
             (index_content.or(head_content), workdir_content)
         };
-        
+
         let is_new_file = old_content.is_none();
-        
+
         let mut diff_opts = DiffOptions::new();
         diff_opts.pathspec(&file_path);
         diff_opts.include_untracked(true);
-        
+
         let diff = if is_staged {
             repo.diff_tree_to_index(Some(&head_tree), Some(&index), Some(&mut diff_opts))
                 .map_err(|e| e.message().to_string())?
@@ -747,7 +861,7 @@ pub async fn get_uncommitted_diff(worktree_path: String, file_path: String, is_s
             repo.diff_index_to_workdir(Some(&index), Some(&mut diff_opts))
                 .map_err(|e| e.message().to_string())?
         };
-        
+
         let mut patch = String::new();
         diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
             if let Ok(content) = std::str::from_utf8(line.content()) {
@@ -758,8 +872,9 @@ pub async fn get_uncommitted_diff(worktree_path: String, file_path: String, is_s
                 patch.push_str(content);
             }
             true
-        }).map_err(|e| e.message().to_string())?;
-        
+        })
+        .map_err(|e| e.message().to_string())?;
+
         let patch = if patch.is_empty() && is_new_file {
             if let Some(ref content) = new_content {
                 let lines: Vec<&str> = content.lines().collect();
@@ -777,7 +892,7 @@ pub async fn get_uncommitted_diff(worktree_path: String, file_path: String, is_s
         } else {
             patch
         };
-        
+
         Ok::<FileDiffData, String>(FileDiffData {
             path: file_path,
             old_content,
@@ -798,27 +913,27 @@ pub async fn get_file_content(
     tokio::task::spawn_blocking(move || {
         if let Some(ref_name) = git_ref {
             let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
-            
+
             let reference = repo
                 .find_branch(&ref_name, BranchType::Remote)
                 .or_else(|_| repo.find_branch(&ref_name, BranchType::Local))
                 .map_err(|e| format!("Cannot find ref {}: {}", ref_name, e.message()))?;
-            
+
             let commit = reference
                 .get()
                 .peel_to_commit()
                 .map_err(|e| e.message().to_string())?;
-            
+
             let tree = commit.tree().map_err(|e| e.message().to_string())?;
-            
+
             let entry = tree
                 .get_path(std::path::Path::new(&file_path))
                 .map_err(|e| e.message().to_string())?;
-            
+
             let blob = repo
                 .find_blob(entry.id())
                 .map_err(|e| e.message().to_string())?;
-            
+
             String::from_utf8(blob.content().to_vec())
                 .map_err(|_| "File is not valid UTF-8".to_string())
         } else {
@@ -851,10 +966,10 @@ pub struct GitStatus {
 pub async fn get_git_status(worktree_path: String) -> Result<GitStatus, String> {
     tokio::task::spawn_blocking(move || {
         let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
-        
+
         let mut staged: Vec<GitStatusFile> = Vec::new();
         let mut unstaged: Vec<GitStatusFile> = Vec::new();
-        
+
         // Get status
         let statuses = repo
             .statuses(Some(
@@ -864,7 +979,7 @@ pub async fn get_git_status(worktree_path: String) -> Result<GitStatus, String> 
                     .include_ignored(false),
             ))
             .map_err(|e| e.message().to_string())?;
-        
+
         for entry in statuses.iter() {
             // Skip entries with invalid UTF-8 paths
             let path = match entry.path() {
@@ -872,7 +987,7 @@ pub async fn get_git_status(worktree_path: String) -> Result<GitStatus, String> 
                 _ => continue,
             };
             let status = entry.status();
-            
+
             // Check staged changes (index)
             if status.intersects(
                 git2::Status::INDEX_NEW
@@ -896,7 +1011,7 @@ pub async fn get_git_status(worktree_path: String) -> Result<GitStatus, String> 
                     staged: true,
                 });
             }
-            
+
             // Check unstaged changes (worktree)
             if status.intersects(
                 git2::Status::WT_NEW
@@ -921,14 +1036,17 @@ pub async fn get_git_status(worktree_path: String) -> Result<GitStatus, String> 
                 });
             }
         }
-        
+
         // Get branch info
-        let branch = repo.head().ok().and_then(|h| h.shorthand().map(String::from));
-        
+        let branch = repo
+            .head()
+            .ok()
+            .and_then(|h| h.shorthand().map(String::from));
+
         let (upstream_branch, ahead, behind) = get_upstream_info(&repo)
             .map(|(name, ahead, behind)| (Some(name), ahead, behind))
             .unwrap_or((None, 0, 0));
-        
+
         Ok::<GitStatus, String>(GitStatus {
             staged,
             unstaged,
@@ -961,7 +1079,7 @@ pub async fn git_stage_files(worktree_path: String, files: Vec<String>) -> Resul
     tokio::task::spawn_blocking(move || {
         let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
         let mut index = repo.index().map_err(|e| e.message().to_string())?;
-        
+
         for file in files {
             // Check if file exists - if not, it's a deletion
             let full_path = PathBuf::from(&worktree_path).join(&file);
@@ -975,9 +1093,9 @@ pub async fn git_stage_files(worktree_path: String, files: Vec<String>) -> Resul
                     .map_err(|e| format!("Failed to stage deletion {}: {}", file, e.message()))?;
             }
         }
-        
+
         index.write().map_err(|e| e.message().to_string())?;
-        
+
         Ok::<(), String>(())
     })
     .await
@@ -988,7 +1106,7 @@ pub async fn git_stage_files(worktree_path: String, files: Vec<String>) -> Resul
 pub async fn git_unstage_files(worktree_path: String, files: Vec<String>) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
-        
+
         // Try to get HEAD tree, but handle unborn branch (no commits yet)
         let head_tree = match repo.head() {
             Ok(head) => {
@@ -998,18 +1116,20 @@ pub async fn git_unstage_files(worktree_path: String, files: Vec<String>) -> Res
             Err(e) if e.code() == git2::ErrorCode::UnbornBranch => None,
             Err(e) => return Err(e.message().to_string()),
         };
-        
+
         let mut index = repo.index().map_err(|e| e.message().to_string())?;
-        
+
         for file in files {
             let path = std::path::Path::new(&file);
-            
+
             // Check if file exists in HEAD (if HEAD exists)
             let entry_in_head = head_tree.as_ref().and_then(|tree| tree.get_path(path).ok());
-            
+
             if let Some(entry) = entry_in_head {
                 // File exists in HEAD, restore it from HEAD
-                let blob = repo.find_blob(entry.id()).map_err(|e| e.message().to_string())?;
+                let blob = repo
+                    .find_blob(entry.id())
+                    .map_err(|e| e.message().to_string())?;
                 index
                     .add(&git2::IndexEntry {
                         ctime: git2::IndexTime::new(0, 0),
@@ -1033,9 +1153,9 @@ pub async fn git_unstage_files(worktree_path: String, files: Vec<String>) -> Res
                     .map_err(|e| format!("Failed to unstage {}: {}", file, e.message()))?;
             }
         }
-        
+
         index.write().map_err(|e| e.message().to_string())?;
-        
+
         Ok::<(), String>(())
     })
     .await
@@ -1046,13 +1166,15 @@ pub async fn git_unstage_files(worktree_path: String, files: Vec<String>) -> Res
 pub async fn git_commit(worktree_path: String, message: String) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
         let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
-        
+
         let mut index = repo.index().map_err(|e| e.message().to_string())?;
         let tree_oid = index.write_tree().map_err(|e| e.message().to_string())?;
-        let tree = repo.find_tree(tree_oid).map_err(|e| e.message().to_string())?;
-        
+        let tree = repo
+            .find_tree(tree_oid)
+            .map_err(|e| e.message().to_string())?;
+
         let signature = repo.signature().map_err(|e| e.message().to_string())?;
-        
+
         // Handle initial commit (unborn HEAD) vs normal commit
         let commit_oid = match repo.head() {
             Ok(head) => {
@@ -1069,19 +1191,12 @@ pub async fn git_commit(worktree_path: String, message: String) -> Result<String
             }
             Err(e) if e.code() == git2::ErrorCode::UnbornBranch => {
                 // Initial commit - no parent
-                repo.commit(
-                    Some("HEAD"),
-                    &signature,
-                    &signature,
-                    &message,
-                    &tree,
-                    &[],
-                )
-                .map_err(|e| e.message().to_string())?
+                repo.commit(Some("HEAD"), &signature, &signature, &message, &tree, &[])
+                    .map_err(|e| e.message().to_string())?
             }
             Err(e) => return Err(e.message().to_string()),
         };
-        
+
         Ok::<String, String>(commit_oid.to_string())
     })
     .await
@@ -1092,18 +1207,18 @@ pub async fn git_commit(worktree_path: String, message: String) -> Result<String
 pub async fn git_push(worktree_path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
-        
+
         let head = repo.head().map_err(|e| e.message().to_string())?;
         let branch_name = head
             .shorthand()
             .ok_or_else(|| "Could not get branch name".to_string())?;
-        
+
         let has_upstream = repo
             .find_branch(branch_name, BranchType::Local)
             .ok()
             .and_then(|b| b.upstream().ok())
             .is_some();
-        
+
         let output = if has_upstream {
             Command::new("git")
                 .args(["push"])
@@ -1135,18 +1250,18 @@ pub async fn git_stage_all(worktree_path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
         let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
         let mut index = repo.index().map_err(|e| e.message().to_string())?;
-        
+
         index
             .add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
             .map_err(|e| e.message().to_string())?;
-        
+
         // Also handle deletions
         index
             .update_all(["*"].iter(), None)
             .map_err(|e| e.message().to_string())?;
-        
+
         index.write().map_err(|e| e.message().to_string())?;
-        
+
         Ok::<(), String>(())
     })
     .await

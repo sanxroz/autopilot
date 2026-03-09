@@ -1,5 +1,6 @@
 use super::cli_tools::find_cli_tool;
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::process::Command;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -111,7 +112,6 @@ struct GhApiNotificationSubject {
     url: Option<String>,
 }
 
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GhPRResponse {
@@ -148,18 +148,18 @@ fn compute_checks_status(checks: &[GhStatusCheck]) -> Option<String> {
     if checks.is_empty() {
         return None;
     }
-    
+
     let has_failure = checks.iter().any(|c| {
-        c.conclusion.as_deref() == Some("FAILURE") || 
-        c.conclusion.as_deref() == Some("ERROR") ||
-        c.state.as_deref() == Some("FAILURE") ||
-        c.state.as_deref() == Some("ERROR")
+        c.conclusion.as_deref() == Some("FAILURE")
+            || c.conclusion.as_deref() == Some("ERROR")
+            || c.state.as_deref() == Some("FAILURE")
+            || c.state.as_deref() == Some("ERROR")
     });
-    
-    let has_pending = checks.iter().any(|c| {
-        c.conclusion.is_none() && c.state.as_deref() == Some("PENDING")
-    });
-    
+
+    let has_pending = checks
+        .iter()
+        .any(|c| c.conclusion.is_none() && c.state.as_deref() == Some("PENDING"));
+
     if has_failure {
         Some("failure".to_string())
     } else if has_pending {
@@ -260,7 +260,7 @@ pub fn check_gh_auth() -> Result<String, String> {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    
+
     if combined.contains("Logged in to") {
         for line in combined.lines() {
             if line.contains("account") {
@@ -289,11 +289,16 @@ pub async fn get_pr_for_branch(
     let gh_path = find_cli_tool("gh")?;
     let output = Command::new(&gh_path)
         .args([
-            "pr", "list",
-            "--head", &branch,
-            "--state", "all",
-            "--limit", "1",
-            "--json", PR_JSON_FIELDS,
+            "pr",
+            "list",
+            "--head",
+            &branch,
+            "--state",
+            "all",
+            "--limit",
+            "1",
+            "--json",
+            PR_JSON_FIELDS,
         ])
         .current_dir(&repo_path)
         .output()
@@ -304,11 +309,11 @@ pub async fn get_pr_for_branch(
         return Err(format!("gh command failed: {}", stderr));
     }
 
-    let stdout = String::from_utf8(output.stdout)
-        .map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
+    let stdout =
+        String::from_utf8(output.stdout).map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
 
-    let prs: Vec<GhPRResponse> = serde_json::from_str(&stdout)
-        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+    let prs: Vec<GhPRResponse> =
+        serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
     Ok(prs.into_iter().next().map(map_gh_pr_to_status))
 }
@@ -331,21 +336,28 @@ pub struct RepoPRStatuses {
 }
 
 #[tauri::command]
-pub async fn get_all_prs_for_repos(repos: Vec<RepoWithBranches>) -> Result<Vec<RepoPRStatuses>, String> {
+pub async fn get_all_prs_for_repos(
+    repos: Vec<RepoWithBranches>,
+) -> Result<Vec<RepoPRStatuses>, String> {
     let gh_path = find_cli_tool("gh")?;
     let mut results = Vec::new();
-    
+
     for repo in repos {
         let mut statuses = Vec::new();
-        
+
         for branch in &repo.branches {
             let output = Command::new(&gh_path)
                 .args([
-                    "pr", "list",
-                    "--head", branch,
-                    "--state", "all",
-                    "--limit", "1",
-                    "--json", PR_JSON_FIELDS,
+                    "pr",
+                    "list",
+                    "--head",
+                    branch,
+                    "--state",
+                    "all",
+                    "--limit",
+                    "1",
+                    "--json",
+                    PR_JSON_FIELDS,
                 ])
                 .current_dir(&repo.repo_path)
                 .output();
@@ -361,40 +373,6 @@ pub async fn get_all_prs_for_repos(repos: Vec<RepoWithBranches>) -> Result<Vec<R
             }
         }
 
-        results.push(RepoPRStatuses { repo_path: repo.repo_path, statuses });
-    }
-
-    Ok(results)
-}
-
-#[tauri::command]
-pub async fn get_all_open_prs_for_repos(repos: Vec<RepoPathInput>) -> Result<Vec<RepoPRStatuses>, String> {
-    let gh_path = find_cli_tool("gh")?;
-    let mut results = Vec::new();
-
-    for repo in repos {
-        let output = Command::new(&gh_path)
-            .args([
-                "pr", "list",
-                "--state", "open",
-                "--limit", "100",
-                "--json", PR_JSON_FIELDS,
-            ])
-            .current_dir(&repo.repo_path)
-            .output()
-            .map_err(|e| format!("Failed to run gh command: {}", e))?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("gh command failed for {}: {}", repo.repo_path, stderr));
-        }
-
-        let stdout = String::from_utf8(output.stdout)
-            .map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
-        let prs: Vec<GhPRResponse> = serde_json::from_str(&stdout)
-            .map_err(|e| format!("Failed to parse JSON: {}", e))?;
-
-        let statuses = prs.into_iter().map(map_gh_pr_to_status).collect();
         results.push(RepoPRStatuses {
             repo_path: repo.repo_path,
             statuses,
@@ -405,18 +383,66 @@ pub async fn get_all_open_prs_for_repos(repos: Vec<RepoPathInput>) -> Result<Vec
 }
 
 #[tauri::command]
-pub async fn get_pr_status(
-    repo_path: String,
-    pr_number: u64,
-) -> Result<PRStatus, String> {
+pub async fn get_all_open_prs_for_repos(
+    repos: Vec<RepoPathInput>,
+) -> Result<Vec<RepoPRStatuses>, String> {
+    let gh_path = find_cli_tool("gh")?;
+    let mut results = Vec::new();
+
+    for repo in repos {
+        let output = Command::new(&gh_path)
+            .args([
+                "pr",
+                "list",
+                "--state",
+                "open",
+                "--limit",
+                "100",
+                "--json",
+                PR_JSON_FIELDS,
+            ])
+            .current_dir(&repo.repo_path)
+            .output();
+
+        let statuses = match output {
+            Ok(out) if out.status.success() => {
+                let stdout = String::from_utf8(out.stdout).unwrap_or_default();
+                let prs: Vec<GhPRResponse> = serde_json::from_str(&stdout).unwrap_or_default();
+                prs.into_iter().map(map_gh_pr_to_status).collect()
+            }
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                eprintln!(
+                    "DEBUG: Failed to fetch open PRs for {}: {}",
+                    repo.repo_path, stderr
+                );
+                Vec::new()
+            }
+            Err(e) => {
+                eprintln!(
+                    "DEBUG: Failed to run gh command for {}: {}",
+                    repo.repo_path, e
+                );
+                Vec::new()
+            }
+        };
+
+        results.push(RepoPRStatuses {
+            repo_path: repo.repo_path,
+            statuses,
+        });
+    }
+
+    Ok(results)
+}
+
+#[tauri::command]
+pub async fn get_pr_status(repo_path: String, pr_number: u64) -> Result<PRStatus, String> {
     let gh_path = find_cli_tool("gh")?;
     let pr_ref = format!("{}", pr_number);
-    
+
     let output = Command::new(&gh_path)
-        .args([
-            "pr", "view", &pr_ref,
-            "--json", PR_JSON_FIELDS,
-        ])
+        .args(["pr", "view", &pr_ref, "--json", PR_JSON_FIELDS])
         .current_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
@@ -426,13 +452,124 @@ pub async fn get_pr_status(
         return Err(format!("gh command failed: {}", stderr));
     }
 
-    let stdout = String::from_utf8(output.stdout)
-        .map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
+    let stdout =
+        String::from_utf8(output.stdout).map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
 
-    let pr: GhPRResponse = serde_json::from_str(&stdout)
-        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+    let pr: GhPRResponse =
+        serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
     Ok(map_gh_pr_to_status(pr))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmitReviewCommentInput {
+    pub path: String,
+    pub line: u32,
+    pub body: String,
+    pub side: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SubmitReviewCommentPayload {
+    path: String,
+    line: u32,
+    body: String,
+    side: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SubmitPRReviewPayload {
+    event: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    body: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    comments: Vec<SubmitReviewCommentPayload>,
+}
+
+async fn resolve_repo_name_with_owner(repo_path: &str) -> Result<String, String> {
+    get_repo_from_remote(repo_path.to_string())
+        .await?
+        .ok_or_else(|| "Failed to resolve repository owner/name".to_string())
+}
+
+fn get_latest_pr_commit_sha(
+    gh_path: &str,
+    repo_path: &str,
+    pr_number: u64,
+) -> Result<String, String> {
+    let latest_commit_output = Command::new(gh_path)
+        .args([
+            "pr",
+            "view",
+            &pr_number.to_string(),
+            "--json",
+            "commits",
+            "-q",
+            ".commits[-1].oid",
+        ])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to get latest PR commit SHA: {}", e))?;
+
+    if !latest_commit_output.status.success() {
+        let stderr = String::from_utf8_lossy(&latest_commit_output.stderr);
+        return Err(format!("Failed to get latest PR commit SHA: {}", stderr));
+    }
+
+    let latest_commit_sha = String::from_utf8(latest_commit_output.stdout)
+        .map_err(|e| format!("Invalid UTF-8 output: {}", e))?
+        .trim()
+        .to_string();
+
+    if latest_commit_sha.is_empty() {
+        return Err("Latest PR commit SHA is empty".to_string());
+    }
+
+    Ok(latest_commit_sha)
+}
+
+fn run_gh_api_json_post<T: Serialize>(
+    gh_path: &str,
+    repo_path: &str,
+    endpoint: &str,
+    payload: &T,
+) -> Result<(), String> {
+    let payload_bytes = serde_json::to_vec(payload)
+        .map_err(|e| format!("Failed to serialize GitHub API payload: {}", e))?;
+
+    let payload_path = std::env::temp_dir().join(format!(
+        "autopilot-gh-api-payload-{}.json",
+        uuid::Uuid::new_v4()
+    ));
+
+    fs::write(&payload_path, payload_bytes)
+        .map_err(|e| format!("Failed to write GitHub API payload: {}", e))?;
+
+    let output = Command::new(gh_path)
+        .args(["api", endpoint, "--method", "POST", "--input"])
+        .arg(&payload_path)
+        .current_dir(repo_path)
+        .output();
+
+    let _ = fs::remove_file(&payload_path);
+
+    let output = output.map_err(|e| format!("Failed to run gh api command: {}", e))?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let message = if stderr.is_empty() { stdout } else { stderr };
+        Err(if message.is_empty() {
+            "GitHub API request failed".to_string()
+        } else {
+            message
+        })
+    }
 }
 
 #[tauri::command]
@@ -453,7 +590,11 @@ pub async fn approve_pr(repo_path: String, pr_number: u64) -> Result<bool, Strin
 }
 
 #[tauri::command]
-pub async fn request_changes_pr(repo_path: String, pr_number: u64, body: String) -> Result<bool, String> {
+pub async fn request_changes_pr(
+    repo_path: String,
+    pr_number: u64,
+    body: String,
+) -> Result<bool, String> {
     let gh_path = find_cli_tool("gh")?;
     let output = Command::new(&gh_path)
         .args([
@@ -477,7 +618,11 @@ pub async fn request_changes_pr(repo_path: String, pr_number: u64, body: String)
 }
 
 #[tauri::command]
-pub async fn comment_on_pr(repo_path: String, pr_number: u64, body: String) -> Result<bool, String> {
+pub async fn comment_on_pr(
+    repo_path: String,
+    pr_number: u64,
+    body: String,
+) -> Result<bool, String> {
     let gh_path = find_cli_tool("gh")?;
     let output = Command::new(&gh_path)
         .args(["pr", "comment", &pr_number.to_string(), "--body", &body])
@@ -502,67 +647,88 @@ pub async fn create_pr_review_comment(
     line: u32,
 ) -> Result<bool, String> {
     let gh_path = find_cli_tool("gh")?;
-
-    let repo_info = get_repo_from_remote(repo_path.clone())
-        .await?
-        .ok_or_else(|| "Failed to resolve repository owner/name".to_string())?;
-
-    let latest_commit_output = Command::new(&gh_path)
-        .args([
-            "pr",
-            "view",
-            &pr_number.to_string(),
-            "--json",
-            "commits",
-            "-q",
-            ".commits[-1].oid",
-        ])
-        .current_dir(&repo_path)
-        .output()
-        .map_err(|e| format!("Failed to get latest PR commit SHA: {}", e))?;
-
-    if !latest_commit_output.status.success() {
-        let stderr = String::from_utf8_lossy(&latest_commit_output.stderr);
-        return Err(format!("Failed to get latest PR commit SHA: {}", stderr));
-    }
-
-    let latest_commit_sha = String::from_utf8(latest_commit_output.stdout)
-        .map_err(|e| format!("Invalid UTF-8 output: {}", e))?
-        .trim()
-        .to_string();
-
-    if latest_commit_sha.is_empty() {
-        return Err("Latest PR commit SHA is empty".to_string());
-    }
+    let repo_info = resolve_repo_name_with_owner(&repo_path).await?;
+    let latest_commit_sha = get_latest_pr_commit_sha(&gh_path, &repo_path, pr_number)?;
 
     let endpoint = format!("repos/{}/pulls/{}/comments", repo_info, pr_number);
-    let output = Command::new(&gh_path)
-        .args([
-            "api",
-            &endpoint,
-            "--method",
-            "POST",
-            "-f",
-            &format!("body={}", body),
-            "-f",
-            &format!("path={}", path),
-            "-F",
-            &format!("line={}", line),
-            "-f",
-            &format!("commit_id={}", latest_commit_sha),
-            "-f",
-            "side=RIGHT",
-        ])
-        .current_dir(&repo_path)
-        .output()
-        .map_err(|e| format!("Failed to run gh api for review comment: {}", e))?;
+    let payload = serde_json::json!({
+        "body": body,
+        "path": path,
+        "line": line,
+        "commit_id": latest_commit_sha,
+        "side": "RIGHT",
+    });
 
-    if output.status.success() {
-        Ok(true)
-    } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        Err(format!("Failed to create PR review comment: {}", stderr))
+    run_gh_api_json_post(&gh_path, &repo_path, &endpoint, &payload)
+        .map_err(|e| format!("Failed to create PR review comment: {}", e))?;
+
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn submit_pr_review(
+    repo_path: String,
+    pr_number: u64,
+    event: String,
+    body: Option<String>,
+    comments: Vec<SubmitReviewCommentInput>,
+) -> Result<bool, String> {
+    let gh_path = find_cli_tool("gh")?;
+    let repo_info = resolve_repo_name_with_owner(&repo_path).await?;
+
+    let normalized_event = match event.trim().to_uppercase().as_str() {
+        "COMMENT" => "COMMENT",
+        "APPROVE" => "APPROVE",
+        "REQUEST_CHANGES" => "REQUEST_CHANGES",
+        _ => return Err(format!("Invalid review event: {}", event)),
     }
+    .to_string();
+
+    let normalized_body = body
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let normalized_comments = comments
+        .into_iter()
+        .filter_map(|comment| {
+            let path = comment.path.trim().to_string();
+            let body = comment.body.trim().to_string();
+
+            if path.is_empty() || body.is_empty() {
+                return None;
+            }
+
+            Some(SubmitReviewCommentPayload {
+                path,
+                line: comment.line,
+                body,
+                side: comment
+                    .side
+                    .map(|value| value.trim().to_uppercase())
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or_else(|| "RIGHT".to_string()),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    if matches!(normalized_event.as_str(), "COMMENT" | "REQUEST_CHANGES")
+        && normalized_body.is_none()
+        && normalized_comments.is_empty()
+    {
+        return Err("Review submission requires a body or at least one inline comment".to_string());
+    }
+
+    let payload = SubmitPRReviewPayload {
+        event: normalized_event,
+        body: normalized_body,
+        comments: normalized_comments,
+    };
+
+    let endpoint = format!("repos/{}/pulls/{}/reviews", repo_info, pr_number);
+    run_gh_api_json_post(&gh_path, &repo_path, &endpoint, &payload)
+        .map_err(|e| format!("Failed to submit PR review: {}", e))?;
+
+    Ok(true)
 }
 
 #[tauri::command]
@@ -583,7 +749,11 @@ pub async fn close_pr(repo_path: String, pr_number: u64) -> Result<bool, String>
 }
 
 #[tauri::command]
-pub async fn rerequest_pr_review(repo_path: String, pr_number: u64, reviewer: String) -> Result<bool, String> {
+pub async fn rerequest_pr_review(
+    repo_path: String,
+    pr_number: u64,
+    reviewer: String,
+) -> Result<bool, String> {
     let gh_path = find_cli_tool("gh")?;
     let output = Command::new(&gh_path)
         .args([
@@ -609,7 +779,14 @@ pub async fn rerequest_pr_review(repo_path: String, pr_number: u64, reviewer: St
 pub async fn get_repo_from_remote(repo_path: String) -> Result<Option<String>, String> {
     let gh_path = find_cli_tool("gh")?;
     let output = Command::new(&gh_path)
-        .args(["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"])
+        .args([
+            "repo",
+            "view",
+            "--json",
+            "nameWithOwner",
+            "-q",
+            ".nameWithOwner",
+        ])
         .current_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
@@ -662,11 +839,14 @@ struct GhCheckRun {
 pub async fn get_pr_checks(repo_path: String, pr_number: u64) -> Result<PRChecksResult, String> {
     let gh_path = find_cli_tool("gh")?;
     let pr_ref = format!("{}", pr_number);
-    
+
     let output = Command::new(&gh_path)
         .args([
-            "pr", "checks", &pr_ref,
-            "--json", "name,state,description,link,startedAt,completedAt",
+            "pr",
+            "checks",
+            &pr_ref,
+            "--json",
+            "name,state,description,link,startedAt,completedAt",
         ])
         .current_dir(&repo_path)
         .output()
@@ -683,8 +863,8 @@ pub async fn get_pr_checks(repo_path: String, pr_number: u64) -> Result<PRChecks
         return Err(format!("gh command failed: {}", stderr));
     }
 
-    let stdout = String::from_utf8(output.stdout)
-        .map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
+    let stdout =
+        String::from_utf8(output.stdout).map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
 
     let gh_checks: Vec<GhCheckRun> = serde_json::from_str(&stdout).unwrap_or_default();
 
@@ -698,7 +878,11 @@ pub async fn get_pr_checks(repo_path: String, pr_number: u64) -> Result<PRChecks
                 "PENDING" | "QUEUED" | "IN_PROGRESS" => None,
                 _ => None,
             };
-            let status = if conclusion.is_some() { "completed".to_string() } else { "in_progress".to_string() };
+            let status = if conclusion.is_some() {
+                "completed".to_string()
+            } else {
+                "in_progress".to_string()
+            };
             PRCheck {
                 name: c.name,
                 status,
@@ -712,7 +896,10 @@ pub async fn get_pr_checks(repo_path: String, pr_number: u64) -> Result<PRChecks
 
     let overall_status = if checks.is_empty() {
         "none".to_string()
-    } else if checks.iter().any(|c| c.conclusion.as_deref() == Some("failure")) {
+    } else if checks
+        .iter()
+        .any(|c| c.conclusion.as_deref() == Some("failure"))
+    {
         "failure".to_string()
     } else if checks.iter().any(|c| c.conclusion.is_none()) {
         "pending".to_string()
@@ -731,10 +918,10 @@ pub struct PRComment {
     pub author: String,
     pub body: String,
     pub created_at: String,
-    pub comment_type: String,  // "issue", "review", "review_thread"
-    pub state: Option<String>, // For reviews: "approved", "changes_requested", "commented"
-    pub path: Option<String>,  // For review threads: file path
-    pub line: Option<u32>,     // For review threads: line number
+    pub comment_type: String,      // "issue", "review", "review_thread"
+    pub state: Option<String>,     // For reviews: "approved", "changes_requested", "commented"
+    pub path: Option<String>,      // For review threads: file path
+    pub line: Option<u32>,         // For review threads: line number
     pub review_id: Option<String>, // For review threads: parent review ID
     pub is_resolved: bool,
 }
@@ -811,7 +998,10 @@ struct GhPRDetailedResponse {
     review_decision: Option<String>,
 }
 
-async fn fetch_reviews_rest_api(repo_path: &str, pr_number: u64) -> Result<Vec<RestApiReview>, String> {
+async fn fetch_reviews_rest_api(
+    repo_path: &str,
+    pr_number: u64,
+) -> Result<Vec<RestApiReview>, String> {
     let gh_path = find_cli_tool("gh")?;
     eprintln!("DEBUG: Fetching reviews via REST API for PR #{}", pr_number);
     let output = Command::new(&gh_path)
@@ -830,12 +1020,15 @@ async fn fetch_reviews_rest_api(repo_path: &str, pr_number: u64) -> Result<Vec<R
         return Ok(Vec::new());
     }
 
-    let stdout = String::from_utf8(output.stdout)
-        .map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
+    let stdout =
+        String::from_utf8(output.stdout).map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
 
     match serde_json::from_str::<Vec<RestApiReview>>(&stdout) {
         Ok(reviews) => {
-            eprintln!("DEBUG: Successfully parsed {} reviews from REST API", reviews.len());
+            eprintln!(
+                "DEBUG: Successfully parsed {} reviews from REST API",
+                reviews.len()
+            );
             Ok(reviews)
         }
         Err(e) => {
@@ -843,6 +1036,33 @@ async fn fetch_reviews_rest_api(repo_path: &str, pr_number: u64) -> Result<Vec<R
             Ok(Vec::new())
         }
     }
+}
+
+async fn fetch_review_comments_rest_api(
+    repo_path: &str,
+    pr_number: u64,
+) -> Result<Vec<GhReviewComment>, String> {
+    let gh_path = find_cli_tool("gh")?;
+    let output = Command::new(&gh_path)
+        .args([
+            "api",
+            &format!("repos/{{owner}}/{{repo}}/pulls/{}/comments", pr_number),
+            "--paginate",
+        ])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| format!("Failed to fetch review comments: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("Failed to fetch review comments: {}", stderr));
+    }
+
+    let stdout =
+        String::from_utf8(output.stdout).map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
+
+    serde_json::from_str::<Vec<GhReviewComment>>(&stdout)
+        .map_err(|e| format!("Failed to parse review comments: {}", e))
 }
 
 #[derive(Debug, Deserialize)]
@@ -898,11 +1118,15 @@ struct GraphqlPullRequestReview {
     databaseId: u64,
 }
 
-async fn fetch_review_threads_graphql(repo_path: &str, pr_number: u64) -> Result<Vec<PRComment>, String> {
+async fn fetch_review_threads_graphql(
+    repo_path: &str,
+    pr_number: u64,
+) -> Result<Vec<PRComment>, String> {
     let gh_path = find_cli_tool("gh")?;
-    
+
     // Get owner and repo name first
-    let repo_info = get_repo_from_remote(repo_path.to_string()).await?
+    let repo_info = get_repo_from_remote(repo_path.to_string())
+        .await?
         .ok_or("Failed to get repo info")?;
     let parts: Vec<&str> = repo_info.split('/').collect();
     if parts.len() != 2 {
@@ -949,19 +1173,22 @@ async fn fetch_review_threads_graphql(repo_path: &str, pr_number: u64) -> Result
         return Err(format!("gh graphql failed: {}", stderr));
     }
 
-    let stdout = String::from_utf8(output.stdout)
-        .map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
+    let stdout =
+        String::from_utf8(output.stdout).map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
 
     let response: GraphqlThreadResponse = serde_json::from_str(&stdout)
         .map_err(|e| format!("Failed to parse GraphQL response: {}", e))?;
 
     let mut comments = Vec::new();
-    
+
     for thread in response.data.repository.pullRequest.reviewThreads.nodes {
         let is_resolved = thread.isResolved;
         for comment in thread.comments.nodes {
             comments.push(PRComment {
-                author: comment.author.map(|a| a.login).unwrap_or_else(|| "ghost".to_string()),
+                author: comment
+                    .author
+                    .map(|a| a.login)
+                    .unwrap_or_else(|| "ghost".to_string()),
                 body: comment.body,
                 created_at: comment.createdAt,
                 comment_type: "review_thread".to_string(),
@@ -977,16 +1204,18 @@ async fn fetch_review_threads_graphql(repo_path: &str, pr_number: u64) -> Result
     Ok(comments)
 }
 
-
 #[tauri::command]
 pub async fn get_pr_details(repo_path: String, pr_number: u64) -> Result<PRDetailedInfo, String> {
     let gh_path = find_cli_tool("gh")?;
     let pr_ref = format!("{}", pr_number);
-    
+
     let output = Command::new(&gh_path)
         .args([
-            "pr", "view", &pr_ref,
-            "--json", "mergeStateStatus,mergeable,body,comments,reviews,reviewDecision",
+            "pr",
+            "view",
+            &pr_ref,
+            "--json",
+            "mergeStateStatus,mergeable,body,comments,reviews,reviewDecision",
         ])
         .current_dir(&repo_path)
         .output()
@@ -997,29 +1226,38 @@ pub async fn get_pr_details(repo_path: String, pr_number: u64) -> Result<PRDetai
         return Err(format!("gh command failed: {}", stderr));
     }
 
-    let stdout = String::from_utf8(output.stdout)
-        .map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
+    let stdout =
+        String::from_utf8(output.stdout).map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
 
-    let pr: GhPRDetailedResponse = serde_json::from_str(&stdout)
-        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+    let pr: GhPRDetailedResponse =
+        serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
-    let mut all_comments: Vec<PRComment> = pr.comments.into_iter().map(|c| PRComment {
-        author: c.author.login,
-        body: c.body,
-        created_at: c.created_at,
-        comment_type: "issue".to_string(),
-        state: None,
-        path: None,
-        line: None,
-        review_id: None,
-        is_resolved: false,
-    }).collect();
+    let mut all_comments: Vec<PRComment> = pr
+        .comments
+        .into_iter()
+        .map(|c| PRComment {
+            author: c.author.login,
+            body: c.body,
+            created_at: c.created_at,
+            comment_type: "issue".to_string(),
+            state: None,
+            path: None,
+            line: None,
+            review_id: None,
+            is_resolved: false,
+        })
+        .collect();
 
     let rest_reviews = fetch_reviews_rest_api(&repo_path, pr_number).await?;
     eprintln!("DEBUG: Found {} reviews from REST API", rest_reviews.len());
     for review in rest_reviews {
-        eprintln!("DEBUG: Review - id: {}, author: {}, state: {}, has_body: {}", 
-                  review.id, review.user.login, review.state, !review.body.is_empty());
+        eprintln!(
+            "DEBUG: Review - id: {}, author: {}, state: {}, has_body: {}",
+            review.id,
+            review.user.login,
+            review.state,
+            !review.body.is_empty()
+        );
         all_comments.push(PRComment {
             author: review.user.login,
             body: review.body,
@@ -1033,28 +1271,63 @@ pub async fn get_pr_details(repo_path: String, pr_number: u64) -> Result<PRDetai
         });
     }
 
-    // New logic: Fetch review threads via GraphQL to get isResolved status
+    // Fetch review threads via GraphQL to get isResolved status, with a REST fallback so comments stay visible.
     let review_thread_comments = match fetch_review_threads_graphql(&repo_path, pr_number).await {
         Ok(comments) => comments,
         Err(e) => {
             eprintln!("DEBUG: Failed to fetch review threads via GraphQL: {}", e);
-            // Fallback? If GraphQL fails, we might miss comments. 
-            // For now, let's just log error and continue with empty list or maybe we should return error?
-            // Returning empty list is safer to avoid crashing the whole view.
-            Vec::new()
+            let fallback_comments = fetch_review_comments_rest_api(&repo_path, pr_number).await?;
+            fallback_comments
+                .into_iter()
+                .map(|rc| PRComment {
+                    author: rc.user.login,
+                    body: rc.body,
+                    created_at: rc.created_at,
+                    comment_type: "review_thread".to_string(),
+                    state: None,
+                    path: Some(rc.path),
+                    line: rc.line.or(rc.original_line),
+                    review_id: rc.pull_request_review_id.map(|id| id.to_string()),
+                    is_resolved: false,
+                })
+                .collect()
         }
     };
 
-    eprintln!("DEBUG: Fetched {} review thread comments via GraphQL", review_thread_comments.len());
+    eprintln!(
+        "DEBUG: Fetched {} review thread comments via GraphQL",
+        review_thread_comments.len()
+    );
     all_comments.extend(review_thread_comments);
 
     all_comments.sort_by(|a, b| a.created_at.cmp(&b.created_at));
 
     eprintln!("DEBUG: Final comment breakdown:");
-    eprintln!("  - Issue comments: {}", all_comments.iter().filter(|c| c.comment_type == "issue").count());
-    eprintln!("  - Reviews: {}", all_comments.iter().filter(|c| c.comment_type == "review").count());
-    eprintln!("  - Review threads: {}", all_comments.iter().filter(|c| c.comment_type == "review_thread").count());
-    eprintln!("DEBUG: Total comments being returned: {}", all_comments.len());
+    eprintln!(
+        "  - Issue comments: {}",
+        all_comments
+            .iter()
+            .filter(|c| c.comment_type == "issue")
+            .count()
+    );
+    eprintln!(
+        "  - Reviews: {}",
+        all_comments
+            .iter()
+            .filter(|c| c.comment_type == "review")
+            .count()
+    );
+    eprintln!(
+        "  - Review threads: {}",
+        all_comments
+            .iter()
+            .filter(|c| c.comment_type == "review_thread")
+            .count()
+    );
+    eprintln!(
+        "DEBUG: Total comments being returned: {}",
+        all_comments.len()
+    );
 
     Ok(PRDetailedInfo {
         merge_state_status: pr.merge_state_status,
@@ -1090,10 +1363,7 @@ pub async fn get_pr_files(repo_path: String, pr_number: u64) -> Result<Vec<PRFil
     let pr_ref = format!("{}", pr_number);
 
     let output = Command::new(&gh_path)
-        .args([
-            "pr", "view", &pr_ref,
-            "--json", "files",
-        ])
+        .args(["pr", "view", &pr_ref, "--json", "files"])
         .current_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
@@ -1103,8 +1373,8 @@ pub async fn get_pr_files(repo_path: String, pr_number: u64) -> Result<Vec<PRFil
         return Err(format!("gh command failed: {}", stderr));
     }
 
-    let stdout = String::from_utf8(output.stdout)
-        .map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
+    let stdout =
+        String::from_utf8(output.stdout).map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
 
     #[derive(Debug, Deserialize)]
     struct FilesWrapper {
@@ -1112,14 +1382,18 @@ pub async fn get_pr_files(repo_path: String, pr_number: u64) -> Result<Vec<PRFil
         files: Vec<GhPRFile>,
     }
 
-    let wrapper: FilesWrapper = serde_json::from_str(&stdout)
-        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+    let wrapper: FilesWrapper =
+        serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
-    Ok(wrapper.files.into_iter().map(|f| PRFile {
-        path: f.path,
-        additions: f.additions,
-        deletions: f.deletions,
-    }).collect())
+    Ok(wrapper
+        .files
+        .into_iter()
+        .map(|f| PRFile {
+            path: f.path,
+            additions: f.additions,
+            deletions: f.deletions,
+        })
+        .collect())
 }
 
 // ── PR Commits ───────────────────────────────────────────────────────
@@ -1156,10 +1430,7 @@ pub async fn get_pr_commits(repo_path: String, pr_number: u64) -> Result<Vec<PRC
     let pr_ref = format!("{}", pr_number);
 
     let output = Command::new(&gh_path)
-        .args([
-            "pr", "view", &pr_ref,
-            "--json", "commits",
-        ])
+        .args(["pr", "view", &pr_ref, "--json", "commits"])
         .current_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
@@ -1169,8 +1440,8 @@ pub async fn get_pr_commits(repo_path: String, pr_number: u64) -> Result<Vec<PRC
         return Err(format!("gh command failed: {}", stderr));
     }
 
-    let stdout = String::from_utf8(output.stdout)
-        .map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
+    let stdout =
+        String::from_utf8(output.stdout).map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
 
     #[derive(Debug, Deserialize)]
     struct CommitsWrapper {
@@ -1178,15 +1449,24 @@ pub async fn get_pr_commits(repo_path: String, pr_number: u64) -> Result<Vec<PRC
         commits: Vec<GhPRCommit>,
     }
 
-    let wrapper: CommitsWrapper = serde_json::from_str(&stdout)
-        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+    let wrapper: CommitsWrapper =
+        serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
-    Ok(wrapper.commits.into_iter().map(|c| PRCommit {
-        oid: c.oid,
-        message_headline: c.message_headline,
-        committed_date: c.committed_date.unwrap_or_default(),
-        author_name: c.authors.into_iter().next().and_then(|a| a.name).unwrap_or_else(|| "unknown".to_string()),
-    }).collect())
+    Ok(wrapper
+        .commits
+        .into_iter()
+        .map(|c| PRCommit {
+            oid: c.oid,
+            message_headline: c.message_headline,
+            committed_date: c.committed_date.unwrap_or_default(),
+            author_name: c
+                .authors
+                .into_iter()
+                .next()
+                .and_then(|a| a.name)
+                .unwrap_or_else(|| "unknown".to_string()),
+        })
+        .collect())
 }
 
 // ── PR Diff for a specific file ──────────────────────────────────────
@@ -1207,8 +1487,7 @@ pub async fn get_pr_file_diff(repo_path: String, pr_number: u64) -> Result<Strin
         return Err(format!("gh command failed: {}", stderr));
     }
 
-    String::from_utf8(output.stdout)
-        .map_err(|e| format!("Invalid UTF-8 output: {}", e))
+    String::from_utf8(output.stdout).map_err(|e| format!("Invalid UTF-8 output: {}", e))
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -1226,17 +1505,17 @@ pub async fn create_pr(
     draft: bool,
 ) -> Result<CreatePRResult, String> {
     let mut args = vec!["pr", "create", "--title", &title];
-    
+
     let body_str = body.unwrap_or_default();
     if !body_str.is_empty() {
         args.push("--body");
         args.push(&body_str);
     }
-    
+
     let base_str = base.unwrap_or_else(|| "main".to_string());
     args.push("--base");
     args.push(&base_str);
-    
+
     if draft {
         args.push("--draft");
     }
@@ -1286,7 +1565,7 @@ pub async fn run_cubic_review(repo_path: String) -> Result<CubicReviewResult, St
         Ok(out) => {
             let stdout = String::from_utf8_lossy(&out.stdout).to_string();
             let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-            
+
             if out.status.success() {
                 Ok(CubicReviewResult {
                     success: true,
@@ -1301,9 +1580,7 @@ pub async fn run_cubic_review(repo_path: String) -> Result<CubicReviewResult, St
                 })
             }
         }
-        Err(e) => {
-            Err(format!("Failed to run cubic: {}", e))
-        }
+        Err(e) => Err(format!("Failed to run cubic: {}", e)),
     }
 }
 
@@ -1402,7 +1679,7 @@ pub async fn merge_pr(
             success: false,
             message: stderr.trim().to_string(),
         })
-}
+    }
 }
 
 #[tauri::command]
@@ -1410,11 +1687,13 @@ pub async fn get_assigned_issues() -> Result<Vec<GithubIssue>, String> {
     let gh_path = find_cli_tool("gh")?;
     let output = Command::new(&gh_path)
         .args([
-            "search", "issues",
+            "search",
+            "issues",
             "--assignee=@me",
             "--state=open",
             "--limit=50",
-            "--json", "number,title,url,state,repository,createdAt,updatedAt,author,labels",
+            "--json",
+            "number,title,url,state,repository,createdAt,updatedAt,author,labels",
         ])
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
@@ -1424,27 +1703,30 @@ pub async fn get_assigned_issues() -> Result<Vec<GithubIssue>, String> {
         return Err(format!("gh search issues failed: {}", stderr));
     }
 
-    let stdout = String::from_utf8(output.stdout)
-        .map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
-    
+    let stdout =
+        String::from_utf8(output.stdout).map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
+
     if stdout.trim().is_empty() {
         return Ok(Vec::new());
     }
 
-    let issues: Vec<GhSearchIssue> = serde_json::from_str(&stdout)
-        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+    let issues: Vec<GhSearchIssue> =
+        serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
-    let result = issues.into_iter().map(|i| GithubIssue {
-        number: i.number,
-        title: i.title,
-        url: i.url,
-        state: i.state,
-        repo_name: i.repository.name_with_owner,
-        author: i.author.login,
-        created_at: i.created_at,
-        updated_at: i.updated_at,
-        labels: i.labels.into_iter().map(|l| l.name).collect(),
-    }).collect();
+    let result = issues
+        .into_iter()
+        .map(|i| GithubIssue {
+            number: i.number,
+            title: i.title,
+            url: i.url,
+            state: i.state,
+            repo_name: i.repository.name_with_owner,
+            author: i.author.login,
+            created_at: i.created_at,
+            updated_at: i.updated_at,
+            labels: i.labels.into_iter().map(|l| l.name).collect(),
+        })
+        .collect();
 
     Ok(result)
 }
@@ -1462,26 +1744,29 @@ pub async fn get_notifications() -> Result<Vec<GithubNotification>, String> {
         return Err(format!("gh api notifications failed: {}", stderr));
     }
 
-    let stdout = String::from_utf8(output.stdout)
-        .map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
+    let stdout =
+        String::from_utf8(output.stdout).map_err(|e| format!("Invalid UTF-8 output: {}", e))?;
 
     if stdout.trim().is_empty() {
         return Ok(Vec::new());
     }
 
-    let notifs: Vec<GhApiNotification> = serde_json::from_str(&stdout)
-        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+    let notifs: Vec<GhApiNotification> =
+        serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
-    let result = notifs.into_iter().map(|n| GithubNotification {
-        id: n.id,
-        reason: n.reason,
-        repo_name: n.repository.full_name,
-        subject_title: n.subject.title,
-        subject_type: n.subject.type_,
-        subject_url: n.subject.url,
-        unread: n.unread,
-        updated_at: n.updated_at,
-    }).collect();
+    let result = notifs
+        .into_iter()
+        .map(|n| GithubNotification {
+            id: n.id,
+            reason: n.reason,
+            repo_name: n.repository.full_name,
+            subject_title: n.subject.title,
+            subject_type: n.subject.type_,
+            subject_url: n.subject.url,
+            unread: n.unread,
+            updated_at: n.updated_at,
+        })
+        .collect();
 
     Ok(result)
 }
