@@ -237,7 +237,11 @@ fn parse_graphql_pr_node(node: &serde_json::Value) -> Option<PRStatus> {
                             conclusion: ctx["conclusion"]
                                 .as_str()
                                 .map(|s| s.to_string()),
-                            state: None,
+                            state: if ctx["conclusion"].is_null() || ctx["conclusion"].as_str().is_none() {
+                                Some("PENDING".to_string())
+                            } else {
+                                None
+                            },
                         }),
                         "StatusContext" => Some(GhStatusCheck {
                             conclusion: None,
@@ -312,7 +316,8 @@ fn fetch_prs_graphql(
             .iter()
             .enumerate()
             .map(|(i, branch)| {
-                let escaped = branch.replace('\\', "\\\\").replace('"', "\\\"");
+                let json_escaped = serde_json::to_string(branch.as_str()).unwrap_or_else(|_| format!("\"{}\"", branch));
+                let escaped = &json_escaped[1..json_escaped.len() - 1];
                 format!(
                     r#"b{i}: pullRequests(headRefName: "{escaped}", first: 1, states: [OPEN, CLOSED, MERGED], orderBy: {{field: CREATED_AT, direction: DESC}}) {{
                         nodes {{
@@ -324,7 +329,7 @@ fn fetch_prs_graphql(
                                             contexts(first: 50) {{
                                                 nodes {{
                                                     __typename
-                                                    ... on CheckRun {{ conclusion }}
+                                                    ... on CheckRun {{ conclusion status }}
                                                     ... on StatusContext {{ state }}
                                                 }}
                                             }}
@@ -363,6 +368,11 @@ fn fetch_prs_graphql(
 
         let stdout = String::from_utf8(output.stdout).ok()?;
         let response: serde_json::Value = serde_json::from_str(&stdout).ok()?;
+
+        if response.get("errors").is_some() && !response["errors"].is_null() {
+            eprintln!("GraphQL returned errors for {}/{}: {}", owner, name, response["errors"]);
+            return None;
+        }
 
         let repo_data = &response["data"]["repository"];
         if repo_data.is_null() {
@@ -439,7 +449,13 @@ pub async fn get_all_prs_for_repos(repos: Vec<RepoWithBranches>) -> Result<Vec<R
     }).collect();
 
     let results: Vec<RepoPRStatuses> = handles.into_iter()
-        .filter_map(|h| h.join().ok())
+        .filter_map(|h| match h.join() {
+            Ok(result) => Some(result),
+            Err(e) => {
+                eprintln!("Thread panicked while fetching PR statuses: {:?}", e);
+                None
+            }
+        })
         .collect();
 
     Ok(results)
