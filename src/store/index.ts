@@ -80,7 +80,7 @@ interface AppStore {
   toggleDiffViewMode: () => void;
   createWorktreeAuto: (repoPath: string) => Promise<WorktreeInfo | null>;
   deleteWorktree: (repoPath: string, worktreeName: string) => Promise<void>;
-  setPRStatusBatch: (batch: Record<string, Record<string, PRStatus>>) => void;
+  setPRStatusBatch: (results: Array<{ repo_path: string; statuses: PRStatus[]; checked_branches: string[]; failed_branches: string[] }>) => void;
   setPRDataCache: (repoPath: string, prNumber: number, data: { checksResult?: PRChecksResult | null; prDetails?: PRDetailedInfo | null }) => void;
   getPRDataCache: (repoPath: string, prNumber: number) => PRDataCache | null;
   clearPRDataCacheForRepo: (repoPath: string) => void;
@@ -654,10 +654,34 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  setPRStatusBatch: (batch: Record<string, Record<string, PRStatus>>) => {
-    set((state) => ({
-      prStatusByBranch: { ...state.prStatusByBranch, ...batch },
-    }));
+  setPRStatusBatch: (results) => {
+    set((state) => {
+      const nextByRepo = { ...state.prStatusByBranch };
+
+      for (const result of results) {
+        const existingRepoStatuses = nextByRepo[result.repo_path] ?? {};
+        const nextRepoStatuses = { ...existingRepoStatuses };
+        const refreshedStatuses = new Map(
+          result.statuses.map((pr) => [pr.head_branch, pr])
+        );
+
+        for (const [branch, prStatus] of refreshedStatuses) {
+          nextRepoStatuses[branch] = prStatus;
+        }
+
+        for (const branch of result.checked_branches) {
+          if (!refreshedStatuses.has(branch)) {
+            delete nextRepoStatuses[branch];
+          }
+        }
+
+        nextByRepo[result.repo_path] = nextRepoStatuses;
+      }
+
+      return {
+        prStatusByBranch: nextByRepo,
+      };
+    });
   },
 
   setPRDataCache: (repoPath: string, prNumber: number, data: { checksResult?: PRChecksResult | null; prDetails?: PRDetailedInfo | null }) => {
