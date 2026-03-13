@@ -1,0 +1,23 @@
+src/components/__tests__/NewWorktreeDialog.test.tsx
+  bd78e65db0dcf71d 109-113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.10",
+  "base_commit_sha": "5c6d902a112802f6002486b7afc654616a6006a3",
+  "prompts": {
+    "bd78e65db0dcf71d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "7939f55e-d59c-4281-a192-03371dab9c6e",
+        "model": "claude-4.6-opus-high"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>",
+      "messages": [],
+      "total_additions": 5,
+      "total_deletions": 0,
+      "accepted_lines": 5,
+      "overriden_lines": 0
+    }
+  }
+}
