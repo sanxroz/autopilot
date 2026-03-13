@@ -1,0 +1,25 @@
+src-tauri/src/commands/cli_tools.rs
+  bd78e65db0dcf71d 247,256,266
+src/components/__tests__/WorktreeItem.test.tsx
+  bd78e65db0dcf71d 98-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.10",
+  "base_commit_sha": "ede42254a7b769b88347e5f1848a8869d6cf4592",
+  "prompts": {
+    "bd78e65db0dcf71d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "7939f55e-d59c-4281-a192-03371dab9c6e",
+        "model": "claude-4.6-opus-high"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>",
+      "messages": [],
+      "total_additions": 6,
+      "total_deletions": 2,
+      "accepted_lines": 6,
+      "overriden_lines": 0
+    }
+  }
+}
