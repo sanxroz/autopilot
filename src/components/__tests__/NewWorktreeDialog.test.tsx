@@ -106,6 +106,11 @@ describe('NewWorktreeDialog', () => {
     const select = screen.getByRole('combobox') as HTMLSelectElement;
     fireEvent.change(select, { target: { value: 'feature/auth' } });
 
+    await waitFor(() => {
+      const createBtn = screen.getByText('Create').closest('button')!;
+      expect(createBtn.disabled).toBe(false);
+    });
+
     const createBtn = screen.getByText('Create').closest('button')!;
     fireEvent.click(createBtn);
 
