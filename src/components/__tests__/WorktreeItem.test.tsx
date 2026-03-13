@@ -4,7 +4,9 @@ import { WorktreeItem } from '../WorktreeItem';
 import type { PRStatus } from '../../types/github';
 import type { ProcessStatus, AgentRunState } from '../../types';
 
-const defaultProps = {
+type WorktreeItemProps = React.ComponentProps<typeof WorktreeItem>;
+
+const defaultProps: WorktreeItemProps = {
   name: 'my-worktree',
   branch: 'feature/test' as string | null,
   lastModified: '2025-01-15T10:00:00Z',
@@ -92,7 +94,8 @@ describe('WorktreeItem', () => {
       lastEventAt: Date.now(),
       endedAt: Date.now(), // just ended, within 5s window
     };
-    renderItem({ agentRunState });
+    const { container } = renderItem({ agentRunState });
+    expect(container.querySelector('svg')).not.toBeNull();
   });
 
   it('applies active styling class', () => {

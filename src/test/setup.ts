@@ -6,7 +6,6 @@ import { vi, beforeEach } from 'vitest';
 const originalConsoleError = console.error.bind(console);
 const originalConsoleDebug = console.debug.bind(console);
 const suppressedConsoleErrorPatterns = [
-  /An update to .* inside a test was not wrapped in act\(\.\.\.\)/,
   /Not implemented: Window's scrollTo\(\) method/,
   /Failed to add repository:/,
   /Failed to create worktree:/,

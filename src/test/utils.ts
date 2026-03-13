@@ -15,16 +15,6 @@ export function mocked<T>(item: T): T {
 }
 
 /**
- * Compatibility wrapper for vi.hoisted (if not available)
- * Note: This function is currently not used but kept for future compatibility
- */
-export function hoisted<T>(fn: () => T): T {
-  // For now, just execute the function immediately
-  // vi.hoisted is not available or not working properly in current Vitest setup
-  return fn();
-}
-
-/**
  * Safe timer clearing that checks if the function exists
  */
 export function clearAllTimers(): void {
@@ -48,15 +38,15 @@ export function advanceTimersByTime(ms: number): void {
  * Async timer advancement compatibility wrapper
  */
 export async function advanceTimersByTimeAsync(ms: number): Promise<void> {
-  if (typeof (vi as any).advanceTimersByTimeAsync === 'function') {
-    return (vi as any).advanceTimersByTimeAsync(ms);
+  if ('advanceTimersByTimeAsync' in vi && typeof vi.advanceTimersByTimeAsync === 'function') {
+    await vi.advanceTimersByTimeAsync(ms);
+    return;
   } else if (typeof vi.advanceTimersByTime === 'function') {
     vi.advanceTimersByTime(ms);
-    // Wait a tick for any pending promises to resolve
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await Promise.resolve();
   } else if (typeof vi.runAllTimers === 'function') {
     vi.runAllTimers();
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await Promise.resolve();
   }
 }
 
@@ -96,7 +86,7 @@ export function createMockFn<T extends (...args: any[]) => any>(
   implementation?: T
 ): ReturnType<typeof vi.fn> & T {
   const mockFn = vi.fn(implementation);
-  return mockFn as ReturnType<typeof vi.fn> & T;
+  return mockFn as unknown as ReturnType<typeof vi.fn> & T;
 }
 
 /**

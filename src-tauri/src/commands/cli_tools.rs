@@ -268,7 +268,9 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_cache_behavior() {
+        clear_cache();
         // Find git (populates cache)
         let path = find_cli_tool("git").unwrap();
         // Should be cached now
@@ -278,17 +280,15 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_clear_cache() {
+        clear_cache();
         // Ensure something is cached
         let _ = find_cli_tool("git");
         assert!(get_cached_path("git").is_some());
 
         clear_cache();
-
-        // Note: OnceLock means the cache HashMap still exists but is empty
-        // After clearing, git may still be found via the HashMap that was cleared
-        // but new lookups would need to re-find the tool
-        // The important thing is clear_cache doesn't panic
+        assert!(get_cached_path("git").is_none());
     }
 
     #[test]

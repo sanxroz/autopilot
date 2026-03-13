@@ -21,7 +21,7 @@ type StoreState = ReturnType<typeof useAppStore.getState>;
  * This keeps `getInitialStoreState` type-safe against the real AppStore.
  */
 type DataKeys = {
-  [K in keyof StoreState]: StoreState[K] extends (...args: never[]) => unknown ? never : K;
+  [K in keyof StoreState]: StoreState[K] extends Function ? never : K;
 }[keyof StoreState];
 
 type StoreDataState = Pick<StoreState, DataKeys>;

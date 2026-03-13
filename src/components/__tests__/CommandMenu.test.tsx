@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { CommandMenu } from '../CommandMenu';
-import { useAppStore } from '../../store';
 import { resetStore, setStoreState, seedRepository } from '../../test/helpers/store-helpers';
 
 // Mock framer-motion (not used by CommandMenu but may be in ui components)
@@ -98,6 +97,7 @@ describe('CommandMenu', () => {
     const items = screen.getAllByTestId('cmd-item');
     const workspaceTexts = items.map((i) => i.textContent);
     expect(workspaceTexts.some((t) => t?.includes('feature'))).toBe(true);
+    expect(workspaceTexts.some((t) => t?.includes('main'))).toBe(false);
   });
 
   it('shows action items', () => {

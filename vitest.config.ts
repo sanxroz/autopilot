@@ -14,8 +14,7 @@ export default defineConfig({
     // Ensure jsdom environment is properly configured
     environmentOptions: {
       jsdom: {
-        resources: 'usable',
-        runScripts: 'dangerously',
+        runScripts: 'outside-only',
         pretendToBeVisual: true,
         url: 'http://localhost:3000',
       },

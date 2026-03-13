@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { PRStatusBadge } from '../PRStatusBadge';
 import type { PRStatus } from '../../types/github';
@@ -29,6 +29,7 @@ describe('PRStatusBadge', () => {
 
   it('renders closed state', () => {
     render(<PRStatusBadge prStatus={createPRStatus({ state: 'closed' })} />);
+    expect(screen.getByText('Closed')).toBeDefined();
     expect(screen.getByText('#42')).toBeDefined();
   });
 
