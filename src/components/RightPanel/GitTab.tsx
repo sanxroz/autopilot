@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import {
   Plus,
   Minus,
+  RotateCcw,
   GitCommit,
   Upload,
   FilePlus,
@@ -58,12 +59,14 @@ export function GitTab({ worktreePath }: GitTabProps) {
   const [error, setError] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isStaging, setIsStaging] = useState(false);
+  const [revertingFile, setRevertingFile] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const defaultAIAgent = useAppStore((state) => state.defaultAIAgent);
   const gitFileDiffPreview = useAppStore((state) => state.gitFileDiffPreview);
   const setGitFileDiffPreview = useAppStore((state) => state.setGitFileDiffPreview);
 
-  const isOperationInProgress = isStaging || isCommitting || isPushing || isGenerating;
+  const isOperationInProgress =
+    isStaging || revertingFile !== null || isCommitting || isPushing || isGenerating;
 
   const fetchStatus = useCallback(async () => {
     if (!worktreePath) {
@@ -177,6 +180,32 @@ export function GitTab({ worktreePath }: GitTabProps) {
       setIsStaging(false);
     }
   }, [worktreePath, fetchStatus, isOperationInProgress]);
+
+  const handleRevertFile = useCallback(
+    async (file: GitStatusFile, isStaged: boolean) => {
+      if (!worktreePath || isOperationInProgress) return;
+      const confirmed = window.confirm(
+        `Are you sure you want to revert "${file.path}"? This action cannot be undone.`
+      );
+      if (!confirmed) return;
+      setRevertingFile(file.path);
+      setError(null);
+      try {
+        await invoke("git_revert_file", {
+          worktreePath,
+          filePath: file.path,
+          isStaged,
+          status: file.status,
+        });
+        await fetchStatus();
+      } catch (e) {
+        setError(String(e));
+      } finally {
+        setRevertingFile(null);
+      }
+    },
+    [worktreePath, fetchStatus, isOperationInProgress]
+  );
 
   const handleStageAll = useCallback(async () => {
     if (!worktreePath || isOperationInProgress) return;
@@ -312,24 +341,51 @@ export function GitTab({ worktreePath }: GitTabProps) {
       >
         <Icon className={cn("w-4 h-4 flex-shrink-0", colorClass)} />
         <span className="text-[13px] flex-1 truncate">{fileName}</span>
-        <button
+        <div
           className={cn(
-            "p-0.5 rounded transition-opacity flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed text-tertiary hover:text-primary",
+            "flex items-center gap-1 flex-shrink-0 transition-opacity",
             isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
           )}
-          disabled={isOperationInProgress}
-          onClick={(e) => {
-            e.stopPropagation();
-            if (isStaged) {
-              handleUnstageFiles([file.path]);
-            } else {
-              handleStageFiles([file.path]);
-            }
-          }}
-          aria-label={isStaged ? `Unstage ${fileName}` : `Stage ${fileName}`}
         >
-          {isStaging ? <Loader className="w-4 h-4 animate-spin" /> : isStaged ? <Minus className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-        </button>
+          <button
+            className="p-0.5 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-tertiary hover:text-primary"
+            disabled={isOperationInProgress}
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleRevertFile(file, isStaged);
+            }}
+            aria-label={`Revert ${fileName}`}
+            title={`Revert ${fileName}`}
+          >
+            {revertingFile === file.path ? (
+              <Loader className="w-4 h-4 animate-spin" />
+            ) : (
+              <RotateCcw className="w-3.5 h-3.5" />
+            )}
+          </button>
+          <button
+            className="p-0.5 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-tertiary hover:text-primary"
+            disabled={isOperationInProgress}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isStaged) {
+                void handleUnstageFiles([file.path]);
+              } else {
+                void handleStageFiles([file.path]);
+              }
+            }}
+            aria-label={isStaged ? `Unstage ${fileName}` : `Stage ${fileName}`}
+            title={isStaged ? `Unstage ${fileName}` : `Stage ${fileName}`}
+          >
+            {isStaging ? (
+              <Loader className="w-4 h-4 animate-spin" />
+            ) : isStaged ? (
+              <Minus className="w-4 h-4" />
+            ) : (
+              <Plus className="w-4 h-4" />
+            )}
+          </button>
+        </div>
       </div>
     );
   };

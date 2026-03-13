@@ -335,49 +335,331 @@ pub struct RepoPRStatuses {
     pub statuses: Vec<PRStatus>,
 }
 
+fn parse_github_owner_repo(repo_path: &str) -> Option<(String, String)> {
+    let output = Command::new("git")
+        .args(["remote", "get-url", "origin"])
+        .current_dir(repo_path)
+        .output()
+        .ok()?;
+
+    if !output.status.success() {
+        return None;
+    }
+
+    let url = String::from_utf8(output.stdout).ok()?.trim().to_string();
+
+    // SSH: git@github.com:owner/repo.git
+    // HTTPS: https://github.com/owner/repo.git
+    let path_part = if let Some(idx) = url.find("github.com:") {
+        &url[idx + 11..]
+    } else if let Some(idx) = url.find("github.com/") {
+        &url[idx + 11..]
+    } else {
+        return None;
+    };
+
+    let path_part = path_part.trim_end_matches(".git").trim_end_matches('/');
+    let parts: Vec<&str> = path_part.splitn(3, '/').collect();
+    if parts.len() >= 2 {
+        Some((parts[0].to_string(), parts[1].to_string()))
+    } else {
+        None
+    }
+}
+
+fn parse_graphql_pr_node(node: &serde_json::Value) -> Option<PRStatus> {
+    let number = node["number"].as_u64()?;
+    let title = node["title"].as_str()?.to_string();
+    let url = node["url"].as_str()?.to_string();
+    let state = node["state"].as_str()?.to_lowercase();
+    let is_draft = node["isDraft"].as_bool().unwrap_or(false);
+    let merged_at = node["mergedAt"].as_str();
+    let review_decision = node["reviewDecision"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+    let additions = node["additions"].as_u64().unwrap_or(0);
+    let deletions = node["deletions"].as_u64().unwrap_or(0);
+    let head_ref_name = node["headRefName"].as_str()?.to_string();
+    let author = node["author"]["login"]
+        .as_str()
+        .unwrap_or("unknown")
+        .to_string();
+    let created_at = node["createdAt"].as_str().unwrap_or_default().to_string();
+    let updated_at = node["updatedAt"].as_str().unwrap_or_default().to_string();
+    let labels = node["labels"]["nodes"]
+        .as_array()
+        .map(|nodes| {
+            nodes
+                .iter()
+                .filter_map(|label| label["name"].as_str().map(ToString::to_string))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let requested_reviewers = node["reviewRequests"]["nodes"]
+        .as_array()
+        .map(|nodes| {
+            nodes
+                .iter()
+                .filter_map(|request| {
+                    request["requestedReviewer"]["login"]
+                        .as_str()
+                        .map(ToString::to_string)
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    // Parse checks from commits -> nodes[0] -> commit -> statusCheckRollup -> contexts -> nodes
+    let checks: Vec<GhStatusCheck> = node["commits"]["nodes"]
+        .as_array()
+        .and_then(|nodes| nodes.first())
+        .and_then(|n| n["commit"]["statusCheckRollup"]["contexts"]["nodes"].as_array())
+        .map(|contexts| {
+            contexts
+                .iter()
+                .filter_map(|ctx| {
+                    let typename = ctx["__typename"].as_str()?;
+                    match typename {
+                        "CheckRun" => Some(GhStatusCheck {
+                            conclusion: ctx["conclusion"].as_str().map(|s| s.to_string()),
+                            state: if ctx["conclusion"].is_null()
+                                || ctx["conclusion"].as_str().is_none()
+                            {
+                                Some("PENDING".to_string())
+                            } else {
+                                None
+                            },
+                        }),
+                        "StatusContext" => Some(GhStatusCheck {
+                            conclusion: None,
+                            state: ctx["state"].as_str().map(|s| s.to_string()),
+                        }),
+                        _ => None,
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    Some(PRStatus {
+        number,
+        title,
+        url,
+        state,
+        merged: merged_at.is_some(),
+        draft: is_draft,
+        review_decision,
+        checks_status: compute_checks_status(&checks),
+        additions,
+        deletions,
+        head_branch: head_ref_name.clone(),
+        author: author.clone(),
+        created_at,
+        updated_at,
+        labels,
+        requested_reviewers,
+        is_bot: is_bot_author(&author, &head_ref_name),
+    })
+}
+
+/// Fetches PR statuses for all branches in a repo using a single GraphQL API call.
+/// Falls back to per-branch REST calls if GraphQL fails (e.g. non-GitHub repos).
+fn fetch_all_prs_for_repo(gh_path: &str, repo: RepoWithBranches) -> RepoPRStatuses {
+    let branches = &repo.branches;
+
+    if branches.is_empty() {
+        return RepoPRStatuses {
+            repo_path: repo.repo_path,
+            statuses: Vec::new(),
+        };
+    }
+
+    // Try GraphQL first (single API call for all branches)
+    if let Some((owner, name)) = parse_github_owner_repo(&repo.repo_path) {
+        if let Some(statuses) = fetch_prs_graphql(gh_path, &repo.repo_path, &owner, &name, branches)
+        {
+            return RepoPRStatuses {
+                repo_path: repo.repo_path,
+                statuses,
+            };
+        }
+    }
+
+    // Fallback: per-branch REST calls (original slow path)
+    let statuses = fetch_prs_rest_fallback(gh_path, &repo.repo_path, branches);
+    RepoPRStatuses {
+        repo_path: repo.repo_path,
+        statuses,
+    }
+}
+
+fn fetch_prs_graphql(
+    gh_path: &str,
+    repo_path: &str,
+    owner: &str,
+    name: &str,
+    branches: &[String],
+) -> Option<Vec<PRStatus>> {
+    // Build one GraphQL query with an alias per branch.
+    // Chunk into batches of 25 to stay well within GraphQL complexity limits.
+    let mut all_statuses = Vec::new();
+
+    for chunk in branches.chunks(25) {
+        let branch_fragments: Vec<String> = chunk
+            .iter()
+            .enumerate()
+            .map(|(i, branch)| {
+                let json_escaped = serde_json::to_string(branch.as_str())
+                    .unwrap_or_else(|_| format!(""{}"", branch));
+                let escaped = &json_escaped[1..json_escaped.len() - 1];
+                format!(
+                    r#"b{i}: pullRequests(headRefName: "{escaped}", first: 1, states: [OPEN, CLOSED, MERGED], orderBy: {{field: CREATED_AT, direction: DESC}}) {{
+                        nodes {{
+                            number title url state isDraft mergedAt reviewDecision additions deletions headRefName
+                            author {{ login }}
+                            createdAt
+                            updatedAt
+                            labels(first: 20) {{ nodes {{ name }} }}
+                            reviewRequests(first: 20) {{
+                                nodes {{
+                                    requestedReviewer {{
+                                        ... on User {{ login }}
+                                    }}
+                                }}
+                            }}
+                            commits(last: 1) {{
+                                nodes {{
+                                    commit {{
+                                        statusCheckRollup {{
+                                            contexts(first: 50) {{
+                                                nodes {{
+                                                    __typename
+                                                    ... on CheckRun {{ conclusion status }}
+                                                    ... on StatusContext {{ state }}
+                                                }}
+                                            }}
+                                        }}
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }}"#
+                )
+            })
+            .collect();
+
+        let owner_escaped = owner.replace('"', "\\\"");
+        let name_escaped = name.replace('"', "\\\"");
+        let query = format!(
+            r#"query {{ repository(owner: "{owner_escaped}", name: "{name_escaped}") {{ {fragments} }} }}"#,
+            fragments = branch_fragments.join("\n")
+        );
+
+        let output = Command::new(gh_path)
+            .args(["api", "graphql", "-f", &format!("query={}", query)])
+            .current_dir(repo_path)
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            eprintln!(
+                "GraphQL query failed for {}/{}: {}",
+                owner,
+                name,
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return None; // Fall back to REST
+        }
+
+        let stdout = String::from_utf8(output.stdout).ok()?;
+        let response: serde_json::Value = serde_json::from_str(&stdout).ok()?;
+
+        if response.get("errors").is_some() && !response["errors"].is_null() {
+            eprintln!(
+                "GraphQL returned errors for {}/{}: {}",
+                owner, name, response["errors"]
+            );
+            return None;
+        }
+
+        let repo_data = &response["data"]["repository"];
+        if repo_data.is_null() {
+            eprintln!("GraphQL returned null repository for {}/{}", owner, name);
+            return None;
+        }
+
+        for i in 0..chunk.len() {
+            let alias = format!("b{}", i);
+            if let Some(nodes) = repo_data[&alias]["nodes"].as_array() {
+                if let Some(node) = nodes.first() {
+                    if let Some(status) = parse_graphql_pr_node(node) {
+                        all_statuses.push(status);
+                    }
+                }
+            }
+        }
+    }
+
+    Some(all_statuses)
+}
+
+fn fetch_prs_rest_fallback(gh_path: &str, repo_path: &str, branches: &[String]) -> Vec<PRStatus> {
+    let mut statuses = Vec::new();
+    for branch in branches {
+        let output = Command::new(gh_path)
+            .args([
+                "pr",
+                "list",
+                "--head",
+                branch,
+                "--state",
+                "all",
+                "--limit",
+                "1",
+                "--json",
+                PR_JSON_FIELDS,
+            ])
+            .current_dir(repo_path)
+            .output();
+
+        if let Ok(out) = output {
+            if out.status.success() {
+                let stdout = String::from_utf8(out.stdout).unwrap_or_default();
+                let prs: Vec<GhPRResponse> = serde_json::from_str(&stdout).unwrap_or_default();
+                if let Some(pr) = prs.into_iter().next() {
+                    statuses.push(map_gh_pr_to_status(pr));
+                }
+            }
+        }
+    }
+    statuses
+}
+
 #[tauri::command]
 pub async fn get_all_prs_for_repos(
     repos: Vec<RepoWithBranches>,
 ) -> Result<Vec<RepoPRStatuses>, String> {
     let gh_path = find_cli_tool("gh")?;
-    let mut results = Vec::new();
 
-    for repo in repos {
-        let mut statuses = Vec::new();
+    let handles: Vec<_> = repos
+        .into_iter()
+        .map(|repo| {
+            let gh = gh_path.clone();
+            std::thread::spawn(move || fetch_all_prs_for_repo(&gh, repo))
+        })
+        .collect();
 
-        for branch in &repo.branches {
-            let output = Command::new(&gh_path)
-                .args([
-                    "pr",
-                    "list",
-                    "--head",
-                    branch,
-                    "--state",
-                    "all",
-                    "--limit",
-                    "1",
-                    "--json",
-                    PR_JSON_FIELDS,
-                ])
-                .current_dir(&repo.repo_path)
-                .output();
-
-            if let Ok(out) = output {
-                if out.status.success() {
-                    let stdout = String::from_utf8(out.stdout).unwrap_or_default();
-                    let prs: Vec<GhPRResponse> = serde_json::from_str(&stdout).unwrap_or_default();
-                    if let Some(pr) = prs.into_iter().next() {
-                        statuses.push(map_gh_pr_to_status(pr));
-                    }
-                }
+    let results: Vec<RepoPRStatuses> = handles
+        .into_iter()
+        .filter_map(|h| match h.join() {
+            Ok(result) => Some(result),
+            Err(e) => {
+                eprintln!("Thread panicked while fetching PR statuses: {:?}", e);
+                None
             }
-        }
-
-        results.push(RepoPRStatuses {
-            repo_path: repo.repo_path,
-            statuses,
-        });
-    }
+        })
+        .collect();
 
     Ok(results)
 }

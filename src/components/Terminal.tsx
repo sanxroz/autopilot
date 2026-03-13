@@ -10,6 +10,8 @@ import { useTheme } from "../hooks/useTheme";
 import { getTheme, subscribeTheme } from "../theme";
 import { observeResize } from "../utils/sharedResizeObserver";
 
+
+
 interface Props {
   terminalId: string;
   isActive: boolean;
@@ -121,7 +123,11 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     fitAddonRef.current = fitAddon;
     searchAddonRef.current = searchAddon;
 
-    setTimeout(fit, 50);
+    setTimeout(() => {
+      if (isVisibleRef.current) {
+        fit();
+      }
+    }, 50);
 
     term.onData((data) => {
       invoke("write_to_terminal", { terminalId, data }).catch(console.error);
@@ -195,15 +201,17 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     const isNowVisible = isVisible;
     prevVisibleRef.current = isVisible;
 
-    if (wasHidden && isNowVisible && terminalRef.current) {
-      setTimeout(() => {
-        fit();
-        if (terminalRef.current) {
-          terminalRef.current.refresh(0, terminalRef.current.rows - 1);
-          terminalRef.current.scrollToBottom();
-        }
-      }, 100);
-    }
+    if (!wasHidden || !isNowVisible) return;
+    if (!terminalRef.current) return;
+
+    const frameId = requestAnimationFrame(() => {
+      if (!terminalRef.current) return;
+      fit();
+      terminalRef.current.refresh(0, terminalRef.current.rows - 1);
+      terminalRef.current.scrollToBottom();
+    });
+
+    return () => cancelAnimationFrame(frameId);
   }, [isVisible, fit]);
 
   useEffect(() => {

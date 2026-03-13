@@ -92,6 +92,71 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+fn emit_terminal_output(app: &AppHandle, event_name: &str, data: String) {
+    if data.is_empty() {
+        return;
+    }
+    let _ = app.emit(event_name, data);
+}
+
+struct Utf8StreamDecoder {
+    pending: Vec<u8>,
+}
+
+impl Utf8StreamDecoder {
+    fn new() -> Self {
+        Self {
+            pending: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, bytes: &[u8]) -> String {
+        self.pending.extend_from_slice(bytes);
+        let mut out = String::new();
+
+        loop {
+            match std::str::from_utf8(&self.pending) {
+                Ok(valid) => {
+                    out.push_str(valid);
+                    self.pending.clear();
+                    break;
+                }
+                Err(err) => {
+                    let valid_up_to = err.valid_up_to();
+                    if valid_up_to > 0 {
+                        if let Ok(valid) = std::str::from_utf8(&self.pending[..valid_up_to]) {
+                            out.push_str(valid);
+                        }
+                        self.pending.drain(..valid_up_to);
+                        continue;
+                    }
+
+                    match err.error_len() {
+                        None => break,
+                        Some(invalid_len) => {
+                            let replacement = String::from_utf8_lossy(&self.pending[..invalid_len]);
+                            out.push_str(&replacement);
+                            self.pending.drain(..invalid_len);
+                        }
+                    }
+                }
+            }
+        }
+
+        out
+    }
+
+    fn flush(&mut self) -> String {
+        if self.pending.is_empty() {
+            return String::new();
+        }
+
+        let out = String::from_utf8_lossy(&self.pending).to_string();
+        self.pending.clear();
+        out
+    }
+}
+
 fn detect_agent_from_command(command: &str) -> Option<&'static str> {
     let lower = command.trim().to_lowercase();
     if lower.is_empty() {
@@ -874,15 +939,24 @@ pub fn spawn_terminal(
     thread::spawn(move || {
         let mut reader = reader;
         let mut buf = [0u8; 4096];
+        let mut utf8_decoder = Utf8StreamDecoder::new();
 
         loop {
             match reader.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => {
-                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                    let _ = app_clone.emit(&event_name, data);
+                Ok(0) => {
+                    let flushed = utf8_decoder.flush();
+                    emit_terminal_output(&app_clone, &event_name, flushed);
+                    break;
                 }
-                Err(_) => break,
+                Ok(n) => {
+                    let decoded = utf8_decoder.push(&buf[..n]);
+                    emit_terminal_output(&app_clone, &event_name, decoded);
+                }
+                Err(_) => {
+                    let flushed = utf8_decoder.flush();
+                    emit_terminal_output(&app_clone, &event_name, flushed);
+                    break;
+                }
             }
         }
 
@@ -953,15 +1027,14 @@ pub fn resize_terminal(
     Ok(())
 }
 
-#[tauri::command]
-pub fn close_terminal(state: State<'_, AppState>, terminal_id: String) -> Result<(), String> {
-    if let Some(info) = state.agent_terminals.lock().remove(&terminal_id) {
+fn close_terminal_inner(state: &AppState, terminal_id: &str) -> Result<(), String> {
+    if let Some(info) = state.agent_terminals.lock().remove(terminal_id) {
         info.is_alive.store(false, Ordering::Relaxed);
     }
-    state.terminal_worktrees.lock().remove(&terminal_id);
+    state.terminal_worktrees.lock().remove(terminal_id);
 
     let mut terminals = state.terminals.lock();
-    if let Some(session) = terminals.remove(&terminal_id) {
+    if let Some(session) = terminals.remove(terminal_id) {
         if let Some(pid) = session.child.process_id() {
             #[cfg(unix)]
             {
@@ -980,6 +1053,44 @@ pub fn close_terminal(state: State<'_, AppState>, terminal_id: String) -> Result
         }
     }
     Ok(())
+}
+
+#[tauri::command]
+pub fn close_terminal(state: State<'_, AppState>, terminal_id: String) -> Result<(), String> {
+    close_terminal_inner(&state, &terminal_id)
+}
+
+#[tauri::command]
+pub fn close_terminals_for_worktree(
+    state: State<'_, AppState>,
+    worktree_path: String,
+) -> Result<usize, String> {
+    let canonical_worktree = fs::canonicalize(&worktree_path)
+        .unwrap_or_else(|_| std::path::PathBuf::from(&worktree_path));
+    let terminal_ids: Vec<String> = {
+        let mut map = state.terminal_worktrees.lock();
+        let mut ids = Vec::new();
+        map.retain(|id, path| {
+            if path.as_str() == worktree_path
+                || std::path::Path::new(path.as_str()) == canonical_worktree
+            {
+                ids.push(id.clone());
+                false
+            } else {
+                true
+            }
+        });
+        ids
+    };
+
+    let mut closed = 0;
+    for terminal_id in terminal_ids {
+        if close_terminal_inner(&state, &terminal_id).is_ok() {
+            closed += 1;
+        }
+    }
+
+    Ok(closed)
 }
 
 /// Spawns a terminal that runs a specific command instead of a shell.
@@ -1217,14 +1328,23 @@ pub fn spawn_terminal_with_command(
     thread::spawn(move || {
         let mut reader = reader;
         let mut buf = [0u8; 4096];
+        let mut utf8_decoder = Utf8StreamDecoder::new();
         let mut has_emitted_initial = false;
         let mut has_emitted_error = false;
 
         loop {
             match reader.read(&mut buf) {
-                Ok(0) => break,
+                Ok(0) => {
+                    let flushed = utf8_decoder.flush();
+                    emit_terminal_output(&app_clone, &event_name, flushed);
+                    break;
+                }
                 Ok(n) => {
-                    let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                    let data = utf8_decoder.push(&buf[..n]);
+
+                    if data.is_empty() {
+                        continue;
+                    }
 
                     if let Some(agent) = agent_for_events.as_deref() {
                         let now = now_ms();
@@ -1311,9 +1431,11 @@ pub fn spawn_terminal_with_command(
                         }
                     }
 
-                    let _ = app_clone.emit(&event_name, data);
+                    emit_terminal_output(&app_clone, &event_name, data);
                 }
                 Err(e) => {
+                    let flushed = utf8_decoder.flush();
+                    emit_terminal_output(&app_clone, &event_name, flushed);
                     if let Some(agent) = agent_for_events.as_deref() {
                         emit_agent_status(
                             &app_clone,

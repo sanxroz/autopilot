@@ -52,6 +52,24 @@ pub struct FileDiffData {
     pub patch: String,
 }
 
+fn build_synthetic_new_file_patch(_file_path: &str, content: &str) -> String {
+    let lines: Vec<&str> = content.lines().collect();
+    let line_count = lines.len();
+
+    let mut patch = String::new();
+
+    if line_count > 0 {
+        patch.push_str(&format!("@@ -0,0 +1,{} @@\n", line_count));
+        for line in lines {
+            patch.push('+');
+            patch.push_str(line);
+            patch.push('\n');
+        }
+    }
+
+    patch
+}
+
 fn get_last_modified(path: &std::path::Path) -> Option<String> {
     std::fs::metadata(path)
         .and_then(|m| m.modified())
@@ -718,6 +736,16 @@ pub async fn get_file_diff(
         })
         .map_err(|e| e.message().to_string())?;
 
+        let is_new_file = old_content.is_none();
+        let patch = if patch.is_empty() && is_new_file {
+            if let Some(ref content) = new_content {
+                build_synthetic_new_file_patch(&file_path, content)
+            } else {
+                patch
+            }
+        } else {
+            patch
+        };
         Ok::<FileDiffData, String>(FileDiffData {
             path: file_path,
             old_content,
@@ -809,7 +837,7 @@ pub async fn get_uncommitted_files(worktree_path: String) -> Result<Vec<ChangedF
 pub async fn get_uncommitted_diff(
     worktree_path: String,
     file_path: String,
-    is_staged: bool,
+    is_staged: Option<bool>,
 ) -> Result<FileDiffData, String> {
     tokio::task::spawn_blocking(move || {
         let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
@@ -837,29 +865,56 @@ pub async fn get_uncommitted_diff(
             .and_then(|entry| repo.find_blob(entry.id()).ok())
             .and_then(|blob| String::from_utf8(blob.content().to_vec()).ok());
 
-        let workdir_content = std::fs::read_to_string(&full_path).ok();
-
-        let (old_content, new_content) = if is_staged {
-            (
-                head_content,
-                index_content.clone().or_else(|| workdir_content.clone()),
-            )
-        } else {
-            (index_content.or(head_content), workdir_content)
+        let workdir_content = match std::fs::read_to_string(&full_path) {
+            Ok(content) => Some(content),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => {
+                eprintln!(
+                    "[autopilot] warning: failed to read working directory file {}: {e}",
+                    full_path.display()
+                );
+                None
+            }
         };
 
-        let is_new_file = old_content.is_none();
-
-        let mut diff_opts = DiffOptions::new();
-        diff_opts.pathspec(&file_path);
-        diff_opts.include_untracked(true);
-
-        let diff = if is_staged {
-            repo.diff_tree_to_index(Some(&head_tree), Some(&index), Some(&mut diff_opts))
-                .map_err(|e| e.message().to_string())?
-        } else {
-            repo.diff_index_to_workdir(Some(&index), Some(&mut diff_opts))
-                .map_err(|e| e.message().to_string())?
+        let (old_content, new_content, diff, is_new_file) = match is_staged {
+            Some(true) => {
+                let old_content = head_content;
+                let new_content = index_content.clone();
+                let mut diff_opts = DiffOptions::new();
+                diff_opts.pathspec(&file_path);
+                diff_opts.include_untracked(true);
+                let diff = repo
+                    .diff_tree_to_index(Some(&head_tree), Some(&index), Some(&mut diff_opts))
+                    .map_err(|e| e.message().to_string())?;
+                let is_new_file = old_content.is_none();
+                (old_content, new_content, diff, is_new_file)
+            }
+            Some(false) => {
+                let old_content = index_content.or(head_content);
+                let new_content = workdir_content;
+                let mut diff_opts = DiffOptions::new();
+                diff_opts.pathspec(&file_path);
+                diff_opts.include_untracked(true);
+                let diff = repo
+                    .diff_index_to_workdir(Some(&index), Some(&mut diff_opts))
+                    .map_err(|e| e.message().to_string())?;
+                let is_new_file = old_content.is_none();
+                (old_content, new_content, diff, is_new_file)
+            }
+            None => {
+                let old_content = head_content;
+                let new_content = workdir_content.clone();
+                let mut diff_opts = DiffOptions::new();
+                diff_opts.pathspec(&file_path);
+                diff_opts.include_untracked(true);
+                diff_opts.recurse_untracked_dirs(true);
+                let diff = repo
+                    .diff_tree_to_workdir_with_index(Some(&head_tree), Some(&mut diff_opts))
+                    .map_err(|e| e.message().to_string())?;
+                let is_new_file = old_content.is_none();
+                (old_content, new_content, diff, is_new_file)
+            }
         };
 
         let mut patch = String::new();
@@ -877,15 +932,7 @@ pub async fn get_uncommitted_diff(
 
         let patch = if patch.is_empty() && is_new_file {
             if let Some(ref content) = new_content {
-                let lines: Vec<&str> = content.lines().collect();
-                let line_count = lines.len();
-                let mut synthetic_patch = format!("@@ -0,0 +1,{} @@\n", line_count);
-                for line in lines {
-                    synthetic_patch.push('+');
-                    synthetic_patch.push_str(line);
-                    synthetic_patch.push('\n');
-                }
-                synthetic_patch
+                build_synthetic_new_file_patch(&file_path, content)
             } else {
                 patch
             }
@@ -1280,6 +1327,102 @@ pub async fn git_unstage_all(worktree_path: String) -> Result<(), String> {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             return Err(format!("git reset failed: {}", stderr));
+        }
+
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_revert_file(
+    worktree_path: String,
+    file_path: String,
+    is_staged: bool,
+    status: String,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let worktree = PathBuf::from(&worktree_path);
+
+        // Path traversal guard: reject absolute paths and '..' components
+        let candidate = PathBuf::from(&file_path);
+        if candidate.is_absolute()
+            || candidate
+                .components()
+                .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return Err(format!("Invalid file path: {}", file_path));
+        }
+        let full_path = worktree.join(&candidate);
+
+        if status == "untracked" {
+            // Use symlink_metadata to avoid following symlinks into directories outside worktree
+            match std::fs::symlink_metadata(&full_path) {
+                Ok(metadata) => {
+                    if metadata.file_type().is_symlink() {
+                        std::fs::remove_file(&full_path).map_err(|e| {
+                            format!("Failed to remove untracked symlink {}: {}", file_path, e)
+                        })?;
+                    } else if metadata.is_dir() {
+                        std::fs::remove_dir_all(&full_path).map_err(|e| {
+                            format!("Failed to remove untracked directory {}: {}", file_path, e)
+                        })?;
+                    } else {
+                        std::fs::remove_file(&full_path).map_err(|e| {
+                            format!("Failed to remove untracked file {}: {}", file_path, e)
+                        })?;
+                    }
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    return Err(format!(
+                        "Failed to read metadata for untracked path {}: {}",
+                        file_path, e
+                    ));
+                }
+            }
+            return Ok::<(), String>(());
+        }
+
+        // Handle staged 'added' files that don't exist in HEAD
+        if is_staged && status == "added" {
+            let output = Command::new("git")
+                .args(["rm", "--cached", "--", &file_path])
+                .current_dir(&worktree)
+                .output()
+                .map_err(|e| format!("Failed to run git rm --cached: {}", e))?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!(
+                    "git rm --cached failed for {}: {}",
+                    file_path, stderr
+                ));
+            }
+            return Ok::<(), String>(());
+        }
+
+        let mut args: Vec<&str> = vec!["restore"];
+        if is_staged {
+            // Restore both index and working tree to fully discard staged changes
+            args.push("--staged");
+            args.push("--worktree");
+        } else {
+            // Only restore the working tree; preserve staged changes
+            args.push("--worktree");
+        }
+        args.push("--");
+        args.push(&file_path);
+
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(&worktree)
+            .output()
+            .map_err(|e| format!("Failed to run git restore: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("git restore failed for {}: {}", file_path, stderr));
         }
 
         Ok::<(), String>(())
