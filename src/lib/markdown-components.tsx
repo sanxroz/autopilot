@@ -6,6 +6,7 @@ import { cn } from "../utils/cn";
 
 export const markdownSanitizeSchema = {
   ...defaultSchema,
+  tagNames: [...(defaultSchema.tagNames || []), "details", "summary"],
   attributes: {
     ...defaultSchema.attributes,
     input: [...(defaultSchema.attributes?.input || []), "checked", "disabled", "type"],
@@ -220,4 +221,14 @@ export const markdownComponents = {
     }
     return <input type={type} {...props} />;
   },
+  details: ({ children }: { children?: React.ReactNode }) => (
+    <details className="my-2 border border-border-subtle rounded-md bg-secondary/20 p-2 text-primary marker:text-accent-primary">
+      {children}
+    </details>
+  ),
+  summary: ({ children }: { children?: React.ReactNode }) => (
+    <summary className="cursor-pointer font-medium text-primary hover:text-accent-primary transition-colors focus:outline-none">
+      {children}
+    </summary>
+  ),
 };

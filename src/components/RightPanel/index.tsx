@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useState, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { toast } from "sonner";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
   GitPullRequest,
@@ -17,6 +15,7 @@ import {
   Loader,
 } from "lucide-react";
 import { usePRStatusForBranch } from "../../hooks/usePRStatus";
+import { useMergePR } from "../../hooks/useMergePR";
 import { useAppStore } from "../../store";
 import { cn } from "../../utils/cn";
 
@@ -62,14 +61,6 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const repositories = useAppStore((state) => state.repositories);
   const addTerminalWithCommand = useAppStore((state) => state.addTerminalWithCommand);
   const defaultAIAgent = useAppStore((state) => state.defaultAIAgent);
-  const [isMerging, setIsMerging] = useState(false);
-  const [hasMerged, setHasMerged] = useState(false);
-  
-  // Track the active PR to detect stale async callbacks
-  const activePrRef = useRef<{ repoPath: string | null; prNumber: number | null }>({ 
-    repoPath: null, 
-    prNumber: null 
-  });
 
   const repoPath =
     repositories.find((r) => r.worktrees.some((w) => w.path === worktreePath))
@@ -78,11 +69,10 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const branch = selectedWorktree?.branch ?? null;
   const prStatus = usePRStatusForBranch(repoPath ?? "", branch);
 
-  useEffect(() => {
-    setHasMerged(false);
-    setIsMerging(false);
-    activePrRef.current = { repoPath, prNumber: prStatus?.number ?? null };
-  }, [prStatus?.number, repoPath]);
+  const { isMerging, hasMerged, handleMerge } = useMergePR({
+    repoPath,
+    prNumber: prStatus?.number ?? null,
+  });
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -190,44 +180,6 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
     prStatus.checks_status === "success" &&
     (prStatus.review_decision === "APPROVED" ||
       prStatus.review_decision === null);
-
-  const handleMerge = useCallback(async () => {
-    if (!repoPath || !prStatus?.number) return;
-    
-    const mergeRepoPath = repoPath;
-    const mergePrNumber = prStatus.number;
-    
-    setIsMerging(true);
-    try {
-      const result = await invoke<{ success: boolean; message: string }>("merge_pr", {
-        repoPath: mergeRepoPath,
-        prNumber: mergePrNumber,
-      });
-      
-      const isStale = activePrRef.current.repoPath !== mergeRepoPath || 
-                      activePrRef.current.prNumber !== mergePrNumber;
-      if (isStale) return;
-      
-      if (result.success) {
-        toast.success(`PR #${mergePrNumber} merged`);
-        setHasMerged(true);
-      } else {
-        toast.error(result.message || "Merge failed");
-      }
-    } catch (e) {
-      const isStale = activePrRef.current.repoPath !== mergeRepoPath || 
-                      activePrRef.current.prNumber !== mergePrNumber;
-      if (!isStale) {
-        toast.error(String(e));
-      }
-    } finally {
-      const isStale = activePrRef.current.repoPath !== mergeRepoPath || 
-                      activePrRef.current.prNumber !== mergePrNumber;
-      if (!isStale) {
-        setIsMerging(false);
-      }
-    }
-  }, [repoPath, prStatus?.number]);
 
   const diffViewMode = useAppStore((state) => state.diffViewMode);
   const prevDiffViewModeRef = useRef(diffViewMode);

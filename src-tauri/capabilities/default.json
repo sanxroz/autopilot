@@ -13,6 +13,8 @@
     "shell:allow-spawn",
     "shell:allow-stdin-write",
     "store:default",
+    "updater:default",
+    "updater:allow-check",
     "core:window:allow-start-dragging",
     "core:window:allow-close",
     "core:window:allow-minimize"
