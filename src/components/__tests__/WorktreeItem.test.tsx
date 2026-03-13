@@ -95,7 +95,9 @@ describe('WorktreeItem', () => {
       endedAt: Date.now(), // just ended, within 5s window
     };
     const { container } = renderItem({ agentRunState });
-    expect(container.querySelector('svg')).not.toBeNull();
+    const completedIcon = container.querySelector('[title="Agent finished"]');
+    expect(completedIcon).not.toBeNull();
+    expect(completedIcon!.querySelector('svg')).not.toBeNull();
   });
 
   it('applies active styling class', () => {

@@ -244,8 +244,8 @@ mod tests {
     use super::*;
 
     #[test]
+    #[serial_test::serial]
     fn test_find_cli_tool_git_exists() {
-        // git should always be available
         let result = find_cli_tool("git");
         assert!(result.is_ok());
         let path = result.unwrap();
@@ -253,6 +253,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_find_cli_tool_not_found() {
         let result = find_cli_tool("nonexistent_tool_xyz_12345");
         assert!(result.is_err());
@@ -262,6 +263,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_get_cached_path_uncached() {
         let result = get_cached_path("totally_uncached_tool_99999");
         assert!(result.is_none());
