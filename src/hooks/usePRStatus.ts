@@ -37,17 +37,19 @@ export function usePRStatusPolling() {
       }));
       
       const results = await invoke<RepoPRStatuses[]>('get_all_prs_for_repos', { repos });
-      
-      const batch: Record<string, Record<string, PRStatus>> = {};
-      for (const result of results) {
-        const prMap: Record<string, PRStatus> = {};
-        for (const pr of result.statuses) {
-          prMap[pr.head_branch] = pr;
-        }
-        batch[result.repo_path] = prMap;
+
+      const failedLookups = results.flatMap((result) =>
+        result.failed_branches.map((branch) => `${result.repo_path}:${branch}`)
+      );
+
+      if (failedLookups.length > 0) {
+        console.warn(
+          'Some PR lookups failed; preserving previous sidebar PR data for those branches:',
+          failedLookups
+        );
       }
-      
-      setPRStatusBatch(batch);
+
+      setPRStatusBatch(results);
     } catch (e) {
       console.error('Failed to fetch PRs:', e);
     } finally {

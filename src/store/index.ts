@@ -12,9 +12,16 @@ import type {
   AgentRunState,
   AgentStatusEvent,
 } from '../types';
-import type { GitHubSettings, PRStatus, PRChecksResult, PRDetailedInfo, PRHubFilters } from '../types/github';
+import type {
+  GitHubSettings,
+  GithubIssue,
+  PRStatus,
+  PRChecksResult,
+  PRDetailedInfo,
+  PRHubFilters,
+  RepoPRStatuses,
+} from '../types/github';
 import { DEFAULT_GITHUB_SETTINGS, DEFAULT_PR_HUB_FILTERS } from '../types/github';
-import type { GithubIssue } from '../types/github';
 import { setThemeMode as setGlobalThemeMode, getThemeMode, type ThemeMode } from '../theme';
 
 interface PersistedState {
@@ -93,7 +100,7 @@ interface AppStore {
   toggleDiffViewMode: () => void;
   createWorktreeAuto: (repoPath: string) => Promise<WorktreeInfo | null>;
   deleteWorktree: (repoPath: string, worktreeName: string) => Promise<void>;
-  setPRStatusBatch: (batch: Record<string, Record<string, PRStatus>>) => void;
+  setPRStatusBatch: (results: RepoPRStatuses[]) => void;
   setPRDataCache: (repoPath: string, prNumber: number, data: { checksResult?: PRChecksResult | null; prDetails?: PRDetailedInfo | null }) => void;
   getPRDataCache: (repoPath: string, prNumber: number) => PRDataCache | null;
   clearPRDataCacheForRepo: (repoPath: string) => void;
@@ -711,10 +718,34 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
   },
 
-  setPRStatusBatch: (batch: Record<string, Record<string, PRStatus>>) => {
-    set((state) => ({
-      prStatusByBranch: { ...state.prStatusByBranch, ...batch },
-    }));
+  setPRStatusBatch: (results) => {
+    set((state) => {
+      const nextByRepo = { ...state.prStatusByBranch };
+
+      for (const result of results) {
+        const existingRepoStatuses = nextByRepo[result.repo_path] ?? {};
+        const nextRepoStatuses = { ...existingRepoStatuses };
+        const refreshedStatuses = new Map(
+          result.statuses.map((pr) => [pr.head_branch, pr])
+        );
+
+        for (const [branch, prStatus] of refreshedStatuses) {
+          nextRepoStatuses[branch] = prStatus;
+        }
+
+        for (const branch of result.checked_branches) {
+          if (!refreshedStatuses.has(branch)) {
+            delete nextRepoStatuses[branch];
+          }
+        }
+
+        nextByRepo[result.repo_path] = nextRepoStatuses;
+      }
+
+      return {
+        prStatusByBranch: nextByRepo,
+      };
+    });
   },
 
   setPRDataCache: (repoPath: string, prNumber: number, data: { checksResult?: PRChecksResult | null; prDetails?: PRDetailedInfo | null }) => {

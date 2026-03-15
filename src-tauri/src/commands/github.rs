@@ -333,6 +333,14 @@ pub struct RepoPathInput {
 pub struct RepoPRStatuses {
     pub repo_path: String,
     pub statuses: Vec<PRStatus>,
+    pub checked_branches: Vec<String>,
+    pub failed_branches: Vec<String>,
+}
+
+struct BranchFetchResult {
+    statuses: Vec<PRStatus>,
+    checked_branches: Vec<String>,
+    failed_branches: Vec<String>,
 }
 
 fn parse_github_owner_repo(repo_path: &str) -> Option<(String, String)> {
@@ -472,25 +480,31 @@ fn fetch_all_prs_for_repo(gh_path: &str, repo: RepoWithBranches) -> RepoPRStatus
         return RepoPRStatuses {
             repo_path: repo.repo_path,
             statuses: Vec::new(),
+            checked_branches: Vec::new(),
+            failed_branches: Vec::new(),
         };
     }
 
     // Try GraphQL first (single API call for all branches)
     if let Some((owner, name)) = parse_github_owner_repo(&repo.repo_path) {
-        if let Some(statuses) = fetch_prs_graphql(gh_path, &repo.repo_path, &owner, &name, branches)
+        if let Some(result) = fetch_prs_graphql(gh_path, &repo.repo_path, &owner, &name, branches)
         {
             return RepoPRStatuses {
                 repo_path: repo.repo_path,
-                statuses,
+                statuses: result.statuses,
+                checked_branches: result.checked_branches,
+                failed_branches: result.failed_branches,
             };
         }
     }
 
     // Fallback: per-branch REST calls (original slow path)
-    let statuses = fetch_prs_rest_fallback(gh_path, &repo.repo_path, branches);
+    let result = fetch_prs_rest_fallback(gh_path, &repo.repo_path, branches);
     RepoPRStatuses {
         repo_path: repo.repo_path,
-        statuses,
+        statuses: result.statuses,
+        checked_branches: result.checked_branches,
+        failed_branches: result.failed_branches,
     }
 }
 
@@ -500,10 +514,12 @@ fn fetch_prs_graphql(
     owner: &str,
     name: &str,
     branches: &[String],
-) -> Option<Vec<PRStatus>> {
+) -> Option<BranchFetchResult> {
     // Build one GraphQL query with an alias per branch.
     // Chunk into batches of 25 to stay well within GraphQL complexity limits.
     let mut all_statuses = Vec::new();
+    let mut checked_branches = Vec::new();
+    let mut failed_branches = Vec::new();
 
     for chunk in branches.chunks(25) {
         let branch_fragments: Vec<String> = chunk
@@ -511,7 +527,7 @@ fn fetch_prs_graphql(
             .enumerate()
             .map(|(i, branch)| {
                 let json_escaped = serde_json::to_string(branch.as_str())
-                    .unwrap_or_else(|_| format!(""{}"", branch));
+                    .unwrap_or_else(|_| format!("\"{}\"", branch));
                 let escaped = &json_escaped[1..json_escaped.len() - 1];
                 format!(
                     r#"b{i}: pullRequests(headRefName: "{escaped}", first: 1, states: [OPEN, CLOSED, MERGED], orderBy: {{field: CREATED_AT, direction: DESC}}) {{
@@ -591,21 +607,49 @@ fn fetch_prs_graphql(
 
         for i in 0..chunk.len() {
             let alias = format!("b{}", i);
+            let branch = chunk[i].clone();
+
             if let Some(nodes) = repo_data[&alias]["nodes"].as_array() {
                 if let Some(node) = nodes.first() {
                     if let Some(status) = parse_graphql_pr_node(node) {
+                        checked_branches.push(branch);
                         all_statuses.push(status);
+                    } else {
+                        eprintln!(
+                            "Failed to parse GraphQL PR node for branch {} in {}",
+                            branch, repo_path
+                        );
+                        failed_branches.push(branch);
                     }
+                } else {
+                    checked_branches.push(branch);
                 }
+            } else {
+                eprintln!(
+                    "GraphQL response missing nodes for branch {} in {}",
+                    branch, repo_path
+                );
+                failed_branches.push(branch);
             }
         }
     }
 
-    Some(all_statuses)
+    Some(BranchFetchResult {
+        statuses: all_statuses,
+        checked_branches,
+        failed_branches,
+    })
 }
 
-fn fetch_prs_rest_fallback(gh_path: &str, repo_path: &str, branches: &[String]) -> Vec<PRStatus> {
+fn fetch_prs_rest_fallback(
+    gh_path: &str,
+    repo_path: &str,
+    branches: &[String],
+) -> BranchFetchResult {
     let mut statuses = Vec::new();
+    let mut checked_branches = Vec::new();
+    let mut failed_branches = Vec::new();
+
     for branch in branches {
         let output = Command::new(gh_path)
             .args([
@@ -623,17 +667,60 @@ fn fetch_prs_rest_fallback(gh_path: &str, repo_path: &str, branches: &[String]) 
             .current_dir(repo_path)
             .output();
 
-        if let Ok(out) = output {
-            if out.status.success() {
-                let stdout = String::from_utf8(out.stdout).unwrap_or_default();
-                let prs: Vec<GhPRResponse> = serde_json::from_str(&stdout).unwrap_or_default();
-                if let Some(pr) = prs.into_iter().next() {
-                    statuses.push(map_gh_pr_to_status(pr));
+        match output {
+            Ok(out) if out.status.success() => {
+                checked_branches.push(branch.clone());
+
+                match String::from_utf8(out.stdout) {
+                    Ok(stdout) => match serde_json::from_str::<Vec<GhPRResponse>>(&stdout) {
+                        Ok(prs) => {
+                            if let Some(pr) = prs.into_iter().next() {
+                                statuses.push(map_gh_pr_to_status(pr));
+                            }
+                        }
+                        Err(error) => {
+                            checked_branches.pop();
+                            failed_branches.push(branch.clone());
+                            eprintln!(
+                                "Failed to parse PR list JSON for branch {} in {}: {}",
+                                branch, repo_path, error
+                            );
+                        }
+                    },
+                    Err(error) => {
+                        checked_branches.pop();
+                        failed_branches.push(branch.clone());
+                        eprintln!(
+                            "Invalid UTF-8 from gh pr list for branch {} in {}: {}",
+                            branch, repo_path, error
+                        );
+                    }
                 }
+            }
+            Ok(out) => {
+                failed_branches.push(branch.clone());
+                eprintln!(
+                    "gh pr list failed for branch {} in {}: {}",
+                    branch,
+                    repo_path,
+                    String::from_utf8_lossy(&out.stderr)
+                );
+            }
+            Err(error) => {
+                failed_branches.push(branch.clone());
+                eprintln!(
+                    "Failed to execute gh pr list for branch {} in {}: {}",
+                    branch, repo_path, error
+                );
             }
         }
     }
-    statuses
+
+    BranchFetchResult {
+        statuses,
+        checked_branches,
+        failed_branches,
+    }
 }
 
 #[tauri::command]
@@ -642,24 +729,35 @@ pub async fn get_all_prs_for_repos(
 ) -> Result<Vec<RepoPRStatuses>, String> {
     let gh_path = find_cli_tool("gh")?;
 
-    let handles: Vec<_> = repos
-        .into_iter()
-        .map(|repo| {
-            let gh = gh_path.clone();
-            std::thread::spawn(move || fetch_all_prs_for_repo(&gh, repo))
-        })
-        .collect();
+    const MAX_CONCURRENT_REPO_FETCHES: usize = 4;
 
-    let results: Vec<RepoPRStatuses> = handles
-        .into_iter()
-        .filter_map(|h| match h.join() {
-            Ok(result) => Some(result),
-            Err(e) => {
-                eprintln!("Thread panicked while fetching PR statuses: {:?}", e);
-                None
+    let mut results = Vec::new();
+    let mut handles = Vec::new();
+
+    for repo in repos {
+        let gh = gh_path.clone();
+        handles.push(std::thread::spawn(move || fetch_all_prs_for_repo(&gh, repo)));
+
+        if handles.len() >= MAX_CONCURRENT_REPO_FETCHES {
+            for handle in handles.drain(..) {
+                match handle.join() {
+                    Ok(result) => results.push(result),
+                    Err(error) => {
+                        eprintln!("Thread panicked while fetching PR statuses: {:?}", error);
+                    }
+                }
             }
-        })
-        .collect();
+        }
+    }
+
+    for handle in handles {
+        match handle.join() {
+            Ok(result) => results.push(result),
+            Err(error) => {
+                eprintln!("Thread panicked while fetching PR statuses: {:?}", error);
+            }
+        }
+    }
 
     Ok(results)
 }
@@ -712,6 +810,8 @@ pub async fn get_all_open_prs_for_repos(
         results.push(RepoPRStatuses {
             repo_path: repo.repo_path,
             statuses,
+            checked_branches: Vec::new(),
+            failed_branches: Vec::new(),
         });
     }
 

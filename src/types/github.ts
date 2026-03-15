@@ -34,6 +34,8 @@ export interface RepoPathInput {
 export interface RepoPRStatuses {
   repo_path: string;
   statuses: PRStatus[];
+  checked_branches: string[];
+  failed_branches: string[];
 }
 
 export interface PRHubFilters {
