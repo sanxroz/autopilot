@@ -1,0 +1,25 @@
+src/store/__tests__/store.test.ts
+  61c410b74a17c48d 649,662-677
+src/store/index.ts
+  61c410b74a17c48d 15,38-39,98,261-275,277-278,736-737,739
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.12",
+  "base_commit_sha": "e40e9fe36c132c502d9553293ad2470b821046b3",
+  "prompts": {
+    "61c410b74a17c48d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3bde652b-7213-4108-9e80-f08e7b4f14b6",
+        "model": "gpt-5.4-high"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>",
+      "messages": [],
+      "total_additions": 45,
+      "total_deletions": 5,
+      "accepted_lines": 45,
+      "overriden_lines": 0
+    }
+  }
+}
