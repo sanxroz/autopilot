@@ -1,0 +1,23 @@
+src/store/index.ts
+  18b9348dbc054ead 15,83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.12",
+  "base_commit_sha": "494c134d750415ba53c23700188bc87ca14f6328",
+  "prompts": {
+    "18b9348dbc054ead": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "daf95812-636f-4445-b02d-bfa9209c7e91",
+        "model": "composer-1.5"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>",
+      "messages": [],
+      "total_additions": 2,
+      "total_deletions": 2,
+      "accepted_lines": 2,
+      "overriden_lines": 0
+    }
+  }
+}
