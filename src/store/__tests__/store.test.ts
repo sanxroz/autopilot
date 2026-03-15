@@ -646,7 +646,7 @@ describe('AppStore', () => {
   // ── PR Status ───────────────────────────────────────────────────
 
   describe('PR status management', () => {
-    it('setPRStatusBatch merges batch into prStatusByBranch', () => {
+    it('setPRStatusBatch merges normalized batch into prStatusByBranch', () => {
       useAppStore.setState({
         prStatusByBranch: { '/repo-a': { 'main': { number: 1 } as any } },
       });
@@ -658,6 +658,23 @@ describe('AppStore', () => {
       const state = useAppStore.getState();
       expect(state.prStatusByBranch['/repo-a']).toBeDefined();
       expect(state.prStatusByBranch['/repo-b']).toBeDefined();
+    });
+
+    it('setPRStatusBatch accepts legacy repo status results', () => {
+      useAppStore.setState({
+        prStatusByBranch: { '/repo-a': { 'main': { number: 1 } as any } },
+      });
+
+      useAppStore.getState().setPRStatusBatch([
+        {
+          repo_path: '/repo-b',
+          statuses: [{ number: 2, head_branch: 'feat' } as any],
+        },
+      ]);
+
+      const state = useAppStore.getState();
+      expect(state.prStatusByBranch['/repo-a']).toBeDefined();
+      expect(state.prStatusByBranch['/repo-b']?.feat?.number).toBe(2);
     });
   });
 
