@@ -1,0 +1,23 @@
+src/hooks/__tests__/usePRStatus.test.ts
+  61c410b74a17c48d 2,60,88,90,92-94,105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.1.12",
+  "base_commit_sha": "7677be7858db4c2cf9dfa14d85cf0a339befd32d",
+  "prompts": {
+    "61c410b74a17c48d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3bde652b-7213-4108-9e80-f08e7b4f14b6",
+        "model": "gpt-5.4-high"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>",
+      "messages": [],
+      "total_additions": 8,
+      "total_deletions": 8,
+      "accepted_lines": 8,
+      "overriden_lines": 0
+    }
+  }
+}
