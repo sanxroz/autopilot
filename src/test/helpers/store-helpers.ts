@@ -5,7 +5,7 @@
  * pre-populated store states for specific scenarios.
  */
 import { useAppStore } from '../../store';
-import { DEFAULT_GITHUB_SETTINGS } from '../../types/github';
+import { DEFAULT_GITHUB_SETTINGS, DEFAULT_PR_HUB_FILTERS } from '../../types/github';
 import type { Repository, WorktreeInfo } from '../../types';
 import type { GitHubSettings } from '../../types/github';
 
@@ -21,7 +21,7 @@ type StoreState = ReturnType<typeof useAppStore.getState>;
  * This keeps `getInitialStoreState` type-safe against the real AppStore.
  */
 type DataKeys = {
-  [K in keyof StoreState]: StoreState[K] extends Function ? never : K;
+  [K in keyof StoreState]: StoreState[K] extends (...args: any[]) => any ? never : K;
 }[keyof StoreState];
 
 type StoreDataState = Pick<StoreState, DataKeys>;
@@ -49,6 +49,7 @@ export function getInitialStoreState(): StoreDataState {
     collapsedRepos: new Set<string>(),
     settingsOpen: false,
     codeReviewOpen: false,
+    prHubOpen: false,
     diffOverlayOpen: false,
     diffViewMode: 'overlay',
     gitFileDiffPreview: null,
@@ -57,6 +58,9 @@ export function getInitialStoreState(): StoreDataState {
     agentSidebarLifecycleEnabled: true,
     defaultAIAgent: 'opencode',
     addressedComments: {},
+    prHubData: {},
+    assignedIssues: [],
+    prHubFilters: { ...DEFAULT_PR_HUB_FILTERS },
   };
 }
 
@@ -178,17 +182,19 @@ export function seedSelectedWorktree(opts?: {
     worktreeName,
   };
 
-  useAppStore.setState({
+  useAppStore.setState((state) => ({
     selectedWorktree: worktree,
     currentTerminals: [terminal],
     currentActiveTerminalId: terminalId,
+    gitFileDiffPreview: null,
     terminalsByWorktree: {
+      ...state.terminalsByWorktree,
       [worktreePath]: {
         terminals: [terminal],
         activeTerminalId: terminalId,
       },
     },
-  });
+  }));
 
   return { worktree, terminal };
 }

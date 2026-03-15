@@ -7,11 +7,6 @@ const originalConsoleError = console.error.bind(console);
 const originalConsoleDebug = console.debug.bind(console);
 const suppressedConsoleErrorPatterns = [
   /Not implemented: Window's scrollTo\(\) method/,
-  /Failed to add repository:/,
-  /Failed to create worktree:/,
-  /Failed to check GitHub CLI:/,
-  /Mock invoke error/,
-  /Mock cleanup error/,
 ];
 
 console.error = (...args: unknown[]) => {

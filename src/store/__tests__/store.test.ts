@@ -39,36 +39,10 @@ import { load } from '@tauri-apps/plugin-store';
 import { setThemeMode as setGlobalThemeMode, getThemeMode } from '../../theme';
 
 import { mocked, waitFor } from '../../test/utils';
+import { resetStore as resetAppStore } from '../../test/helpers/store-helpers';
 
 const mockInvoke = mocked(invoke);
 const mockLoad = mocked(load);
-
-// ── Helpers ───────────────────────────────────────────────────────
-
-function resetStore() {
-  useAppStore.setState({
-    repositories: [],
-    selectedWorktree: null,
-    terminalsByWorktree: {},
-    currentTerminals: [],
-    currentActiveTerminalId: null,
-    isInitialized: false,
-    githubSettings: { pollingIntervalMs: 30000, ghCliAvailable: false, ghAuthUser: null },
-    prStatusByBranch: {},
-    prDataCache: {},
-    collapsedRepos: new Set<string>(),
-    settingsOpen: false,
-    codeReviewOpen: false,
-    diffOverlayOpen: false,
-    diffViewMode: 'overlay',
-    gitFileDiffPreview: null,
-    processStatusByPath: {},
-    agentRunByWorktreePath: {},
-    agentSidebarLifecycleEnabled: true,
-    defaultAIAgent: 'opencode',
-    addressedComments: {},
-  });
-}
 
 const makeWorktree = (overrides: Partial<WorktreeInfo> = {}): WorktreeInfo => ({
   name: 'feature-1',
@@ -89,7 +63,7 @@ const makeRepo = (path = '/repos/project') => ({
 describe('AppStore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    resetStore();
+    resetAppStore();
     // Default mock for load
     mockLoad.mockResolvedValue(mockStoreInstance as any);
     mockStoreInstance.get.mockResolvedValue(undefined);
