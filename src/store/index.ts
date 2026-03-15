@@ -12,7 +12,7 @@ import type {
   AgentRunState,
   AgentStatusEvent,
 } from '../types';
-import type { GitHubSettings, PRStatus, PRChecksResult, PRDetailedInfo } from '../types/github';
+import type { GitHubSettings, PRStatus, PRChecksResult, PRDetailedInfo, RepoPRStatuses } from '../types/github';
 import { DEFAULT_GITHUB_SETTINGS } from '../types/github';
 import { setThemeMode as setGlobalThemeMode, getThemeMode, type ThemeMode } from '../theme';
 
@@ -80,7 +80,7 @@ interface AppStore {
   toggleDiffViewMode: () => void;
   createWorktreeAuto: (repoPath: string) => Promise<WorktreeInfo | null>;
   deleteWorktree: (repoPath: string, worktreeName: string) => Promise<void>;
-  setPRStatusBatch: (results: Array<{ repo_path: string; statuses: PRStatus[]; checked_branches: string[]; failed_branches: string[] }>) => void;
+  setPRStatusBatch: (results: RepoPRStatuses[]) => void;
   setPRDataCache: (repoPath: string, prNumber: number, data: { checksResult?: PRChecksResult | null; prDetails?: PRDetailedInfo | null }) => void;
   getPRDataCache: (repoPath: string, prNumber: number) => PRDataCache | null;
   clearPRDataCacheForRepo: (repoPath: string) => void;
