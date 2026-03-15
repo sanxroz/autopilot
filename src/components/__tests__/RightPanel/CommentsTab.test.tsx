@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { invoke } from '@tauri-apps/api/core';
 import { CommentsTab } from '../../RightPanel/CommentsTab';
-import { useAppStore } from '../../../store';
 import { resetStore } from '../../../test/helpers/store-helpers';
 import type { PRDetailedInfo, PRComment } from '../../../types/github';
 
@@ -15,12 +14,6 @@ const mockInvoke = vi.mocked(invoke);
 const prComments: PRComment[] = [
   {
     author: 'reviewer-one',
-    body: 'Please rename this variable.',
-    created_at: '2026-03-01T12:00:00Z',
-    comment_type: 'issue',
-  },
-  {
-    author: 'reviewer-two',
     body: 'Looks good overall.',
     created_at: '2026-03-01T13:00:00Z',
     comment_type: 'review',
@@ -35,6 +28,16 @@ const prComments: PRComment[] = [
     review_id: 'review-1',
     path: 'src/App.tsx',
     line: 12,
+  },
+  {
+    author: 'reviewer-three',
+    body: 'This resolved thread has extra context so the collapsed row only shows a preview.',
+    created_at: '2026-03-01T13:10:00Z',
+    comment_type: 'review_thread',
+    review_id: 'review-2',
+    path: 'src/components/Button.tsx',
+    line: 21,
+    is_resolved: true,
   },
 ];
 
@@ -63,7 +66,7 @@ describe('CommentsTab', () => {
     expect(screen.getByText('No PR found for this branch')).toBeTruthy();
   });
 
-  it('loads and renders comments with progress tracking', async () => {
+  it('loads and renders review and thread comments', async () => {
     render(<CommentsTab repoPath="/repo" prNumber={42} prStatus={null} />);
 
     await waitFor(() => {
@@ -73,28 +76,23 @@ describe('CommentsTab', () => {
       });
     });
 
-    expect(screen.getByText('Please rename this variable.')).toBeTruthy();
     expect(screen.getByText('Looks good overall.')).toBeTruthy();
-    expect(screen.getByText('1 code comment')).toBeTruthy();
-    expect(screen.getByText('0 / 2 addressed')).toBeTruthy();
+    expect(screen.getByText('Nit: simplify this branch.')).toBeTruthy();
+    expect(screen.getByText('src/App.tsx')).toBeTruthy();
+    expect(screen.getByText('Line 12')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /copy all comments/i })).toBeTruthy();
   });
 
-  it('toggles addressed comments and can hide them', async () => {
+  it('expands resolved thread comments when clicked', async () => {
     render(<CommentsTab repoPath="/repo" prNumber={42} prStatus={null} />);
 
-    await screen.findByText('Please rename this variable.');
+    const collapsedRow = await screen.findByText('Resolved comment by reviewer-three');
+    expect(screen.queryByText('This resolved thread has extra context so the collapsed row only shows a preview.')).toBeNull();
 
-    const checkboxes = screen.getAllByRole('checkbox');
-    fireEvent.click(checkboxes[0]!);
+    fireEvent.click(collapsedRow);
 
-    await waitFor(() => {
-      expect(screen.getByText('1 / 2 addressed')).toBeTruthy();
-      expect(useAppStore.getState().isCommentAddressed('/repo', 42, 'issue:2026-03-01T12:00:00Z:reviewer-one')).toBe(true);
-    });
-
-    fireEvent.click(screen.getByRole('button', { name: /show remaining comments/i }));
-
-    expect(screen.queryByText('Please rename this variable.')).toBeNull();
+    expect(await screen.findByText('This resolved thread has extra context so the collapsed row only shows a preview.')).toBeTruthy();
+    expect(screen.getByText('Line 21')).toBeTruthy();
   });
 
   it('renders a no-comments state when the PR has no comments', async () => {
@@ -105,6 +103,6 @@ describe('CommentsTab', () => {
 
     render(<CommentsTab repoPath="/repo" prNumber={42} prStatus={null} />);
 
-    expect(await screen.findByText('No comments yet')).toBeTruthy();
+    expect(await screen.findByText('No review comments')).toBeTruthy();
   });
 });
