@@ -2152,3 +2152,151 @@ pub async fn get_notifications() -> Result<Vec<GithubNotification>, String> {
 
     Ok(result)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_check(conclusion: Option<&str>, state: Option<&str>) -> GhStatusCheck {
+        GhStatusCheck {
+            conclusion: conclusion.map(|s| s.to_string()),
+            state: state.map(|s| s.to_string()),
+        }
+    }
+
+    #[test]
+    fn test_compute_checks_status_empty() {
+        assert_eq!(compute_checks_status(&[]), None);
+    }
+
+    #[test]
+    fn test_compute_checks_status_all_success() {
+        let checks = vec![
+            make_check(Some("SUCCESS"), Some("COMPLETED")),
+            make_check(Some("SUCCESS"), Some("COMPLETED")),
+        ];
+        assert_eq!(compute_checks_status(&checks), Some("success".to_string()));
+    }
+
+    #[test]
+    fn test_compute_checks_status_has_failure() {
+        let checks = vec![
+            make_check(Some("SUCCESS"), Some("COMPLETED")),
+            make_check(Some("FAILURE"), Some("COMPLETED")),
+        ];
+        assert_eq!(compute_checks_status(&checks), Some("failure".to_string()));
+    }
+
+    #[test]
+    fn test_compute_checks_status_has_error() {
+        let checks = vec![
+            make_check(Some("SUCCESS"), None),
+            make_check(Some("ERROR"), None),
+        ];
+        assert_eq!(compute_checks_status(&checks), Some("failure".to_string()));
+    }
+
+    #[test]
+    fn test_compute_checks_status_pending() {
+        let checks = vec![
+            make_check(Some("SUCCESS"), Some("COMPLETED")),
+            make_check(None, Some("PENDING")),
+        ];
+        assert_eq!(compute_checks_status(&checks), Some("pending".to_string()));
+    }
+
+    #[test]
+    fn test_compute_checks_status_failure_takes_priority_over_pending() {
+        let checks = vec![
+            make_check(Some("FAILURE"), Some("COMPLETED")),
+            make_check(None, Some("PENDING")),
+        ];
+        assert_eq!(compute_checks_status(&checks), Some("failure".to_string()));
+    }
+
+    #[test]
+    fn test_compute_checks_status_state_failure() {
+        let checks = vec![make_check(None, Some("FAILURE"))];
+        assert_eq!(compute_checks_status(&checks), Some("failure".to_string()));
+    }
+
+    #[test]
+    fn test_compute_checks_status_state_error() {
+        let checks = vec![make_check(None, Some("ERROR"))];
+        assert_eq!(compute_checks_status(&checks), Some("failure".to_string()));
+    }
+
+    #[test]
+    fn test_merge_strategy_as_flag() {
+        assert_eq!(MergeStrategy::Merge.as_flag(), "--merge");
+        assert_eq!(MergeStrategy::Squash.as_flag(), "--squash");
+        assert_eq!(MergeStrategy::Rebase.as_flag(), "--rebase");
+    }
+
+    #[test]
+    fn test_gh_pr_response_deserialization() {
+        let json = r#"{
+            "number": 42,
+            "title": "Fix bug",
+            "url": "https://github.com/owner/repo/pull/42",
+            "state": "OPEN",
+            "isDraft": false,
+            "mergedAt": null,
+            "reviewDecision": "APPROVED",
+            "statusCheckRollup": [],
+            "additions": 10,
+            "deletions": 5,
+            "headRefName": "fix-bug"
+        }"#;
+
+        let pr: GhPRResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(pr.number, 42);
+        assert_eq!(pr.title, "Fix bug");
+        assert_eq!(pr.state, "OPEN");
+        assert!(!pr.is_draft);
+        assert!(pr.merged_at.is_none());
+        assert_eq!(pr.review_decision.as_deref(), Some("APPROVED"));
+        assert_eq!(pr.additions, 10);
+        assert_eq!(pr.deletions, 5);
+        assert_eq!(pr.head_ref_name, "fix-bug");
+    }
+
+    #[test]
+    fn test_gh_pr_response_draft_detection() {
+        let json = r#"{
+            "number": 1,
+            "title": "WIP",
+            "url": "https://github.com/o/r/pull/1",
+            "state": "OPEN",
+            "isDraft": true,
+            "reviewDecision": "",
+            "statusCheckRollup": [],
+            "additions": 0,
+            "deletions": 0,
+            "headRefName": "wip"
+        }"#;
+
+        let pr: GhPRResponse = serde_json::from_str(json).unwrap();
+        assert!(pr.is_draft);
+    }
+
+    #[test]
+    fn test_gh_pr_response_merged() {
+        let json = r#"{
+            "number": 2,
+            "title": "Merged PR",
+            "url": "https://github.com/o/r/pull/2",
+            "state": "MERGED",
+            "isDraft": false,
+            "mergedAt": "2026-01-01T00:00:00Z",
+            "reviewDecision": "APPROVED",
+            "statusCheckRollup": [],
+            "additions": 0,
+            "deletions": 0,
+            "headRefName": "merged"
+        }"#;
+
+        let pr: GhPRResponse = serde_json::from_str(json).unwrap();
+        assert!(pr.merged_at.is_some());
+    }
+}

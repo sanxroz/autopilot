@@ -7,10 +7,13 @@ export function useProcessStatusPolling() {
   const refreshProcessStatuses = useAppStore((state) => state.refreshProcessStatuses);
   const isInitialized = useAppStore((state) => state.isInitialized);
   const repositories = useAppStore((state) => state.repositories);
-  const intervalRef = useRef<number | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (!isInitialized || repositories.length === 0) return;
+
+    // Check if we're in a browser environment
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
     refreshProcessStatuses();
 

@@ -176,3 +176,117 @@ pub fn get_all_worktrees_process_status(
 
     results
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn s(val: &str) -> String {
+        val.to_string()
+    }
+
+    #[test]
+    fn test_is_dev_server_npm_dev() {
+        assert!(is_dev_server_process(&[s("npm"), s("run"), s("dev")]));
+    }
+
+    #[test]
+    fn test_is_dev_server_bun_dev() {
+        assert!(is_dev_server_process(&[s("bun"), s("dev")]));
+    }
+
+    #[test]
+    fn test_is_dev_server_vite() {
+        assert!(is_dev_server_process(&[s("vite")]));
+    }
+
+    #[test]
+    fn test_is_dev_server_vite_build_excluded() {
+        assert!(!is_dev_server_process(&[s("vite"), s("build")]));
+    }
+
+    #[test]
+    fn test_is_dev_server_next_dev() {
+        assert!(is_dev_server_process(&[s("next"), s("dev")]));
+    }
+
+    #[test]
+    fn test_is_dev_server_cargo_watch() {
+        assert!(is_dev_server_process(&[s("cargo"), s("watch")]));
+    }
+
+    #[test]
+    fn test_is_dev_server_nodemon() {
+        assert!(is_dev_server_process(&[s("nodemon"), s("app.js")]));
+    }
+
+    #[test]
+    fn test_is_dev_server_webpack_serve() {
+        assert!(is_dev_server_process(&[s("webpack"), s("serve")]));
+    }
+
+    #[test]
+    fn test_is_dev_server_false_for_random() {
+        assert!(!is_dev_server_process(&[s("ls"), s("-la")]));
+    }
+
+    #[test]
+    fn test_is_dev_server_false_for_empty() {
+        assert!(!is_dev_server_process(&[]));
+    }
+
+    #[test]
+    fn test_is_ai_agent_claude() {
+        assert!(is_ai_agent_process(&[s("claude")], "claude"));
+    }
+
+    #[test]
+    fn test_is_ai_agent_opencode() {
+        assert!(is_ai_agent_process(&[s("opencode")], "opencode"));
+    }
+
+    #[test]
+    fn test_is_ai_agent_droid() {
+        assert!(is_ai_agent_process(&[s("droid")], "droid"));
+    }
+
+    #[test]
+    fn test_is_ai_agent_amp_in_cmd() {
+        assert!(is_ai_agent_process(&[s("amp run")], "node"));
+    }
+
+    #[test]
+    fn test_is_ai_agent_amp_in_path() {
+        assert!(is_ai_agent_process(&[s("/usr/local/bin/amp")], "amp"));
+    }
+
+    #[test]
+    fn test_is_ai_agent_false_for_regular_process() {
+        assert!(!is_ai_agent_process(&[s("node"), s("server.js")], "node"));
+    }
+
+    #[test]
+    fn test_is_process_in_worktree_matching() {
+        let wt = Path::new("/repos/project");
+        assert!(is_process_in_worktree(Some(Path::new("/repos/project")), wt));
+    }
+
+    #[test]
+    fn test_is_process_in_worktree_subdirectory() {
+        let wt = Path::new("/repos/project");
+        assert!(is_process_in_worktree(Some(Path::new("/repos/project/src")), wt));
+    }
+
+    #[test]
+    fn test_is_process_in_worktree_no_match() {
+        let wt = Path::new("/repos/project");
+        assert!(!is_process_in_worktree(Some(Path::new("/repos/other")), wt));
+    }
+
+    #[test]
+    fn test_is_process_in_worktree_none_cwd() {
+        let wt = Path::new("/repos/project");
+        assert!(!is_process_in_worktree(None, wt));
+    }
+}
