@@ -14,11 +14,21 @@ export interface PRStatus {
   additions: number;
   deletions: number;
   head_branch: string;
+  author: string;
+  created_at: string;
+  updated_at: string;
+  labels: string[];
+  requested_reviewers: string[];
+  is_bot: boolean;
 }
 
 export interface RepoWithBranches {
   repo_path: string;
   branches: string[];
+}
+
+export interface RepoPathInput {
+  repo_path: string;
 }
 
 export interface RepoPRStatuses {
@@ -27,6 +37,22 @@ export interface RepoPRStatuses {
   checked_branches: string[];
   failed_branches: string[];
 }
+
+export interface PRHubFilters {
+  scope: 'mine' | 'all';
+  status: 'all' | 'open' | 'draft' | 'ready';
+  review: 'all' | 'needs_review' | 'approved' | 'changes_requested';
+  repo: string;
+  authorType: 'all' | 'human' | 'bot';
+}
+
+export const DEFAULT_PR_HUB_FILTERS: PRHubFilters = {
+  scope: 'mine',
+  status: 'all',
+  review: 'all',
+  repo: 'all',
+  authorType: 'all',
+};
 
 export interface GitHubSettings {
   pollingIntervalMs: number;
@@ -80,6 +106,7 @@ export interface PRComment {
   path?: string;
   line?: number;
   review_id?: string;
+  is_resolved?: boolean;
 }
 
 export interface PRDetailedInfo {
@@ -87,4 +114,42 @@ export interface PRDetailedInfo {
   mergeable: string;
   comments: PRComment[];
   review_decision: string | null;
+  body: string | null;
 }
+
+export interface PRFile {
+  path: string;
+  additions: number;
+  deletions: number;
+}
+
+export interface PRCommit {
+  oid: string;
+  message_headline: string;
+  committed_date: string;
+  author_name: string;
+}
+
+export interface GithubIssue {
+  number: number;
+  title: string;
+  url: string;
+  state: string;
+  repo_name: string;
+  author: string;
+  created_at: string;
+  updated_at: string;
+  labels: string[];
+}
+
+export interface GithubNotification {
+  id: string;
+  reason: string;
+  repo_name: string;
+  subject_title: string;
+  subject_type: string;
+  subject_url: string | null;
+  unread: boolean;
+  updated_at: string;
+}
+

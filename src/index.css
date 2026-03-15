@@ -263,3 +263,52 @@ body {
 .lucide {
   stroke-width: 2 !important;
 }
+
+/* PR Inline Comments - Forced high contrast dark theme */
+.pr-inline-comment-body,
+.pr-inline-comment-body p,
+.pr-inline-comment-body span,
+.pr-inline-comment-body li,
+.pr-inline-comment-body td,
+.pr-inline-comment-body th {
+  color: #D4D4D4 !important;
+}
+
+.pr-inline-comment-body h1,
+.pr-inline-comment-body h2,
+.pr-inline-comment-body h3,
+.pr-inline-comment-body h4,
+.pr-inline-comment-body h5,
+.pr-inline-comment-body h6,
+.pr-inline-comment-body strong,
+.pr-inline-comment-body summary {
+  color: #FFFFFF !important;
+}
+
+.pr-inline-comment-body a {
+  color: #60A5FA !important;
+}
+
+.pr-inline-comment-body code {
+  color: #E8E2D9 !important;
+  background-color: #262626 !important;
+}
+
+.pr-inline-comment-body pre {
+  background-color: #1A1A1A !important;
+  border-color: #333333 !important;
+}
+
+.pr-inline-comment-body blockquote {
+  border-left-color: #4B5563 !important;
+  color: #A3A3A3 !important;
+}
+
+.pr-inline-comment-body details {
+  background-color: rgba(26, 26, 26, 0.5) !important;
+  border-color: #333333 !important;
+}
+
+.pr-inline-comment-body hr {
+  background: #333333 !important;
+}

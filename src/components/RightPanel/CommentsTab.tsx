@@ -1,14 +1,14 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Loader, MessageSquare, Copy, Check, X, CheckCircle2, XCircle, Code2, ChevronDown, Eye, EyeOff } from "lucide-react";
+import { Loader, MessageSquare, Copy, Check, X, CheckCircle2, Code2, ChevronDown } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
+import { markdownComponents as sharedMarkdownComponents } from "../../lib/markdown-components";
 import { useAppStore } from "../../store";
 import { cn } from "../../utils/cn";
-import { Checkbox } from "../ui/checkbox";
 import type { PRDetailedInfo, PRStatus, PRComment } from "../../types/github";
-import { useTheme } from "../../hooks/useTheme";
 
 const AVATAR_COLORS = [
   '#6366F1', '#8B5CF6', '#EC4899', '#F97316', '#14B8A6',
@@ -55,7 +55,7 @@ function formatDate(dateStr: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, className, title = "Copy code" }: { text: string; className?: string; title?: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -67,14 +67,18 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="absolute top-2 right-2 p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity bg-hover"
-      title="Copy code"
-      aria-label={copied ? "Code copied" : "Copy code"}
+      className={cn(
+        "p-1.5 rounded transition-all duration-200 hover:scale-110 active:scale-95",
+        "hover:bg-hover text-tertiary hover:text-primary",
+        className
+      )}
+      title={title}
+      aria-label={copied ? "Copied" : title}
     >
       {copied ? (
-        <Check className="w-3 h-3 text-semantic-success" />
+        <Check className="w-3.5 h-3.5 text-semantic-success animate-in zoom-in duration-200" />
       ) : (
-        <Copy className="w-3 h-3 text-tertiary" />
+        <Copy className="w-3.5 h-3.5" />
       )}
     </button>
   );
@@ -122,20 +126,13 @@ function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
 }
 
 export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) {
-  const theme = useTheme();
   const getPRDataCache = useAppStore((state) => state.getPRDataCache);
   const setPRDataCache = useAppStore((state) => state.setPRDataCache);
-  const toggleAddressedComment = useAppStore((state) => state.toggleAddressedComment);
-  const isCommentAddressed = useAppStore((state) => state.isCommentAddressed);
-  const addressedComments = useAppStore((state) => state.addressedComments);
   
   const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedImage, setExpandedImage] = useState<{ src: string; alt: string } | null>(null);
-  const [collapsedReviews, setCollapsedReviews] = useState<Set<string>>(new Set());
-  const [copiedReviewId, setCopiedReviewId] = useState<string | null>(null);
-  const [hideAddressed, setHideAddressed] = useState(false);
   const lastPrStatusRef = useRef<PRStatus | null>(null);
   const initialFetchDoneRef = useRef(false);
 
@@ -202,17 +199,56 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
     }
   }, [prStatus, fetchData]);
 
-  const toggleReviewCollapse = (reviewId: string) => {
-    setCollapsedReviews(prev => {
-      const next = new Set(prev);
-      if (next.has(reviewId)) {
-        next.delete(reviewId);
-      } else {
-        next.add(reviewId);
-      }
-      return next;
-    });
+  const markdownComponents = {
+    ...sharedMarkdownComponents,
+    // Override: compact spacing for comment context
+    p: ({ children }: { children?: React.ReactNode }) => (
+      <p className="my-1.5 first:mt-0 last:mb-0">{children}</p>
+    ),
+    // Override: clickable images for comment context
+    img: ({ src, alt }: { src?: string; alt?: string }) => (
+      <img
+        src={src}
+        alt={alt || ""}
+        className="max-w-full rounded my-2 cursor-pointer hover:opacity-90 transition-opacity"
+        onClick={() => src && setExpandedImage({ src, alt: alt || "" })}
+      />
+    ),
+    // Override: compact code blocks with copy button
+    pre: ({ children }: { children?: React.ReactNode }) => {
+      const codeContent = (() => {
+        try {
+          const child = children as React.ReactElement<{ children?: React.ReactNode }>;
+          if (child?.props?.children) {
+            return String(child.props.children);
+          }
+        } catch {
+          // ignore
+        }
+        return "";
+      })();
+      return (
+        <div className="relative group my-2">
+          <pre className="p-3 rounded text-[13px] overflow-x-auto bg-tertiary">
+            {children}
+          </pre>
+          <CopyButton text={codeContent} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100" />
+        </div>
+      );
+    },
   };
+
+  const renderCommentBody = (body: string) => (
+    <div className="text-[13px] leading-relaxed text-primary">
+      <ReactMarkdown 
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeRaw, rehypeSanitize]}
+        components={markdownComponents}
+      >
+        {body.replace(/<!--[\s\S]*?-->/g, '')}
+      </ReactMarkdown>
+    </div>
+  );
 
   if (!prNumber) {
     return (
@@ -247,378 +283,57 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
 
   const comments = prDetails?.comments || [];
 
-  const threadsByReviewId = new Map<string, PRComment[]>();
-  const topLevelComments: PRComment[] = [];
-  
-  for (const comment of comments) {
-    if (comment.comment_type === 'review_thread' && comment.review_id) {
-      const existing = threadsByReviewId.get(comment.review_id) || [];
-      existing.push(comment);
-      threadsByReviewId.set(comment.review_id, existing);
-    } else {
-      topLevelComments.push(comment);
-    }
-  }
-  
-  topLevelComments.sort((a, b) => 
-    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  const reviews = comments.filter(
+    (c) => c.comment_type === 'review' && (
+      c.state === 'APPROVED' ||
+      c.state === 'CHANGES_REQUESTED' ||
+      c.state === 'COMMENTED'
+    )
   );
+  const threadComments = comments.filter(c => c.comment_type === 'review_thread');
 
-  const getCommentId = (comment: PRComment): string => {
-    if (comment.comment_type === 'review_thread') {
-      return `thread:${comment.created_at}:${comment.author}`;
-    }
-    return `issue:${comment.created_at}:${comment.author}`;
-  };
-
-  const isActionable = (comment: PRComment): boolean =>
-    comment.comment_type === 'issue' || comment.comment_type === 'review_thread';
-
-  const allActionableComments: PRComment[] = [];
-  for (const c of comments) {
-    if (isActionable(c)) allActionableComments.push(c);
-  }
-  const totalActionable = allActionableComments.length;
-
-  // addressedComments subscription triggers re-render on toggle
-  void addressedComments;
-  const addressedCount = repoPath && prNumber
-    ? allActionableComments.filter(c => isCommentAddressed(repoPath, prNumber, getCommentId(c))).length
-    : 0;
-
-  const markdownComponents = {
-    a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
-      <a 
-        href={href} 
-        target="_blank" 
-        rel="noopener noreferrer"
-        className="hover:underline text-semantic-info"
-      >
-        {children}
-      </a>
-    ),
-    code: ({ className, children, ...props }: { className?: string; children?: React.ReactNode }) => {
-      const isInline = !className;
-      return isInline ? (
-        <code 
-          className="px-1 py-0.5 rounded text-[13px] bg-tertiary text-primary"
-          {...props}
-        >
-          {children}
-        </code>
-      ) : (
-        <code className={className} {...props}>{children}</code>
-      );
-    },
-    pre: ({ children }: { children?: React.ReactNode }) => {
-      const codeContent = (() => {
-        try {
-          const child = children as React.ReactElement<{ children?: React.ReactNode }>;
-          if (child?.props?.children) {
-            return String(child.props.children);
-          }
-        } catch {
-          // ignore
-        }
-        return "";
-      })();
-      return (
-        <div className="relative group my-2">
-          <pre className="p-3 rounded text-[13px] overflow-x-auto bg-tertiary">
-            {children}
-          </pre>
-          <CopyButton text={codeContent} />
-        </div>
-      );
-    },
-    img: ({ src, alt }: { src?: string; alt?: string }) => (
-      <img
-        src={src}
-        alt={alt || ""}
-        className="max-w-full rounded my-2 cursor-pointer hover:opacity-90 transition-opacity"
-        onClick={() => src && setExpandedImage({ src, alt: alt || "" })}
-      />
-    ),
-    ul: ({ children }: { children?: React.ReactNode }) => (
-      <ul className="list-disc pl-4 my-1.5 space-y-0.5">{children}</ul>
-    ),
-    ol: ({ children }: { children?: React.ReactNode }) => (
-      <ol className="list-decimal pl-4 my-1.5 space-y-0.5">{children}</ol>
-    ),
-    li: ({ children }: { children?: React.ReactNode }) => (
-      <li>{children}</li>
-    ),
-    p: ({ children }: { children?: React.ReactNode }) => (
-      <p className="my-1.5 first:mt-0 last:mb-0">{children}</p>
-    ),
-    blockquote: ({ children }: { children?: React.ReactNode }) => (
-      <blockquote className="border-l-2 pl-3 my-2 border-border text-secondary">
-        {children}
-      </blockquote>
-    ),
-  };
-
-  const renderCommentBody = (body: string) => (
-    <div className="text-[13px] leading-relaxed text-primary">
-      <ReactMarkdown 
-        remarkPlugins={[remarkGfm]}
-        rehypePlugins={[rehypeRaw]}
-        components={markdownComponents}
-      >
-        {body}
-      </ReactMarkdown>
-    </div>
+  const getCommentKey = (comment: PRComment) => (
+    `${comment.review_id ?? 'thread'}:${comment.created_at}:${comment.author}:${comment.path ?? ''}:${comment.line ?? 0}`
   );
-
-  const formatReviewForCopy = (review: PRComment, threads: PRComment[]): string => {
-    const lines: string[] = [];
-    
-    let action = 'reviewed';
-    if (review.state === 'APPROVED') action = 'approved';
-    else if (review.state === 'CHANGES_REQUESTED') action = 'requested changes';
-    
-    lines.push(`## ${review.author} ${action}`);
-    lines.push(`*${new Date(review.created_at).toLocaleString()}*`);
-    lines.push('');
-    
-    if (review.body && review.body.trim()) {
-      lines.push(review.body.trim());
-      lines.push('');
-    }
-    
-    if (threads.length > 0) {
-      lines.push('### Code Comments');
-      lines.push('');
-      
-      for (const thread of threads) {
-        if (thread.path) {
-          const location = thread.line ? `${thread.path}:${thread.line}` : thread.path;
-          lines.push(`**\`${location}\`**`);
-        }
-        lines.push(`> **${thread.author}** *(${new Date(thread.created_at).toLocaleString()})*`);
-        lines.push('>');
-        if (thread.body) {
-          const bodyLines = thread.body.split('\n');
-          for (const bodyLine of bodyLines) {
-            lines.push(`> ${bodyLine}`);
-          }
-        }
-        lines.push('');
-      }
-    }
-    
-    return lines.join('\n');
-  };
-
-  const handleCopyReview = async (review: PRComment, threads: PRComment[]) => {
-    const formatted = formatReviewForCopy(review, threads);
-    await navigator.clipboard.writeText(formatted);
-    setCopiedReviewId(review.review_id || null);
-    setTimeout(() => setCopiedReviewId(null), 2000);
-  };
-
-  const renderReviewEvent = (comment: PRComment, nestedThreads: PRComment[]) => {
-    const hasBody = comment.body && comment.body.trim().length > 0;
-    const hasThreads = nestedThreads.length > 0;
-    const isCollapsed = comment.review_id ? collapsedReviews.has(comment.review_id) : false;
-    const isCopied = copiedReviewId === comment.review_id;
-    
-    let actionText = 'reviewed';
-    let ActionIcon: typeof CheckCircle2 | typeof XCircle | null = null;
-    let iconColorClass = "text-tertiary";
-    
-    if (comment.state === 'APPROVED') {
-      actionText = 'approved';
-      ActionIcon = CheckCircle2;
-      iconColorClass = "text-semantic-success";
-    } else if (comment.state === 'CHANGES_REQUESTED') {
-      actionText = 'requested changes';
-      ActionIcon = XCircle;
-      iconColorClass = "text-semantic-error";
-    }
-
-    return (
-      <div className="py-2.5 group/review">
-        <div className="flex items-center gap-2">
-          <Avatar name={comment.author} size="sm" />
-          <div className="flex items-center gap-1.5 min-w-0 flex-1">
-            <span className="text-[13px] font-medium text-primary">
-              {comment.author}
-            </span>
-            <span className="text-[13px] text-tertiary">
-              {actionText}
-            </span>
-            {ActionIcon && (
-              <ActionIcon className={cn("w-3.5 h-3.5 shrink-0", iconColorClass)} />
-            )}
-            <span className="text-[13px] text-muted">
-              · {formatDate(comment.created_at)}
-            </span>
-          </div>
-          <button
-            onClick={() => handleCopyReview(comment, nestedThreads)}
-            className="p-1 rounded opacity-0 group-hover/review:opacity-100 transition-opacity bg-hover"
-            title="Copy review"
-            aria-label={isCopied ? "Review copied" : "Copy review"}
-          >
-            {isCopied ? (
-              <Check className="w-3.5 h-3.5 text-semantic-success" />
-            ) : (
-              <Copy className="w-3.5 h-3.5 text-tertiary" />
-            )}
-          </button>
-        </div>
-
-        {hasBody && (
-          <div className="mt-2 ml-7">
-            {renderCommentBody(comment.body)}
-          </div>
-        )}
-
-        {hasThreads && comment.review_id && (
-          <div className="mt-2 ml-7">
-            <button
-              onClick={() => toggleReviewCollapse(comment.review_id!)}
-              className="flex items-center gap-1.5 text-[12px] py-1 transition-colors text-secondary hover:text-primary"
-            >
-              <ChevronDown 
-                className={cn("w-3.5 h-3.5 transition-transform", isCollapsed && "-rotate-90")} 
-              />
-              <Code2 className="w-3.5 h-3.5 text-tertiary" />
-              <span>{nestedThreads.length} code comment{nestedThreads.length !== 1 ? 's' : ''}</span>
-            </button>
-            
-            {!isCollapsed && (
-              <div className="mt-2 rounded-lg overflow-hidden bg-secondary">
-                {nestedThreads
-                  .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-                  .filter((thread) => {
-                    if (!hideAddressed) return true;
-                    const threadId = getCommentId(thread);
-                    return !(repoPath && prNumber && isCommentAddressed(repoPath, prNumber, threadId));
-                  })
-                  .map((thread, idx) => {
-                    const threadId = getCommentId(thread);
-                    const threadAddressed = repoPath && prNumber ? isCommentAddressed(repoPath, prNumber, threadId) : false;
-                    return (
-                      <div 
-                        key={threadId}
-                        className="px-3 py-2.5"
-                        style={{ 
-                          borderTop: idx > 0 ? `1px solid ${theme.border.subtle}` : undefined 
-                        }}
-                      >
-                        {thread.path && (
-                          <div 
-                            className="flex items-center gap-1.5 mb-2 text-[11px] font-mono"
-                            style={{ color: theme.text.tertiary }}
-                          >
-                            <span className="truncate">{thread.path}</span>
-                            {thread.line && (
-                              <span style={{ color: theme.text.muted }}>:{thread.line}</span>
-                            )}
-                          </div>
-                        )}
-                        <div className="flex items-start gap-2">
-                          <Checkbox
-                            size="sm"
-                            checked={threadAddressed}
-                            onCheckedChange={() => repoPath && prNumber && toggleAddressedComment(repoPath, prNumber, threadId)}
-                            className="mt-0.5 shrink-0"
-                          />
-                          <div
-                            className="flex items-start gap-2 flex-1 min-w-0"
-                            style={{
-                              opacity: threadAddressed ? 0.45 : 1,
-                              transition: 'opacity 150ms',
-                            }}
-                          >
-                            <Avatar name={thread.author} size="sm" />
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5 mb-1">
-                                <span className="text-[12px] font-medium" style={{ color: theme.text.primary }}>
-                                  {thread.author}
-                                </span>
-                                <span className="text-[11px]" style={{ color: theme.text.muted }}>
-                                  {formatDate(thread.created_at)}
-                                </span>
-                              </div>
-                              {thread.body && renderCommentBody(thread.body)}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  const renderComment = (comment: PRComment) => {
-    const hasBody = comment.body && comment.body.trim().length > 0;
-    const commentId = getCommentId(comment);
-    const addressed = repoPath && prNumber ? isCommentAddressed(repoPath, prNumber, commentId) : false;
-
-    return (
-      <div className="py-3 rounded-lg px-3 bg-secondary">
-        <div className="flex items-start gap-2.5">
-          <Checkbox
-            size="sm"
-            checked={addressed}
-            onCheckedChange={() => repoPath && prNumber && toggleAddressedComment(repoPath, prNumber, commentId)}
-            className="mt-1 shrink-0"
-          />
-          <div
-            className="flex items-start gap-2.5 flex-1 min-w-0"
-            style={{
-              opacity: addressed ? 0.45 : 1,
-              transition: 'opacity 150ms',
-            }}
-          >
-            <Avatar name={comment.author} />
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5 mb-1">
-                <span className="text-[13px] font-medium" style={{ color: theme.text.primary }}>
-                  {comment.author}
-                </span>
-                <span className="text-[12px]" style={{ color: theme.text.muted }}>
-                  {formatDate(comment.created_at)}
-                </span>
-              </div>
-              
-              {comment.comment_type === 'review_thread' && comment.path && (
-                <div 
-                  className="flex items-center gap-1.5 mb-2 text-[11px] font-mono"
-                  style={{ color: theme.text.tertiary }}
-                >
-                  <Code2 className="w-3 h-3 shrink-0" />
-                  <span className="truncate">{comment.path}</span>
-                  {comment.line && (
-                    <span style={{ color: theme.text.muted }}>:{comment.line}</span>
-                  )}
-                </div>
-              )}
-              
-              {hasBody && renderCommentBody(comment.body)}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  if (comments.length === 0) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-2 p-8 text-tertiary">
-        <MessageSquare className="w-8 h-8 text-muted" />
-        <span className="text-sm">No comments yet</span>
-      </div>
-    );
+  
+  const commentsByFile = new Map<string, PRComment[]>();
+  for (const comment of threadComments) {
+    const path = comment.path || 'General';
+    const existing = commentsByFile.get(path) || [];
+    existing.push(comment);
+    commentsByFile.set(path, existing);
   }
+
+  const sortedFiles = Array.from(commentsByFile.keys()).sort();
+
+  const handleCopyAll = async () => {
+    let allText = "";
+    if (reviews.length > 0) {
+      allText += "# Reviews\n\n";
+      reviews.forEach(review => {
+         allText += `## ${review.author} (${review.state})\n${review.body}\n\n`;
+      });
+    }
+    
+    sortedFiles.forEach(file => {
+      allText += `# File: ${file}\n\n`;
+      const fileComments = commentsByFile.get(file) || [];
+      fileComments.sort((a, b) => (a.line || 0) - (b.line || 0));
+      fileComments.forEach(comment => {
+         allText += `> ${comment.author} (Line ${comment.line || '?'})${comment.is_resolved ? ' [RESOLVED]' : ''}: ${comment.body}\n\n`;
+      });
+    });
+    
+    await navigator.clipboard.writeText(allText);
+  };
+
+  const handleCopyFileComments = async (file: string, fileComments: PRComment[]) => {
+      let text = `# File: ${file}\n\n`;
+      fileComments.forEach(comment => {
+         text += `> ${comment.author} (Line ${comment.line || '?'})${comment.is_resolved ? ' [RESOLVED]' : ''}: ${comment.body}\n\n`;
+      });
+      await navigator.clipboard.writeText(text);
+  };
 
   return (
     <>
@@ -629,74 +344,169 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
           onClose={() => setExpandedImage(null)}
         />
       )}
-      <div className="flex flex-col h-full overflow-auto">
-        {totalActionable > 0 && (
-          <div
-            className="flex items-center justify-between px-3 py-2 shrink-0 sticky top-0 z-10"
-            style={{ background: theme.bg.primary }}
-          >
-            <div className="flex items-center gap-2.5">
-              <span
-                className="text-[12px] font-medium tabular-nums"
-                style={{ color: theme.text.secondary }}
-              >
-                {addressedCount} / {totalActionable} addressed
-              </span>
-              {totalActionable > 0 && (
-                <div
-                  className="h-1.5 w-16 rounded-full overflow-hidden"
-                  style={{ background: theme.bg.tertiary }}
+      <div className="flex flex-col h-full overflow-auto bg-primary">
+        {(reviews.length > 0 || sortedFiles.length > 0) && (
+            <div className="p-2 border-b border-border bg-primary flex justify-end sticky top-0 z-20 backdrop-blur-md">
+                <button 
+                    onClick={handleCopyAll}
+                    className="flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium bg-tertiary text-secondary hover:bg-hover hover:scale-105 active:scale-95 transition-all duration-200"
                 >
-                  <div
-                    className="h-full rounded-full"
-                    style={{
-                      width: `${(addressedCount / totalActionable) * 100}%`,
-                      background: addressedCount === totalActionable ? theme.semantic.success : theme.text.tertiary,
-                      transition: 'width 150ms ease-out, background 150ms ease-out',
-                    }}
-                  />
-                </div>
-              )}
+                    <Copy className="w-3 h-3" />
+                    Copy All Comments
+                </button>
             </div>
-            <button
-              onClick={() => setHideAddressed(prev => !prev)}
-              className="p-1 rounded transition-colors"
-              style={{ color: hideAddressed ? theme.text.primary : theme.text.muted }}
-              onMouseEnter={(e) => e.currentTarget.style.background = theme.bg.hover}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-              aria-label={hideAddressed ? "Show all comments" : "Show remaining comments"}
-            >
-              {hideAddressed ? (
-                <EyeOff className="w-3.5 h-3.5" />
-              ) : (
-                <Eye className="w-3.5 h-3.5" />
-              )}
-            </button>
-          </div>
         )}
-        <div className="px-3 py-2 space-y-1">
-          {topLevelComments.map((comment, index) => {
-            const nestedThreads = comment.comment_type === 'review' && comment.review_id 
-              ? threadsByReviewId.get(comment.review_id) || []
-              : [];
 
-            if (comment.comment_type !== 'review' && isActionable(comment)) {
-              const commentId = getCommentId(comment);
-              const addressed = repoPath && prNumber ? isCommentAddressed(repoPath, prNumber, commentId) : false;
-              if (hideAddressed && addressed) return null;
-            }
-            
+        {reviews.length > 0 && (
+           <div className="border-b border-border bg-secondary/30">
+             {reviews.map((review) => (
+               <div key={getCommentKey(review)} className="px-4 py-3 border-b border-border last:border-0 flex items-start gap-3 group relative">
+                 <Avatar name={review.author} />
+                 <div className="flex-1 min-w-0">
+                   <div className="flex items-center gap-2 mb-1">
+                     <span className="text-sm font-semibold text-primary">{review.author}</span>
+                     <span className={cn(
+                       "text-xs font-medium px-2 py-0.5 rounded-full border",
+                       review.state === 'APPROVED'
+                         ? "bg-semantic-success/10 text-semantic-success border-semantic-success/20"
+                         : review.state === 'CHANGES_REQUESTED'
+                           ? "bg-semantic-error/10 text-semantic-error border-semantic-error/20"
+                           : "bg-semantic-info/10 text-semantic-info border-semantic-info/20"
+                     )}>
+                       {review.state === 'APPROVED'
+                         ? 'Approved'
+                         : review.state === 'CHANGES_REQUESTED'
+                           ? 'Requested Changes'
+                           : 'Commented'}
+                     </span>
+                     <span className="text-xs text-tertiary">{formatDate(review.created_at)}</span>
+                     <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
+                        <CopyButton text={`Review by ${review.author} (${review.state}):\n${review.body}`} className="bg-transparent hover:bg-hover" title="Copy review" />
+                     </div>
+                   </div>
+                   {review.body && (
+                     <div className="text-sm text-secondary mt-2">
+                       {renderCommentBody(review.body)}
+                     </div>
+                   )}
+                 </div>
+               </div>
+             ))}
+           </div>
+        )}
+
+        <div className="divide-y divide-border">
+          {sortedFiles.map(filePath => {
+            const fileComments = commentsByFile.get(filePath) || [];
+            fileComments.sort((a, b) => (a.line || 0) - (b.line || 0));
+
             return (
-              <div key={index}>
-                {comment.comment_type === 'review' 
-                  ? renderReviewEvent(comment, nestedThreads)
-                  : renderComment(comment)
-                }
+              <div key={filePath} className="bg-primary group/file">
+                <div className="px-4 py-2 bg-secondary border-b border-border flex items-center gap-2 sticky top-[40px] z-10 backdrop-blur-sm justify-between">
+                  <div className="flex items-center gap-2 overflow-hidden">
+                    <Code2 className="w-4 h-4 text-tertiary shrink-0" />
+                    <span className="text-xs font-medium text-secondary font-mono truncate" title={filePath}>{filePath}</span>
+                  </div>
+                  <button 
+                    onClick={() => handleCopyFileComments(filePath, fileComments)}
+                    className="p-1.5 rounded hover:bg-hover hover:scale-110 active:scale-95 text-tertiary opacity-0 group-hover/file:opacity-100 transition-all duration-200"
+                    title="Copy file comments"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                
+                <div className="divide-y divide-border/50">
+                  {fileComments.map((comment) => (
+                    <CommentRow 
+                        key={getCommentKey(comment)} 
+                        comment={comment} 
+                        isResolved={comment.is_resolved}
+                        renderBody={renderCommentBody}
+                        formatDate={formatDate}
+                    />
+                  ))}
+                </div>
               </div>
             );
           })}
+          
+          {sortedFiles.length === 0 && reviews.length === 0 && (
+             <div className="flex flex-col items-center justify-center py-12 text-tertiary">
+               <MessageSquare className="w-8 h-8 mb-2 opacity-50" />
+               <p className="text-sm">No review comments</p>
+             </div>
+          )}
         </div>
       </div>
     </>
   );
+}
+
+function CommentRow({ comment, isResolved, renderBody, formatDate }: { 
+    comment: PRComment; 
+    isResolved?: boolean;
+    renderBody: (body: string) => React.ReactNode;
+    formatDate: (date: string) => string;
+}) {
+    const [isExpanded, setIsExpanded] = useState(!isResolved);
+
+    if (isResolved && !isExpanded) {
+        return (
+            <div 
+                className="px-4 py-2 flex items-center gap-3 cursor-pointer hover:bg-hover/50 transition-colors group"
+                onClick={() => setIsExpanded(true)}
+            >
+                <div className="w-6 flex justify-center">
+                    <CheckCircle2 className="w-4 h-4 text-tertiary" />
+                </div>
+                <div className="flex-1 flex items-center gap-2 overflow-hidden">
+                    <span className="text-xs text-tertiary font-medium">Resolved comment by {comment.author}</span>
+                    <span className="text-xs text-muted truncate">{comment.body.substring(0, 50)}...</span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                        <CopyButton text={comment.body} className="bg-transparent hover:bg-hover p-1" title="Copy comment" />
+                    </div>
+                    <ChevronDown className="w-4 h-4 text-tertiary -rotate-90" />
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div className={cn("px-4 py-3 hover:bg-hover/20 transition-colors group/comment relative", isResolved && "bg-secondary/10")}>
+            <div className="flex items-start gap-3">
+                <Avatar name={comment.author} />
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm font-medium text-primary">{comment.author}</span>
+                        <span className="text-xs text-tertiary">{formatDate(comment.created_at)}</span>
+                        <div className="ml-auto flex items-center gap-2">
+                            {comment.line && (
+                                <span className="text-[10px] bg-tertiary px-1.5 py-0.5 rounded text-secondary font-mono">
+                                    Line {comment.line}
+                                </span>
+                            )}
+                            {isResolved && (
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); setIsExpanded(false); }}
+                                    className="text-tertiary hover:text-primary p-1 hover:scale-110 active:scale-95 transition-transform"
+                                    title="Collapse resolved"
+                                >
+                                    <CheckCircle2 className="w-4 h-4 text-semantic-success" />
+                                </button>
+                            )}
+                            <div className="opacity-0 group-hover/comment:opacity-100 transition-opacity">
+                                <CopyButton text={comment.body} className="bg-transparent hover:bg-hover p-1" title="Copy comment" />
+                            </div>
+                        </div>
+                    </div>
+                    <div className="text-sm text-secondary">
+                        {renderBody(comment.body)}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
 }
