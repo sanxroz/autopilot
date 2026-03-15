@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { invoke } from '@tauri-apps/api/core';
 import { usePRStatusPolling, usePRStatusForBranch } from '../usePRStatus';
 import { useAppStore } from '../../store';
@@ -57,7 +57,7 @@ const mockWorktrees: WorktreeInfo[] = [
 
 function setupPollingTest() {
   resetStore();
-  seedGitHubSettings({ ghCliAvailable: true, pollingIntervalMs: 100 });
+  seedGitHubSettings({ ghCliAvailable: true, pollingIntervalMs: 30000 });
   seedRepository({
     repoPath: '/test/repo',
     repoName: 'test-repo',
@@ -85,12 +85,13 @@ describe('usePRStatusPolling', () => {
 
   it('should fetch PR statuses when GitHub CLI is available', async () => {
     setupPollingTest();
-    mockInvoke.mockResolvedValueOnce(mockRepoPRStatuses);
+    mockInvoke.mockResolvedValue(mockRepoPRStatuses);
 
-    renderHook(() => usePRStatusPolling());
+    const { unmount } = renderHook(() => usePRStatusPolling());
 
-    // Let the initial fetch complete
-    await flushPromises();
+    await waitFor(() => {
+      expect(useAppStore.getState().prStatusByBranch['/test/repo']?.['feature-branch']).toEqual(mockPRStatus);
+    });
 
     expect(mockInvoke).toHaveBeenCalledWith('get_all_prs_for_repos', {
       repos: [
@@ -101,8 +102,7 @@ describe('usePRStatusPolling', () => {
       ],
     });
 
-    const store = useAppStore.getState();
-    expect(store.prStatusByBranch['/test/repo']['feature-branch']).toEqual(mockPRStatus);
+    unmount();
   });
 
   it('should not fetch when GitHub CLI is not available', async () => {
