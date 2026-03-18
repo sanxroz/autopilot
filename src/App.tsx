@@ -13,7 +13,6 @@ import { Toaster } from "sonner";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "./store";
 import { usePRStatusPolling } from "./hooks/usePRStatus";
-import { usePRHubPolling } from "./hooks/usePRHub";
 import { useGitWatcher } from "./hooks/useGitWatcher";
 import { useUpdater } from "./hooks/useUpdater";
 import { useDiffStatsLoader } from "./hooks/useDiffStats";
@@ -58,7 +57,6 @@ function App() {
   }, [togglePRHub]);
 
   usePRStatusPolling();
-  usePRHubPolling();
   useProcessStatusPolling();
   useGitWatcher();
   useDiffStatsLoader();

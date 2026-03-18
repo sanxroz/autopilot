@@ -536,8 +536,8 @@ fn fetch_prs_graphql(
                             author {{ login }}
                             createdAt
                             updatedAt
-                            labels(first: 20) {{ nodes {{ name }} }}
-                            reviewRequests(first: 20) {{
+                            labels(first: 10) {{ nodes {{ name }} }}
+                            reviewRequests(first: 10) {{
                                 nodes {{
                                     requestedReviewer {{
                                         ... on User {{ login }}
@@ -548,7 +548,7 @@ fn fetch_prs_graphql(
                                 nodes {{
                                     commit {{
                                         statusCheckRollup {{
-                                            contexts(first: 50) {{
+                                            contexts(first: 25) {{
                                                 nodes {{
                                                     __typename
                                                     ... on CheckRun {{ conclusion status }}
@@ -777,7 +777,7 @@ pub async fn get_all_open_prs_for_repos(
                 "--state",
                 "open",
                 "--limit",
-                "100",
+                "50",
                 "--json",
                 PR_JSON_FIELDS,
             ])
@@ -1333,6 +1333,7 @@ struct GhComment {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct GhReview {
     id: String,
     #[serde(default)]
@@ -1353,6 +1354,7 @@ struct RestApiReview {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct GhReviewComment {
     user: GhCommentAuthor,
     body: String,
@@ -1367,6 +1369,7 @@ struct GhReviewComment {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct GhPRDetailedResponse {
     merge_state_status: String,
     mergeable: String,
@@ -1458,13 +1461,15 @@ struct GraphqlRepositoryData {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct GraphqlRepository {
-    pullRequest: GraphqlPullRequest,
+    pull_request: GraphqlPullRequest,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct GraphqlPullRequest {
-    reviewThreads: GraphqlReviewThreads,
+    review_threads: GraphqlReviewThreads,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1473,8 +1478,9 @@ struct GraphqlReviewThreads {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct GraphqlReviewThread {
-    isResolved: bool,
+    is_resolved: bool,
     comments: GraphqlThreadComments,
 }
 
@@ -1484,20 +1490,23 @@ struct GraphqlThreadComments {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 struct GraphqlCommentNode {
-    databaseId: u64,
+    database_id: u64,
     author: Option<GhCommentAuthor>,
     body: String,
-    createdAt: String,
+    created_at: String,
     path: String,
     line: Option<u32>,
-    originalLine: Option<u32>,
-    pullRequestReview: Option<GraphqlPullRequestReview>,
+    original_line: Option<u32>,
+    pull_request_review: Option<GraphqlPullRequestReview>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct GraphqlPullRequestReview {
-    databaseId: u64,
+    database_id: u64,
 }
 
 async fn fetch_review_threads_graphql(
@@ -1563,8 +1572,8 @@ async fn fetch_review_threads_graphql(
 
     let mut comments = Vec::new();
 
-    for thread in response.data.repository.pullRequest.reviewThreads.nodes {
-        let is_resolved = thread.isResolved;
+    for thread in response.data.repository.pull_request.review_threads.nodes {
+        let is_resolved = thread.is_resolved;
         for comment in thread.comments.nodes {
             comments.push(PRComment {
                 author: comment
@@ -1572,12 +1581,12 @@ async fn fetch_review_threads_graphql(
                     .map(|a| a.login)
                     .unwrap_or_else(|| "ghost".to_string()),
                 body: comment.body,
-                created_at: comment.createdAt,
+                created_at: comment.created_at,
                 comment_type: "review_thread".to_string(),
                 state: None,
                 path: Some(comment.path),
-                line: comment.line.or(comment.originalLine),
-                review_id: comment.pullRequestReview.map(|r| r.databaseId.to_string()),
+                line: comment.line.or(comment.original_line),
+                review_id: comment.pull_request_review.map(|r| r.database_id.to_string()),
                 is_resolved,
             });
         }

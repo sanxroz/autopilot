@@ -57,17 +57,38 @@ export function usePRHubPolling() {
       return;
     }
 
-    fetchAllOpenPRs();
-
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-    }
-    pollingRef.current = setInterval(fetchAllOpenPRs, githubSettings.pollingIntervalMs);
-
-    return () => {
+    const startPolling = () => {
+      fetchAllOpenPRs();
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
       }
+      pollingRef.current = setInterval(fetchAllOpenPRs, githubSettings.pollingIntervalMs);
+    };
+
+    const stopPolling = () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        stopPolling();
+      } else {
+        startPolling();
+      }
+    };
+
+    if (!document.hidden) {
+      startPolling();
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [githubSettings.ghCliAvailable, githubSettings.pollingIntervalMs, repositories.length, fetchAllOpenPRs]);
 
