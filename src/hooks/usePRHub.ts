@@ -90,7 +90,7 @@ export function usePRHubPolling() {
       stopPolling();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [githubSettings.ghCliAvailable, githubSettings.pollingIntervalMs, repositories.length, fetchAllOpenPRs]);
+  }, [githubSettings.ghCliAvailable, githubSettings.pollingIntervalMs, fetchAllOpenPRs]);
 
   return { refresh: fetchAllOpenPRs };
 }

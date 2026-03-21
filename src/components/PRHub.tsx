@@ -16,7 +16,6 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useAppStore } from '../store';
-import { usePRHubPolling } from '../hooks/usePRHub';
 import type { GithubIssue, PRHubFilters, PRStatus, RepoPRStatuses, RepoPathInput } from '../types/github';
 import { cn } from '../utils/cn';
 import { PRKanbanCard, type PRAction } from './PRKanbanCard';
@@ -175,8 +174,6 @@ function IssueDetail({ issue }: { issue: GithubIssue }) {
 /* ── Main component ────────────────────────────────────────────────── */
 
 export function PRHub() {
-  usePRHubPolling();
-
   const repositories = useAppStore((state) => state.repositories);
   const prHubData = useAppStore((state) => state.prHubData);
   const assignedIssues = useAppStore((state) => state.assignedIssues);

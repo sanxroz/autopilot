@@ -548,7 +548,7 @@ fn fetch_prs_graphql(
                                 nodes {{
                                     commit {{
                                         statusCheckRollup {{
-                                            contexts(first: 25) {{
+                                            contexts(first: 50) {{
                                                 nodes {{
                                                     __typename
                                                     ... on CheckRun {{ conclusion status }}
@@ -777,7 +777,7 @@ pub async fn get_all_open_prs_for_repos(
                 "--state",
                 "open",
                 "--limit",
-                "50",
+                "100",
                 "--json",
                 PR_JSON_FIELDS,
             ])
