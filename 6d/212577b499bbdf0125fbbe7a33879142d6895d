@@ -1,0 +1,44 @@
+src/components/CommandMenu.tsx
+  s_da152312ec274e::t_c5589a7dd3b6f0 2,141
+src/App.tsx
+  s_da152312ec274e::t_2d5f93446bc394 49,110
+src/components/GitFileDiffOverlay.tsx
+  s_da152312ec274e::t_a3ad80c1b3554c 418
+src/components/Sidebar.tsx
+  s_da152312ec274e::t_5d72ed02462539 297-299,306-307
+src/components/RightPanel/index.tsx
+  s_31a931644bbb13::t_9dbc8ba500adde 300,304,309
+  s_da152312ec274e::t_f97aa746be997c 1,8-9,30,44-48,52,54-61,133-138,141,143-146,169,190,208-213,218-219,224-299,301-303,305-308,310-320,328
+src/components/Navbar.tsx
+  s_da152312ec274e::t_a5ca2386fb9d29 39,59,83,100,105-106
+src/components/SettingsPanel.tsx
+  s_da152312ec274e::t_f37ee5154d915b 275
+src/components/WorktreeItem.tsx
+  s_da152312ec274e::t_9044575dacfc31 25,44,51-52,54-56,59,61-63,66,68-70,73,75-77,121-122,136,139,145,149-152,164,166-167,169-170,180,198,205
+src/store/index.ts
+  s_da152312ec274e::t_efab5f3a3c4b74 15-16,134,141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.4",
+  "base_commit_sha": "6d212577b499bbdf0125fbbe7a33879142d6895d",
+  "prompts": {},
+  "sessions": {
+    "s_31a931644bbb13": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019e21b8-9e0a-764e-b8e5-ebacdd4a0942",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    },
+    "s_da152312ec274e": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019e17a0-480a-778e-a56a-ef5da9b8a7ef",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
