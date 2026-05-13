@@ -272,7 +272,7 @@ function DebugSection({
 
           {!githubSettings.ghCliAvailable && (
             <p className="text-xs text-tertiary">
-              Install the GitHub CLI to enable PR status tracking.{" "}
+              Install the GitHub CLI to enable GitHub integration.{" "}
               <a
                 href="https://cli.github.com"
                 target="_blank"

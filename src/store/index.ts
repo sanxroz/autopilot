@@ -12,37 +12,20 @@ import type {
   AgentRunState,
   AgentStatusEvent,
 } from '../types';
-import type {
-  GitHubSettings,
-  GithubIssue,
-  PRStatus,
-  PRChecksResult,
-  PRDetailedInfo,
-  PRHubFilters,
-  RepoPRStatuses,
-} from '../types/github';
-import { DEFAULT_GITHUB_SETTINGS, DEFAULT_PR_HUB_FILTERS } from '../types/github';
+import type { GitHubSettings } from '../types/github';
+import { DEFAULT_GITHUB_SETTINGS } from '../types/github';
 import { setThemeMode as setGlobalThemeMode, getThemeMode, type ThemeMode } from '../theme';
 
 interface PersistedState {
   repositoryPaths: string[];
   defaultAIAgent?: AIAgent;
   repoAvatarCache?: Record<string, string>;
-  prHubFilters?: PRHubFilters;
 }
 
 interface WorktreeTerminals {
   terminals: TerminalInstance[];
   activeTerminalId: string | null;
 }
-
-interface PRDataCache {
-  checksResult: PRChecksResult | null;
-  prDetails: PRDetailedInfo | null;
-  lastUpdated: number;
-}
-
-type AddressedCommentsMap = Record<string, Set<string>>;
 
 interface AppStore {
   repositories: Repository[];
@@ -52,12 +35,9 @@ interface AppStore {
   currentActiveTerminalId: string | null;
   isInitialized: boolean;
   githubSettings: GitHubSettings;
-  prStatusByBranch: Record<string, Record<string, PRStatus>>;
-  prDataCache: Record<string, PRDataCache>;
   collapsedRepos: Set<string>;
   settingsOpen: boolean;
   codeReviewOpen: boolean;
-  prHubOpen: boolean;
   diffOverlayOpen: boolean;
   diffViewMode: DiffViewMode;
   gitFileDiffPreview: { filePath: string; worktreePath: string; isStaged: boolean } | null;
@@ -65,11 +45,6 @@ interface AppStore {
   agentRunByWorktreePath: Record<string, AgentRunState | undefined>;
   agentSidebarLifecycleEnabled: boolean;
   defaultAIAgent: AIAgent;
-  addressedComments: AddressedCommentsMap;
-  prHubData: Record<string, PRStatus[]>;
-  assignedIssues: GithubIssue[];
-
-  prHubFilters: PRHubFilters;
 
   initialize: () => Promise<void>;
   addRepository: (path: string) => Promise<void>;
@@ -87,12 +62,6 @@ interface AppStore {
   toggleSettings: () => void;
   setCodeReviewOpen: (open: boolean) => void;
   toggleCodeReview: () => void;
-  setPRHubOpen: (open: boolean) => void;
-  togglePRHub: () => void;
-  setPRHubData: (data: Record<string, PRStatus[]>) => void;
-  setAssignedIssues: (issues: GithubIssue[]) => void;
-
-  setPRHubFilters: (filters: Partial<PRHubFilters>) => Promise<void>;
   setDiffOverlayOpen: (open: boolean) => void;
   toggleDiffOverlay: () => void;
   setDiffViewMode: (mode: DiffViewMode) => void;
@@ -100,11 +69,6 @@ interface AppStore {
   toggleDiffViewMode: () => void;
   createWorktreeAuto: (repoPath: string) => Promise<WorktreeInfo | null>;
   deleteWorktree: (repoPath: string, worktreeName: string) => Promise<void>;
-  setPRStatusBatch: (results: RepoPRStatuses[]) => void;
-  setPRDataCache: (repoPath: string, prNumber: number, data: { checksResult?: PRChecksResult | null; prDetails?: PRDetailedInfo | null }) => void;
-  getPRDataCache: (repoPath: string, prNumber: number) => PRDataCache | null;
-  clearPRDataCacheForRepo: (repoPath: string) => void;
-  setPollingInterval: (intervalMs: number) => void;
   checkGitHubCli: () => Promise<void>;
   refreshProcessStatuses: () => Promise<void>;
   getProcessStatus: (worktreePath: string) => ProcessStatus;
@@ -114,10 +78,6 @@ interface AppStore {
   reconcileAgentRunWithProcessPolling: (worktreePath: string, processStatus: ProcessStatus) => void;
   setDefaultAIAgent: (agent: AIAgent) => Promise<void>;
   updateWorktreeDiffStats: (stats: Array<{ path: string; diff_stats: { additions: number; deletions: number } | null }>) => void;
-  toggleAddressedComment: (repoPath: string, prNumber: number, commentId: string) => void;
-  isCommentAddressed: (repoPath: string, prNumber: number, commentId: string) => boolean;
-  getAddressedCount: (repoPath: string, prNumber: number) => number;
-  clearAddressedComments: (repoPath: string, prNumber: number) => void;
 }
 
 const STORE_PATH = 'autopilot-settings.json';
@@ -171,23 +131,14 @@ function reconcileOneAgentRunState(
   return currentState;
 }
 
-async function loadPersistedState(): Promise<PersistedState & { themeMode?: ThemeMode; addressedComments?: AddressedCommentsMap }> {
+async function loadPersistedState(): Promise<PersistedState & { themeMode?: ThemeMode }> {
   try {
     const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
     const paths = await store.get<string[]>('repositoryPaths');
     const themeMode = await store.get<ThemeMode>('themeMode');
     const defaultAIAgent = await store.get<AIAgent>('defaultAIAgent');
     const repoAvatarCache = await store.get<Record<string, string>>('repoAvatarCache');
-    const prHubFilters = await store.get<PRHubFilters>('prHubFilters');
-    const rawAddressed = await store.get<Record<string, string[]>>('addressedComments');
-    let addressedComments: AddressedCommentsMap | undefined;
-    if (rawAddressed) {
-      addressedComments = {};
-      for (const [key, arr] of Object.entries(rawAddressed)) {
-        addressedComments[key] = new Set(arr);
-      }
-    }
-    return { repositoryPaths: paths || [], themeMode, defaultAIAgent, addressedComments, repoAvatarCache: repoAvatarCache || {}, prHubFilters };
+    return { repositoryPaths: paths || [], themeMode, defaultAIAgent, repoAvatarCache: repoAvatarCache || {} };
   } catch {
     return { repositoryPaths: [], repoAvatarCache: {} };
   }
@@ -200,30 +151,6 @@ async function savePersistedState(state: PersistedState): Promise<void> {
     await store.save();
   } catch (e) {
     console.error('Failed to save state:', e);
-  }
-}
-
-async function saveAddressedComments(addressedComments: AddressedCommentsMap): Promise<void> {
-  try {
-    const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
-    const serialized: Record<string, string[]> = {};
-    for (const [key, set] of Object.entries(addressedComments)) {
-      serialized[key] = Array.from(set);
-    }
-    await store.set('addressedComments', serialized);
-    await store.save();
-  } catch (e) {
-    console.error('Failed to save addressed comments:', e);
-  }
-}
-
-async function savePRHubFilters(prHubFilters: PRHubFilters): Promise<void> {
-  try {
-    const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
-    await store.set('prHubFilters', prHubFilters);
-    await store.save();
-  } catch (e) {
-    console.error('Failed to save PR Hub filters:', e);
   }
 }
 
@@ -271,12 +198,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   currentActiveTerminalId: null,
   isInitialized: false,
   githubSettings: DEFAULT_GITHUB_SETTINGS,
-  prStatusByBranch: {},
-  prDataCache: {},
   collapsedRepos: new Set<string>(),
   settingsOpen: false,
   codeReviewOpen: false,
-  prHubOpen: false,
   diffOverlayOpen: false,
   diffViewMode: 'overlay',
   gitFileDiffPreview: null,
@@ -284,11 +208,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
   agentRunByWorktreePath: {},
   agentSidebarLifecycleEnabled: true,
   defaultAIAgent: 'opencode',
-  addressedComments: {},
-  prHubData: {},
-  assignedIssues: [],
-
-  prHubFilters: DEFAULT_PR_HUB_FILTERS,
 
   initialize: async () => {
     if (get().isInitialized) return;
@@ -301,14 +220,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     if (persisted.defaultAIAgent) {
       set({ defaultAIAgent: persisted.defaultAIAgent });
-    }
-
-    if (persisted.addressedComments) {
-      set({ addressedComments: persisted.addressedComments });
-    }
-
-    if (persisted.prHubFilters) {
-      set({ prHubFilters: { ...DEFAULT_PR_HUB_FILTERS, ...persisted.prHubFilters } });
     }
     
     const repoAvatarCache = persisted.repoAvatarCache || {};
@@ -640,30 +551,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => ({ codeReviewOpen: !state.codeReviewOpen }));
   },
 
-  setPRHubOpen: (open: boolean) => {
-    set({ prHubOpen: open });
-  },
-
-  togglePRHub: () => {
-    set((state) => ({ prHubOpen: !state.prHubOpen }));
-  },
-
-  setPRHubData: (data: Record<string, PRStatus[]>) => {
-    set({ prHubData: data });
-  },
-
-  setAssignedIssues: (issues: GithubIssue[]) => {
-    set({ assignedIssues: issues });
-  },
-
-
-
-  setPRHubFilters: async (filters: Partial<PRHubFilters>) => {
-    const next = { ...get().prHubFilters, ...filters };
-    set({ prHubFilters: next });
-    await savePRHubFilters(next);
-  },
-
   setDiffOverlayOpen: (open: boolean) => {
     set({ diffOverlayOpen: open });
   },
@@ -716,80 +603,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       console.error('Failed to delete worktree:', e);
       throw e;
     }
-  },
-
-  setPRStatusBatch: (results) => {
-    set((state) => {
-      const nextByRepo = { ...state.prStatusByBranch };
-
-      for (const result of results) {
-        const existingRepoStatuses = nextByRepo[result.repo_path] ?? {};
-        const nextRepoStatuses = { ...existingRepoStatuses };
-        const refreshedStatuses = new Map(
-          result.statuses.map((pr) => [pr.head_branch, pr])
-        );
-
-        for (const [branch, prStatus] of refreshedStatuses) {
-          nextRepoStatuses[branch] = prStatus;
-        }
-
-        for (const branch of result.checked_branches) {
-          if (!refreshedStatuses.has(branch)) {
-            delete nextRepoStatuses[branch];
-          }
-        }
-
-        nextByRepo[result.repo_path] = nextRepoStatuses;
-      }
-
-      return {
-        prStatusByBranch: nextByRepo,
-      };
-    });
-  },
-
-  setPRDataCache: (repoPath: string, prNumber: number, data: { checksResult?: PRChecksResult | null; prDetails?: PRDetailedInfo | null }) => {
-    const cacheKey = `${repoPath}:${prNumber}`;
-    set((state) => {
-      const existing = state.prDataCache[cacheKey] || { checksResult: null, prDetails: null, lastUpdated: 0 };
-      return {
-        prDataCache: {
-          ...state.prDataCache,
-          [cacheKey]: {
-            checksResult: data.checksResult !== undefined ? data.checksResult : existing.checksResult,
-            prDetails: data.prDetails !== undefined ? data.prDetails : existing.prDetails,
-            lastUpdated: Date.now(),
-          },
-        },
-      };
-    });
-  },
-
-  getPRDataCache: (repoPath: string, prNumber: number) => {
-    const cacheKey = `${repoPath}:${prNumber}`;
-    const cached = get().prDataCache[cacheKey];
-    if (!cached) return null;
-    
-    const CACHE_TTL_MS = 5 * 60 * 1000;
-    if (Date.now() - cached.lastUpdated > CACHE_TTL_MS) return null;
-    
-    return cached;
-  },
-
-  clearPRDataCacheForRepo: (repoPath: string) => {
-    set((state) => {
-      const prefix = `${repoPath}:`;
-      const newCache = Object.fromEntries(
-        Object.entries(state.prDataCache).filter(([key]) => !key.startsWith(prefix))
-      );
-      return { prDataCache: newCache };
-    });
-  },
-
-  setPollingInterval: (intervalMs: number) => {
-    set((state) => ({
-      githubSettings: { ...state.githubSettings, pollingIntervalMs: intervalMs },
-    }));
   },
 
   checkGitHubCli: async () => {
@@ -1002,43 +815,5 @@ export const useAppStore = create<AppStore>((set, get) => ({
         }),
       })),
     }));
-  },
-
-  toggleAddressedComment: (repoPath: string, prNumber: number, commentId: string) => {
-    const cacheKey = `${repoPath}:${prNumber}`;
-    set((state) => {
-      const existing = state.addressedComments[cacheKey] || new Set<string>();
-      const next = new Set(existing);
-      if (next.has(commentId)) {
-        next.delete(commentId);
-      } else {
-        next.add(commentId);
-      }
-      const updated = {
-        ...state.addressedComments,
-        [cacheKey]: next,
-      };
-      saveAddressedComments(updated);
-      return { addressedComments: updated };
-    });
-  },
-
-  isCommentAddressed: (repoPath: string, prNumber: number, commentId: string) => {
-    const cacheKey = `${repoPath}:${prNumber}`;
-    return get().addressedComments[cacheKey]?.has(commentId) ?? false;
-  },
-
-  getAddressedCount: (repoPath: string, prNumber: number) => {
-    const cacheKey = `${repoPath}:${prNumber}`;
-    return get().addressedComments[cacheKey]?.size ?? 0;
-  },
-
-  clearAddressedComments: (repoPath: string, prNumber: number) => {
-    const cacheKey = `${repoPath}:${prNumber}`;
-    set((state) => {
-      const { [cacheKey]: _, ...rest } = state.addressedComments;
-      saveAddressedComments(rest);
-      return { addressedComments: rest };
-    });
   },
 }));

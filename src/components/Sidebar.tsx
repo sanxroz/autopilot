@@ -47,7 +47,6 @@ export function Sidebar({ isOpen }: SidebarProps) {
     setThemeMode,
     toggleSettings,
     githubSettings,
-    prStatusByBranch,
     processStatusByPath,
     agentRunByWorktreePath,
     agentSidebarLifecycleEnabled,
@@ -290,24 +289,22 @@ export function Sidebar({ isOpen }: SidebarProps) {
                 {!isCollapsed && (
                    <div className="w-full min-w-0 space-y-1">
                      {group.worktrees.map((wt) => {
-                        const prStatus = wt.branch ? prStatusByBranch[group.repoPath]?.[wt.branch] ?? null : null;
                         const processStatus = processStatusByPath[wt.path] || 'none';
                         const agentRunState = agentSidebarLifecycleEnabled ? agentRunByWorktreePath[wt.path] : undefined;
                         return (
                           <WorktreeItem
                             key={wt.path}
-                           name={wt.name}
-                           branch={wt.branch}
-                           lastModified={wt.last_modified}
+                            name={wt.name}
+                            branch={wt.branch}
+                            lastModified={wt.last_modified}
                             diffStats={wt.diff_stats}
-                            prStatus={prStatus}
                             processStatus={processStatus}
                             agentRunState={agentRunState}
                             isActive={selectedWorktree?.path === wt.path}
                             onSelect={() => handleWorktreeClick(wt)}
                             onDelete={(e) => handleDeleteWorktree(e, group.repoPath, wt.name)}
-                         />
-                       );
+                          />
+                        );
                      })}
                   </div>
                 )}

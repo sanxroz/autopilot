@@ -7,13 +7,10 @@ import { DiffOverlay } from "./components/DiffOverlay";
 import { GitFileDiffOverlay } from "./components/GitFileDiffOverlay";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { CommandMenu } from "./components/CommandMenu";
-import { PRHub } from "./components/PRHub";
 import { UpdateNotification } from "./components/UpdateNotification";
 import { Toaster } from "sonner";
 import { listen } from "@tauri-apps/api/event";
 import { useAppStore } from "./store";
-import { usePRStatusPolling } from "./hooks/usePRStatus";
-import { usePRHubPolling } from "./hooks/usePRHub";
 import { useGitWatcher } from "./hooks/useGitWatcher";
 import { useUpdater } from "./hooks/useUpdater";
 import { useDiffStatsLoader } from "./hooks/useDiffStats";
@@ -28,8 +25,6 @@ function App() {
   const diffOverlayOpen = useAppStore((state) => state.diffOverlayOpen);
   const setDiffOverlayOpen = useAppStore((state) => state.setDiffOverlayOpen);
   const diffViewMode = useAppStore((state) => state.diffViewMode);
-  const prHubOpen = useAppStore((state) => state.prHubOpen);
-  const togglePRHub = useAppStore((state) => state.togglePRHub);
   const settingsOpen = useAppStore((state) => state.settingsOpen);
   const toggleSettings = useAppStore((state) => state.toggleSettings);
   const setAgentRunState = useAppStore((state) => state.setAgentRunState);
@@ -47,18 +42,12 @@ function App() {
         e.preventDefault();
         setCommandMenuOpen((prev) => !prev);
       }
-      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "p") {
-        e.preventDefault();
-        togglePRHub();
-      }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [togglePRHub]);
+  }, []);
 
-  usePRStatusPolling();
-  usePRHubPolling();
   useProcessStatusPolling();
   useGitWatcher();
   useDiffStatsLoader();
@@ -118,7 +107,7 @@ function App() {
         <Sidebar isOpen={sidebarOpen} />
         <div className="flex flex-col flex-1 overflow-hidden relative">
           <Navbar sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
-          {prHubOpen ? <PRHub /> : <TerminalGrid />}
+          <TerminalGrid />
           {diffOverlayOpen && diffViewMode === 'overlay' && (
             <DiffOverlay
               worktreePath={selectedWorktree?.path ?? null}
