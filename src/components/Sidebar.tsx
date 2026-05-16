@@ -22,6 +22,7 @@ import { cn } from "../utils/cn";
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 480;
 const DEFAULT_WIDTH = 288;
+const DRAG_START_THRESHOLD_PX = 4;
 
 function basename(path: string): string {
   const cleaned = path.replace(/\/+$/g, "");
@@ -44,6 +45,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
     deleteWorktree,
     collapsedRepos,
     toggleRepoCollapsed,
+    reorderWorktrees,
     setThemeMode,
     toggleSettings,
     githubSettings,
@@ -64,6 +66,45 @@ export function Sidebar({ isOpen }: SidebarProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const widthRef = useRef(DEFAULT_WIDTH);
+  const [draggedWorktree, setDraggedWorktree] = useState<{
+    repoPath: string;
+    worktreePath: string;
+  } | null>(null);
+  const [dropTarget, setDropTarget] = useState<{
+    repoPath: string;
+    worktreePath: string;
+    position: "before" | "after";
+  } | null>(null);
+  const [isReorderPointerActive, setIsReorderPointerActive] = useState(false);
+  const dragSessionRef = useRef<{
+    repoPath: string;
+    worktreePath: string;
+    startX: number;
+    startY: number;
+    isDragging: boolean;
+  } | null>(null);
+  const draggedWorktreeRef = useRef<typeof draggedWorktree>(null);
+  const dropTargetRef = useRef<typeof dropTarget>(null);
+  const suppressNextWorktreeClickRef = useRef(false);
+
+  const setCurrentDraggedWorktree = (value: typeof draggedWorktree) => {
+    draggedWorktreeRef.current = value;
+    setDraggedWorktree(value);
+  };
+
+  const setCurrentDropTarget = (value: typeof dropTarget) => {
+    const current = dropTargetRef.current;
+    if (
+      current?.repoPath === value?.repoPath &&
+      current?.worktreePath === value?.worktreePath &&
+      current?.position === value?.position
+    ) {
+      return;
+    }
+
+    dropTargetRef.current = value;
+    setDropTarget(value);
+  };
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -104,13 +145,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
       repoName: repo.info.name || basename(repo.info.path),
       repoPath: repo.info.path,
       avatarUrl: repo.info.avatarUrl,
-      worktrees: repo.worktrees
-        .filter((wt) => wt.name !== "main")
-        .sort((a, b) => {
-          const aTime = a.last_modified ? new Date(a.last_modified).getTime() : 0;
-          const bTime = b.last_modified ? new Date(b.last_modified).getTime() : 0;
-          return bTime - aTime;
-        }),
+      worktrees: repo.worktrees.filter((wt) => wt.name !== "main"),
     }));
   }, [repositories]);
 
@@ -133,6 +168,11 @@ export function Sidebar({ isOpen }: SidebarProps) {
   };
 
   const handleWorktreeClick = async (worktree: WorktreeInfo) => {
+    if (suppressNextWorktreeClickRef.current) {
+      suppressNextWorktreeClickRef.current = false;
+      return;
+    }
+
     await selectWorktree(worktree);
   };
 
@@ -168,6 +208,144 @@ export function Sidebar({ isOpen }: SidebarProps) {
     e.stopPropagation();
     removeRepository(repoPath);
   };
+
+  const handleWorktreePointerDown = (
+    e: React.PointerEvent<HTMLDivElement>,
+    repoPath: string,
+    worktreePath: string
+  ) => {
+    if (e.button !== 0 || (e.target as HTMLElement).closest("button")) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragSessionRef.current = {
+      repoPath,
+      worktreePath,
+      startX: e.clientX,
+      startY: e.clientY,
+      isDragging: false,
+    };
+    setCurrentDropTarget(null);
+    setIsReorderPointerActive(true);
+  };
+
+  const endWorktreeDrag = () => {
+    dragSessionRef.current = null;
+    setCurrentDraggedWorktree(null);
+    setCurrentDropTarget(null);
+    setIsReorderPointerActive(false);
+  };
+
+  useEffect(() => {
+    if (!isReorderPointerActive) return;
+
+    const handlePointerMove = (e: PointerEvent) => {
+      const session = dragSessionRef.current;
+      if (!session) return;
+
+      if (!session.isDragging) {
+        const deltaX = e.clientX - session.startX;
+        const deltaY = e.clientY - session.startY;
+
+        if (Math.hypot(deltaX, deltaY) < DRAG_START_THRESHOLD_PX) {
+          return;
+        }
+
+        session.isDragging = true;
+        setCurrentDraggedWorktree({
+          repoPath: session.repoPath,
+          worktreePath: session.worktreePath,
+        });
+      }
+
+      const currentDrag = draggedWorktreeRef.current;
+      if (!currentDrag) return;
+
+      const target = document
+        .elementFromPoint(e.clientX, e.clientY)
+        ?.closest<HTMLElement>("[data-worktree-drop-target='true']");
+
+      if (!target) {
+        setCurrentDropTarget(null);
+        return;
+      }
+
+      const repoPath = target.dataset.repoPath;
+      const worktreePath = target.dataset.worktreePath;
+      if (
+        !repoPath ||
+        !worktreePath ||
+        repoPath !== currentDrag.repoPath ||
+        worktreePath === currentDrag.worktreePath
+      ) {
+        setCurrentDropTarget(null);
+        return;
+      }
+
+      const bounds = target.getBoundingClientRect();
+      const position = e.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
+      setCurrentDropTarget({ repoPath, worktreePath, position });
+    };
+
+    const handlePointerUp = async () => {
+      const currentDrag = draggedWorktreeRef.current;
+      const currentDrop = dropTargetRef.current;
+
+      if (!dragSessionRef.current?.isDragging) {
+        endWorktreeDrag();
+        return;
+      }
+
+      suppressNextWorktreeClickRef.current = true;
+      window.setTimeout(() => {
+        suppressNextWorktreeClickRef.current = false;
+      }, 250);
+
+      if (
+        !currentDrag ||
+        !currentDrop ||
+        currentDrag.repoPath !== currentDrop.repoPath ||
+        currentDrag.worktreePath === currentDrop.worktreePath
+      ) {
+        endWorktreeDrag();
+        return;
+      }
+
+      const repo = repositories.find((item) => item.info.path === currentDrop.repoPath);
+      if (!repo) {
+        endWorktreeDrag();
+        return;
+      }
+
+      const currentOrder = repo.worktrees
+        .filter((wt) => wt.name !== "main")
+        .map((wt) => wt.path)
+        .filter((path) => path !== currentDrag.worktreePath);
+      const targetIndex = currentOrder.indexOf(currentDrop.worktreePath);
+
+      if (targetIndex === -1) {
+        endWorktreeDrag();
+        return;
+      }
+
+      currentOrder.splice(
+        targetIndex + (currentDrop.position === "after" ? 1 : 0),
+        0,
+        currentDrag.worktreePath
+      );
+
+      await reorderWorktrees(currentDrop.repoPath, currentOrder);
+      endWorktreeDrag();
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", endWorktreeDrag);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", endWorktreeDrag);
+    };
+  }, [isReorderPointerActive, repositories, reorderWorktrees]);
 
   const handleToggleTheme = () => {
     setThemeMode(themeMode === "dark" ? "light" : "dark");
@@ -293,20 +471,38 @@ export function Sidebar({ isOpen }: SidebarProps) {
                         const prStatus = wt.branch ? prStatusByBranch[group.repoPath]?.[wt.branch] ?? null : null;
                         const processStatus = processStatusByPath[wt.path] || 'none';
                         const agentRunState = agentSidebarLifecycleEnabled ? agentRunByWorktreePath[wt.path] : undefined;
+                        const isDragSource = draggedWorktree?.worktreePath === wt.path;
+                        const showDropBefore = dropTarget?.repoPath === group.repoPath && dropTarget.worktreePath === wt.path && dropTarget.position === "before";
+                        const showDropAfter = dropTarget?.repoPath === group.repoPath && dropTarget.worktreePath === wt.path && dropTarget.position === "after";
                         return (
-                          <WorktreeItem
+                          <div
                             key={wt.path}
-                           name={wt.name}
-                           branch={wt.branch}
-                           lastModified={wt.last_modified}
-                            diffStats={wt.diff_stats}
-                            prStatus={prStatus}
-                            processStatus={processStatus}
-                            agentRunState={agentRunState}
-                            isActive={selectedWorktree?.path === wt.path}
-                            onSelect={() => handleWorktreeClick(wt)}
-                            onDelete={(e) => handleDeleteWorktree(e, group.repoPath, wt.name)}
-                         />
+                            data-worktree-drop-target="true"
+                            data-repo-path={group.repoPath}
+                            data-worktree-path={wt.path}
+                            onPointerDown={(e) => handleWorktreePointerDown(e, group.repoPath, wt.path)}
+                            className="relative"
+                          >
+                            {showDropBefore && (
+                              <div className="absolute inset-x-2 top-0 h-0.5 rounded-full bg-border-strong" />
+                            )}
+                            <WorktreeItem
+                              name={wt.name}
+                              branch={wt.branch}
+                              lastModified={wt.last_modified}
+                              diffStats={wt.diff_stats}
+                              prStatus={prStatus}
+                              processStatus={processStatus}
+                              agentRunState={agentRunState}
+                              isActive={selectedWorktree?.path === wt.path}
+                              onSelect={() => handleWorktreeClick(wt)}
+                              onDelete={(e) => handleDeleteWorktree(e, group.repoPath, wt.name)}
+                              className={cn("cursor-grab active:cursor-grabbing", isDragSource && "opacity-60")}
+                            />
+                            {showDropAfter && (
+                              <div className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-border-strong" />
+                            )}
+                          </div>
                        );
                      })}
                   </div>
