@@ -1,0 +1,21 @@
+src/store/index.ts
+  s_c25f1083a6a694::t_a6783462df3c75 523,525-532,534,536-545
+src/components/Sidebar.tsx
+  s_c25f1083a6a694::t_699f32de0bf897 312-314,350,486
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "026f12f765c3c1e21d388e743dc014e1f015934e",
+  "prompts": {},
+  "sessions": {
+    "s_c25f1083a6a694": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e316f-076d-7611-8105-7e5d175822e1",
+        "model": "gpt-5.5"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
