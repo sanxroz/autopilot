@@ -309,7 +309,9 @@ export function Sidebar({ isOpen }: SidebarProps) {
         return;
       }
 
-      const repo = repositories.find((item) => item.info.path === currentDrop.repoPath);
+      const repo = useAppStore
+        .getState()
+        .repositories.find((item) => item.info.path === currentDrop.repoPath);
       if (!repo) {
         endWorktreeDrag();
         return;
@@ -345,7 +347,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", endWorktreeDrag);
     };
-  }, [isReorderPointerActive, repositories, reorderWorktrees]);
+  }, [isReorderPointerActive, reorderWorktrees]);
 
   const handleToggleTheme = () => {
     setThemeMode(themeMode === "dark" ? "light" : "dark");
@@ -481,7 +483,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
                             data-repo-path={group.repoPath}
                             data-worktree-path={wt.path}
                             onPointerDown={(e) => handleWorktreePointerDown(e, group.repoPath, wt.path)}
-                            className="relative"
+                            className={cn("relative", isReorderPointerActive && "select-none")}
                           >
                             {showDropBefore && (
                               <div className="absolute inset-x-2 top-0 h-0.5 rounded-full bg-border-strong" />

@@ -519,35 +519,30 @@ export const useAppStore = create<AppStore>((set, get) => ({
   refreshWorktrees: async (repoPath: string) => {
     const rawWorktrees = await invoke<WorktreeInfo[]>('list_worktrees', { repoPath });
     const previousWorktrees = get().repositories.find((repo) => repo.info.path === repoPath)?.worktrees ?? [];
-    const previousDiffStats = new Map(previousWorktrees.map((worktree) => [worktree.path, worktree.diff_stats]));
     const stableOrder = previousWorktrees.map((worktree) => worktree.path);
-    const mergedWorktrees = rawWorktrees.map((worktree) => {
-      const previousStats = previousDiffStats.get(worktree.path);
-      return !worktree.diff_stats && previousStats
-        ? { ...worktree, diff_stats: previousStats }
-        : worktree;
-    });
-    const currentOrder = get().worktreeOrdersByRepo[repoPath];
-    const normalizedOrder = normalizeWorktreeOrder(mergedWorktrees, currentOrder);
-    const worktrees = orderWorktrees(mergedWorktrees, normalizedOrder, stableOrder);
-    const orderChanged =
-      (currentOrder?.length ?? 0) !== normalizedOrder.length ||
-      (currentOrder?.some((path, index) => path !== normalizedOrder[index]) ?? false);
+    let nextWorktreeOrders: Record<string, string[]> | null = null;
 
-    set((state) => ({
-      repositories: state.repositories.map((r) =>
-        r.info.path === repoPath ? { ...r, worktrees } : r
-      ),
-      worktreeOrdersByRepo: orderChanged
+    set((state) => {
+      const currentOrder = state.worktreeOrdersByRepo[repoPath];
+      const normalizedOrder = normalizeWorktreeOrder(rawWorktrees, currentOrder);
+      const worktrees = orderWorktrees(rawWorktrees, normalizedOrder, stableOrder);
+      const orderChanged =
+        (currentOrder?.length ?? 0) !== normalizedOrder.length ||
+        (currentOrder?.some((path, index) => path !== normalizedOrder[index]) ?? false);
+      nextWorktreeOrders = orderChanged
         ? { ...state.worktreeOrdersByRepo, [repoPath]: normalizedOrder }
-        : state.worktreeOrdersByRepo,
-    }));
+        : null;
 
-    if (orderChanged) {
-      await saveWorktreeOrdersByRepo({
-        ...get().worktreeOrdersByRepo,
-        [repoPath]: normalizedOrder,
-      });
+      return {
+        repositories: state.repositories.map((r) =>
+          r.info.path === repoPath ? { ...r, worktrees } : r
+        ),
+        worktreeOrdersByRepo: nextWorktreeOrders ?? state.worktreeOrdersByRepo,
+      };
+    });
+
+    if (nextWorktreeOrders) {
+      await saveWorktreeOrdersByRepo(nextWorktreeOrders);
     }
   },
 
