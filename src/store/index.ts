@@ -12,20 +12,38 @@ import type {
   AgentRunState,
   AgentStatusEvent,
 } from '../types';
-import type { GitHubSettings } from '../types/github';
-import { DEFAULT_GITHUB_SETTINGS } from '../types/github';
+import type {
+  GitHubSettings,
+  GithubIssue,
+  PRStatus,
+  PRChecksResult,
+  PRDetailedInfo,
+  PRHubFilters,
+  RepoPRStatuses,
+} from '../types/github';
+import { DEFAULT_GITHUB_SETTINGS, DEFAULT_PR_HUB_FILTERS } from '../types/github';
 import { setThemeMode as setGlobalThemeMode, getThemeMode, type ThemeMode } from '../theme';
 
 interface PersistedState {
   repositoryPaths: string[];
   defaultAIAgent?: AIAgent;
   repoAvatarCache?: Record<string, string>;
+  prHubFilters?: PRHubFilters;
+  worktreeOrdersByRepo?: Record<string, string[]>;
 }
 
 interface WorktreeTerminals {
   terminals: TerminalInstance[];
   activeTerminalId: string | null;
 }
+
+interface PRDataCache {
+  checksResult: PRChecksResult | null;
+  prDetails: PRDetailedInfo | null;
+  lastUpdated: number;
+}
+
+type AddressedCommentsMap = Record<string, Set<string>>;
 
 interface AppStore {
   repositories: Repository[];
@@ -35,9 +53,13 @@ interface AppStore {
   currentActiveTerminalId: string | null;
   isInitialized: boolean;
   githubSettings: GitHubSettings;
+  prStatusByBranch: Record<string, Record<string, PRStatus>>;
+  prDataCache: Record<string, PRDataCache>;
+  worktreeOrdersByRepo: Record<string, string[]>;
   collapsedRepos: Set<string>;
   settingsOpen: boolean;
   codeReviewOpen: boolean;
+  prHubOpen: boolean;
   diffOverlayOpen: boolean;
   diffViewMode: DiffViewMode;
   gitFileDiffPreview: { filePath: string; worktreePath: string; isStaged: boolean } | null;
@@ -45,12 +67,18 @@ interface AppStore {
   agentRunByWorktreePath: Record<string, AgentRunState | undefined>;
   agentSidebarLifecycleEnabled: boolean;
   defaultAIAgent: AIAgent;
+  addressedComments: AddressedCommentsMap;
+  prHubData: Record<string, PRStatus[]>;
+  assignedIssues: GithubIssue[];
+
+  prHubFilters: PRHubFilters;
 
   initialize: () => Promise<void>;
   addRepository: (path: string) => Promise<void>;
   removeRepository: (path: string) => void;
   toggleRepoExpanded: (path: string) => void;
   refreshWorktrees: (repoPath: string) => Promise<void>;
+  reorderWorktrees: (repoPath: string, orderedWorktreePaths: string[]) => Promise<void>;
   updateWorktreeBranch: (worktreePath: string) => Promise<void>;
   selectWorktree: (worktree: WorktreeInfo) => Promise<void>;
   addTerminal: () => Promise<string | null>;
@@ -62,6 +90,12 @@ interface AppStore {
   toggleSettings: () => void;
   setCodeReviewOpen: (open: boolean) => void;
   toggleCodeReview: () => void;
+  setPRHubOpen: (open: boolean) => void;
+  togglePRHub: () => void;
+  setPRHubData: (data: Record<string, PRStatus[]>) => void;
+  setAssignedIssues: (issues: GithubIssue[]) => void;
+
+  setPRHubFilters: (filters: Partial<PRHubFilters>) => Promise<void>;
   setDiffOverlayOpen: (open: boolean) => void;
   toggleDiffOverlay: () => void;
   setDiffViewMode: (mode: DiffViewMode) => void;
@@ -69,6 +103,10 @@ interface AppStore {
   toggleDiffViewMode: () => void;
   createWorktreeAuto: (repoPath: string) => Promise<WorktreeInfo | null>;
   deleteWorktree: (repoPath: string, worktreeName: string) => Promise<void>;
+  setPRStatusBatch: (results: RepoPRStatuses[]) => void;
+  setPRDataCache: (repoPath: string, prNumber: number, data: { checksResult?: PRChecksResult | null; prDetails?: PRDetailedInfo | null }) => void;
+  getPRDataCache: (repoPath: string, prNumber: number) => PRDataCache | null;
+  clearPRDataCacheForRepo: (repoPath: string) => void;
   checkGitHubCli: () => Promise<void>;
   refreshProcessStatuses: () => Promise<void>;
   getProcessStatus: (worktreePath: string) => ProcessStatus;
@@ -78,6 +116,10 @@ interface AppStore {
   reconcileAgentRunWithProcessPolling: (worktreePath: string, processStatus: ProcessStatus) => void;
   setDefaultAIAgent: (agent: AIAgent) => Promise<void>;
   updateWorktreeDiffStats: (stats: Array<{ path: string; diff_stats: { additions: number; deletions: number } | null }>) => void;
+  toggleAddressedComment: (repoPath: string, prNumber: number, commentId: string) => void;
+  isCommentAddressed: (repoPath: string, prNumber: number, commentId: string) => boolean;
+  getAddressedCount: (repoPath: string, prNumber: number) => number;
+  clearAddressedComments: (repoPath: string, prNumber: number) => void;
 }
 
 const STORE_PATH = 'autopilot-settings.json';
@@ -91,6 +133,66 @@ function isKnownAgent(value: string | undefined): value is AIAgent {
 
 function isAgentActiveStatus(status: AgentRunState['status']): boolean {
   return status === 'starting' || status === 'running' || status === 'waiting_input';
+}
+
+function getWorktreeSortTimestamp(worktree: WorktreeInfo): number {
+  return worktree.last_modified ? new Date(worktree.last_modified).getTime() : 0;
+}
+
+function hasWorktreeChanges(worktree: WorktreeInfo): boolean {
+  return (worktree.diff_stats?.additions ?? 0) + (worktree.diff_stats?.deletions ?? 0) > 0;
+}
+
+function normalizeWorktreeOrder(worktrees: WorktreeInfo[], orderedWorktreePaths: string[] | undefined): string[] {
+  if (!orderedWorktreePaths?.length) return [];
+
+  const existingPaths = new Set(
+    worktrees.filter((worktree) => worktree.name !== 'main').map((worktree) => worktree.path)
+  );
+
+  return orderedWorktreePaths.filter((path) => existingPaths.has(path));
+}
+
+function orderWorktrees(
+  worktrees: WorktreeInfo[],
+  orderedWorktreePaths: string[] | undefined,
+  stableWorktreePaths?: string[]
+): WorktreeInfo[] {
+  const normalizedOrder = normalizeWorktreeOrder(worktrees, orderedWorktreePaths);
+  const orderIndex = new Map(normalizedOrder.map((path, index) => [path, index]));
+  const stableOrderIndex = new Map(stableWorktreePaths?.map((path, index) => [path, index]) ?? []);
+  const mainWorktrees = worktrees.filter((worktree) => worktree.name === 'main');
+  const branchWorktrees = worktrees
+    .filter((worktree) => worktree.name !== 'main')
+    .sort((a, b) => {
+      const aIndex = orderIndex.get(a.path);
+      const bIndex = orderIndex.get(b.path);
+
+      if (aIndex !== undefined && bIndex !== undefined) {
+        return aIndex - bIndex;
+      }
+
+      if (aIndex !== undefined) return -1;
+      if (bIndex !== undefined) return 1;
+
+      const changeRankDelta = Number(hasWorktreeChanges(b)) - Number(hasWorktreeChanges(a));
+      if (changeRankDelta !== 0) return changeRankDelta;
+
+      const aStableIndex = stableOrderIndex.get(a.path);
+      const bStableIndex = stableOrderIndex.get(b.path);
+      if (aStableIndex !== undefined && bStableIndex !== undefined) {
+        return aStableIndex - bStableIndex;
+      }
+      if (aStableIndex !== undefined) return -1;
+      if (bStableIndex !== undefined) return 1;
+
+      const timestampDelta = getWorktreeSortTimestamp(b) - getWorktreeSortTimestamp(a);
+      if (timestampDelta !== 0) return timestampDelta;
+
+      return a.path.localeCompare(b.path);
+    });
+
+  return [...mainWorktrees, ...branchWorktrees];
 }
 
 function reconcileOneAgentRunState(
@@ -131,16 +233,34 @@ function reconcileOneAgentRunState(
   return currentState;
 }
 
-async function loadPersistedState(): Promise<PersistedState & { themeMode?: ThemeMode }> {
+async function loadPersistedState(): Promise<PersistedState & { themeMode?: ThemeMode; addressedComments?: AddressedCommentsMap }> {
   try {
     const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
     const paths = await store.get<string[]>('repositoryPaths');
     const themeMode = await store.get<ThemeMode>('themeMode');
     const defaultAIAgent = await store.get<AIAgent>('defaultAIAgent');
     const repoAvatarCache = await store.get<Record<string, string>>('repoAvatarCache');
-    return { repositoryPaths: paths || [], themeMode, defaultAIAgent, repoAvatarCache: repoAvatarCache || {} };
+    const prHubFilters = await store.get<PRHubFilters>('prHubFilters');
+    const worktreeOrdersByRepo = await store.get<Record<string, string[]>>('worktreeOrdersByRepo');
+    const rawAddressed = await store.get<Record<string, string[]>>('addressedComments');
+    let addressedComments: AddressedCommentsMap | undefined;
+    if (rawAddressed) {
+      addressedComments = {};
+      for (const [key, arr] of Object.entries(rawAddressed)) {
+        addressedComments[key] = new Set(arr);
+      }
+    }
+    return {
+      repositoryPaths: paths || [],
+      themeMode,
+      defaultAIAgent,
+      addressedComments,
+      repoAvatarCache: repoAvatarCache || {},
+      prHubFilters,
+      worktreeOrdersByRepo: worktreeOrdersByRepo || {},
+    };
   } catch {
-    return { repositoryPaths: [], repoAvatarCache: {} };
+    return { repositoryPaths: [], repoAvatarCache: {}, worktreeOrdersByRepo: {} };
   }
 }
 
@@ -151,6 +271,40 @@ async function savePersistedState(state: PersistedState): Promise<void> {
     await store.save();
   } catch (e) {
     console.error('Failed to save state:', e);
+  }
+}
+
+async function saveWorktreeOrdersByRepo(worktreeOrdersByRepo: Record<string, string[]>): Promise<void> {
+  try {
+    const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
+    await store.set('worktreeOrdersByRepo', worktreeOrdersByRepo);
+    await store.save();
+  } catch (e) {
+    console.error('Failed to save worktree order state:', e);
+  }
+}
+
+async function saveAddressedComments(addressedComments: AddressedCommentsMap): Promise<void> {
+  try {
+    const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
+    const serialized: Record<string, string[]> = {};
+    for (const [key, set] of Object.entries(addressedComments)) {
+      serialized[key] = Array.from(set);
+    }
+    await store.set('addressedComments', serialized);
+    await store.save();
+  } catch (e) {
+    console.error('Failed to save addressed comments:', e);
+  }
+}
+
+async function savePRHubFilters(prHubFilters: PRHubFilters): Promise<void> {
+  try {
+    const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
+    await store.set('prHubFilters', prHubFilters);
+    await store.save();
+  } catch (e) {
+    console.error('Failed to save PR Hub filters:', e);
   }
 }
 
@@ -198,9 +352,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
   currentActiveTerminalId: null,
   isInitialized: false,
   githubSettings: DEFAULT_GITHUB_SETTINGS,
+  prStatusByBranch: {},
+  prDataCache: {},
+  worktreeOrdersByRepo: {},
   collapsedRepos: new Set<string>(),
   settingsOpen: false,
   codeReviewOpen: false,
+  prHubOpen: false,
   diffOverlayOpen: false,
   diffViewMode: 'overlay',
   gitFileDiffPreview: null,
@@ -208,6 +366,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
   agentRunByWorktreePath: {},
   agentSidebarLifecycleEnabled: true,
   defaultAIAgent: 'opencode',
+  addressedComments: {},
+  prHubData: {},
+  assignedIssues: [],
+
+  prHubFilters: DEFAULT_PR_HUB_FILTERS,
 
   initialize: async () => {
     if (get().isInitialized) return;
@@ -221,6 +384,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (persisted.defaultAIAgent) {
       set({ defaultAIAgent: persisted.defaultAIAgent });
     }
+
+    if (persisted.addressedComments) {
+      set({ addressedComments: persisted.addressedComments });
+    }
+
+    if (persisted.prHubFilters) {
+      set({ prHubFilters: { ...DEFAULT_PR_HUB_FILTERS, ...persisted.prHubFilters } });
+    }
+
+    if (persisted.worktreeOrdersByRepo) {
+      set({ worktreeOrdersByRepo: persisted.worktreeOrdersByRepo });
+    }
     
     const repoAvatarCache = persisted.repoAvatarCache || {};
     const reposNeedingAvatar: string[] = [];
@@ -230,7 +405,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
         const discovered = await invoke<RepoInfo>('discover_repository', { path });
         const cachedAvatarUrl = repoAvatarCache[discovered.path] || repoAvatarCache[path];
         const info = cachedAvatarUrl ? { ...discovered, avatarUrl: cachedAvatarUrl } : discovered;
-        const worktrees = await invoke<WorktreeInfo[]>('list_worktrees', { repoPath: info.path });
+        const worktrees = orderWorktrees(
+          await invoke<WorktreeInfo[]>('list_worktrees', { repoPath: info.path }),
+          persisted.worktreeOrdersByRepo?.[info.path]
+        );
 
         if (!cachedAvatarUrl) {
           reposNeedingAvatar.push(info.path);
@@ -277,7 +455,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const discovered = await invoke<RepoInfo>('discover_repository', { path });
       const cachedAvatarUrl = persisted.repoAvatarCache?.[discovered.path] || persisted.repoAvatarCache?.[path];
       const info = cachedAvatarUrl ? { ...discovered, avatarUrl: cachedAvatarUrl } : discovered;
-      const worktrees = await invoke<WorktreeInfo[]>('list_worktrees', { repoPath: info.path });
+      const worktrees = orderWorktrees(
+        await invoke<WorktreeInfo[]>('list_worktrees', { repoPath: info.path }),
+        get().worktreeOrdersByRepo[info.path] ?? persisted.worktreeOrdersByRepo?.[info.path]
+      );
 
       set((state) => {
         const newRepos = [
@@ -315,9 +496,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
   removeRepository: (path: string) => {
     set((state) => {
       const newRepos = state.repositories.filter((r) => r.info.path !== path);
+      const { [path]: _removedOrder, ...remainingWorktreeOrders } = state.worktreeOrdersByRepo;
       savePersistedState({ repositoryPaths: newRepos.map((r) => r.info.path) });
+      saveWorktreeOrdersByRepo(remainingWorktreeOrders);
       saveRepoAvatarCacheEntry(path, null);
-      return { repositories: newRepos };
+      return {
+        repositories: newRepos,
+        worktreeOrdersByRepo: remainingWorktreeOrders,
+      };
     });
   },
 
@@ -330,12 +516,51 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   refreshWorktrees: async (repoPath: string) => {
-    const worktrees = await invoke<WorktreeInfo[]>('list_worktrees', { repoPath });
+    const rawWorktrees = await invoke<WorktreeInfo[]>('list_worktrees', { repoPath });
+    const previousWorktrees = get().repositories.find((repo) => repo.info.path === repoPath)?.worktrees ?? [];
+    const stableOrder = previousWorktrees.map((worktree) => worktree.path);
+    let nextWorktreeOrders: Record<string, string[]> | null = null;
+
+    set((state) => {
+      const currentOrder = state.worktreeOrdersByRepo[repoPath];
+      const normalizedOrder = normalizeWorktreeOrder(rawWorktrees, currentOrder);
+      const worktrees = orderWorktrees(rawWorktrees, normalizedOrder, stableOrder);
+      const orderChanged =
+        (currentOrder?.length ?? 0) !== normalizedOrder.length ||
+        (currentOrder?.some((path, index) => path !== normalizedOrder[index]) ?? false);
+      nextWorktreeOrders = orderChanged
+        ? { ...state.worktreeOrdersByRepo, [repoPath]: normalizedOrder }
+        : null;
+
+      return {
+        repositories: state.repositories.map((r) =>
+          r.info.path === repoPath ? { ...r, worktrees } : r
+        ),
+        worktreeOrdersByRepo: nextWorktreeOrders ?? state.worktreeOrdersByRepo,
+      };
+    });
+
+    if (nextWorktreeOrders) {
+      await saveWorktreeOrdersByRepo(nextWorktreeOrders);
+    }
+  },
+
+  reorderWorktrees: async (repoPath: string, orderedWorktreePaths: string[]) => {
+    const nextOrder = [...orderedWorktreePaths];
+
     set((state) => ({
-      repositories: state.repositories.map((r) =>
-        r.info.path === repoPath ? { ...r, worktrees } : r
+      repositories: state.repositories.map((repo) =>
+        repo.info.path === repoPath
+          ? { ...repo, worktrees: orderWorktrees(repo.worktrees, nextOrder) }
+          : repo
       ),
+      worktreeOrdersByRepo: {
+        ...state.worktreeOrdersByRepo,
+        [repoPath]: nextOrder,
+      },
     }));
+
+    await saveWorktreeOrdersByRepo(get().worktreeOrdersByRepo);
   },
 
   updateWorktreeBranch: async (worktreePath: string) => {
@@ -551,6 +776,30 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => ({ codeReviewOpen: !state.codeReviewOpen }));
   },
 
+  setPRHubOpen: (open: boolean) => {
+    set({ prHubOpen: open });
+  },
+
+  togglePRHub: () => {
+    set((state) => ({ prHubOpen: !state.prHubOpen }));
+  },
+
+  setPRHubData: (data: Record<string, PRStatus[]>) => {
+    set({ prHubData: data });
+  },
+
+  setAssignedIssues: (issues: GithubIssue[]) => {
+    set({ assignedIssues: issues });
+  },
+
+
+
+  setPRHubFilters: async (filters: Partial<PRHubFilters>) => {
+    const next = { ...get().prHubFilters, ...filters };
+    set({ prHubFilters: next });
+    await savePRHubFilters(next);
+  },
+
   setDiffOverlayOpen: (open: boolean) => {
     set({ diffOverlayOpen: open });
   },
@@ -603,6 +852,74 @@ export const useAppStore = create<AppStore>((set, get) => ({
       console.error('Failed to delete worktree:', e);
       throw e;
     }
+  },
+
+  setPRStatusBatch: (results) => {
+    set((state) => {
+      const nextByRepo = { ...state.prStatusByBranch };
+
+      for (const result of results) {
+        const existingRepoStatuses = nextByRepo[result.repo_path] ?? {};
+        const nextRepoStatuses = { ...existingRepoStatuses };
+        const refreshedStatuses = new Map(
+          result.statuses.map((pr) => [pr.head_branch, pr])
+        );
+
+        for (const [branch, prStatus] of refreshedStatuses) {
+          nextRepoStatuses[branch] = prStatus;
+        }
+
+        for (const branch of result.checked_branches) {
+          if (!refreshedStatuses.has(branch)) {
+            delete nextRepoStatuses[branch];
+          }
+        }
+
+        nextByRepo[result.repo_path] = nextRepoStatuses;
+      }
+
+      return {
+        prStatusByBranch: nextByRepo,
+      };
+    });
+  },
+
+  setPRDataCache: (repoPath: string, prNumber: number, data: { checksResult?: PRChecksResult | null; prDetails?: PRDetailedInfo | null }) => {
+    const cacheKey = `${repoPath}:${prNumber}`;
+    set((state) => {
+      const existing = state.prDataCache[cacheKey] || { checksResult: null, prDetails: null, lastUpdated: 0 };
+      return {
+        prDataCache: {
+          ...state.prDataCache,
+          [cacheKey]: {
+            checksResult: data.checksResult !== undefined ? data.checksResult : existing.checksResult,
+            prDetails: data.prDetails !== undefined ? data.prDetails : existing.prDetails,
+            lastUpdated: Date.now(),
+          },
+        },
+      };
+    });
+  },
+
+  getPRDataCache: (repoPath: string, prNumber: number) => {
+    const cacheKey = `${repoPath}:${prNumber}`;
+    const cached = get().prDataCache[cacheKey];
+    if (!cached) return null;
+    
+    const CACHE_TTL_MS = 5 * 60 * 1000;
+    if (Date.now() - cached.lastUpdated > CACHE_TTL_MS) return null;
+    
+    return cached;
+  },
+
+  clearPRDataCacheForRepo: (repoPath: string) => {
+    set((state) => {
+      const prefix = `${repoPath}:`;
+      const newCache = Object.fromEntries(
+        Object.entries(state.prDataCache).filter(([key]) => !key.startsWith(prefix))
+      );
+      return { prDataCache: newCache };
+    });
   },
 
   checkGitHubCli: async () => {
@@ -803,17 +1120,62 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   updateWorktreeDiffStats: (stats) => {
-    const statsMap = new Map(stats.map(s => [s.path, s.diff_stats]));
+    const statsMap = new Map(
+      stats.map(s => [s.path, s.diff_stats ?? { additions: 0, deletions: 0 }])
+    );
     set((state) => ({
-      repositories: state.repositories.map((repo) => ({
-        ...repo,
-        worktrees: repo.worktrees.map((wt) => {
+      repositories: state.repositories.map((repo) => {
+        const stableOrder = repo.worktrees.map((worktree) => worktree.path);
+        const worktrees = repo.worktrees.map((wt) => {
           if (statsMap.has(wt.path)) {
-            return { ...wt, diff_stats: statsMap.get(wt.path) ?? undefined };
+            return { ...wt, diff_stats: statsMap.get(wt.path) };
           }
           return wt;
-        }),
-      })),
+        });
+
+        return {
+          ...repo,
+          worktrees: orderWorktrees(worktrees, state.worktreeOrdersByRepo[repo.info.path], stableOrder),
+        };
+      }),
     }));
+  },
+
+  toggleAddressedComment: (repoPath: string, prNumber: number, commentId: string) => {
+    const cacheKey = `${repoPath}:${prNumber}`;
+    set((state) => {
+      const existing = state.addressedComments[cacheKey] || new Set<string>();
+      const next = new Set(existing);
+      if (next.has(commentId)) {
+        next.delete(commentId);
+      } else {
+        next.add(commentId);
+      }
+      const updated = {
+        ...state.addressedComments,
+        [cacheKey]: next,
+      };
+      saveAddressedComments(updated);
+      return { addressedComments: updated };
+    });
+  },
+
+  isCommentAddressed: (repoPath: string, prNumber: number, commentId: string) => {
+    const cacheKey = `${repoPath}:${prNumber}`;
+    return get().addressedComments[cacheKey]?.has(commentId) ?? false;
+  },
+
+  getAddressedCount: (repoPath: string, prNumber: number) => {
+    const cacheKey = `${repoPath}:${prNumber}`;
+    return get().addressedComments[cacheKey]?.size ?? 0;
+  },
+
+  clearAddressedComments: (repoPath: string, prNumber: number) => {
+    const cacheKey = `${repoPath}:${prNumber}`;
+    set((state) => {
+      const { [cacheKey]: _, ...rest } = state.addressedComments;
+      saveAddressedComments(rest);
+      return { addressedComments: rest };
+    });
   },
 }));
