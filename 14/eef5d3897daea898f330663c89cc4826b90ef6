@@ -1,0 +1,19 @@
+src/types/github.ts
+  s_f4444f002cd02f::t_7a461ca8a75493 1-56,66-146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "14eef5d3897daea898f330663c89cc4826b90ef6",
+  "prompts": {},
+  "sessions": {
+    "s_f4444f002cd02f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e314c-2d40-7851-ab37-0291b165ff7d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
