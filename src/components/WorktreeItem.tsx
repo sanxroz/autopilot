@@ -149,7 +149,9 @@ export const WorktreeItem = memo(function WorktreeItem({
   className,
 }: WorktreeItemProps) {
   const timeAgo = formatTimeAgo(lastModified);
-  const hasStats = diffStats && (diffStats.additions > 0 || diffStats.deletions > 0);
+  const additions = diffStats?.additions ?? 0;
+  const deletions = diffStats?.deletions ?? 0;
+  const hasStats = additions > 0 || deletions > 0;
 
   const statusInfo = getStatusInfo(prStatus);
   const processStatusColorClass = getProcessStatusColor(processStatus);
@@ -203,11 +205,11 @@ export const WorktreeItem = memo(function WorktreeItem({
           <div className="relative flex items-center gap-1.5">
             {!prStatus && hasStats && (
               <div className="flex items-center gap-1 font-mono font-medium flex-shrink-0 rounded-sm text-xs py-0.5 px-1 group-hover:opacity-0 transition-opacity">
-                {diffStats!.additions > 0 && (
-                  <span className="text-semantic-success">+{diffStats!.additions}</span>
+                {additions > 0 && (
+                  <span className="text-semantic-success">+{additions}</span>
                 )}
-                {diffStats!.deletions > 0 && (
-                  <span className="text-semantic-error">-{diffStats!.deletions}</span>
+                {deletions > 0 && (
+                  <span className="text-semantic-error">-{deletions}</span>
                 )}
               </div>
             )}

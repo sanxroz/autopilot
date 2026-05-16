@@ -55,22 +55,14 @@ export const DEFAULT_PR_HUB_FILTERS: PRHubFilters = {
 };
 
 export interface GitHubSettings {
-  pollingIntervalMs: number;
   ghCliAvailable: boolean;
   ghAuthUser: string | null;
 }
 
 export const DEFAULT_GITHUB_SETTINGS: GitHubSettings = {
-  pollingIntervalMs: 120000,
   ghCliAvailable: false,
   ghAuthUser: null,
 };
-
-export const POLLING_INTERVALS = {
-  fast: 30000,
-  normal: 60000,
-  slow: 120000,
-} as const;
 
 export interface PRCheck {
   name: string;
@@ -152,4 +144,3 @@ export interface GithubNotification {
   unread: boolean;
   updated_at: string;
 }
-

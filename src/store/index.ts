@@ -107,7 +107,6 @@ interface AppStore {
   setPRDataCache: (repoPath: string, prNumber: number, data: { checksResult?: PRChecksResult | null; prDetails?: PRDetailedInfo | null }) => void;
   getPRDataCache: (repoPath: string, prNumber: number) => PRDataCache | null;
   clearPRDataCacheForRepo: (repoPath: string) => void;
-  setPollingInterval: (intervalMs: number) => void;
   checkGitHubCli: () => Promise<void>;
   refreshProcessStatuses: () => Promise<void>;
   getProcessStatus: (worktreePath: string) => ProcessStatus;
@@ -921,12 +920,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       );
       return { prDataCache: newCache };
     });
-  },
-
-  setPollingInterval: (intervalMs: number) => {
-    set((state) => ({
-      githubSettings: { ...state.githubSettings, pollingIntervalMs: intervalMs },
-    }));
   },
 
   checkGitHubCli: async () => {
