@@ -21,7 +21,6 @@ function App() {
   const initialize = useAppStore((state) => state.initialize);
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
   const codeReviewOpen = useAppStore((state) => state.codeReviewOpen);
-  const setCodeReviewOpen = useAppStore((state) => state.setCodeReviewOpen);
   const diffOverlayOpen = useAppStore((state) => state.diffOverlayOpen);
   const setDiffOverlayOpen = useAppStore((state) => state.setDiffOverlayOpen);
   const diffViewMode = useAppStore((state) => state.diffViewMode);
@@ -119,7 +118,6 @@ function App() {
         {codeReviewOpen && (
           <RightPanel
             worktreePath={selectedWorktree?.path ?? null}
-            onClose={() => setCodeReviewOpen(false)}
           />
         )}
       </div>

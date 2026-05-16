@@ -24,7 +24,6 @@ import {
 
 interface RightPanelProps {
   worktreePath: string | null;
-  onClose: () => void;
 }
 
 type TabId = "changes" | "git";
