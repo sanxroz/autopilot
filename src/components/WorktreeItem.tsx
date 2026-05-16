@@ -72,6 +72,7 @@ interface WorktreeItemProps {
   isActive: boolean;
   onSelect: () => void;
   onDelete: (e: React.MouseEvent) => void;
+  className?: string;
 }
 
 function getAgentStatusDisplay(agentRunState: AgentRunState | undefined): AgentStatusDisplay | null {
@@ -145,6 +146,7 @@ export const WorktreeItem = memo(function WorktreeItem({
   isActive,
   onSelect,
   onDelete,
+  className,
 }: WorktreeItemProps) {
   const timeAgo = formatTimeAgo(lastModified);
   const hasStats = diffStats && (diffStats.additions > 0 || diffStats.deletions > 0);
@@ -173,7 +175,8 @@ export const WorktreeItem = memo(function WorktreeItem({
       aria-label={`${branch || name} workspace${prStatus ? `, PR #${prStatus.number}` : ""}${isActive ? ", currently selected" : ""}`}
       className={cn(
         "group rounded-md pl-3 pr-1.5 py-2 cursor-pointer relative w-full transition-colors text-primary",
-        isActive ? "bg-active" : "bg-transparent hover:bg-hover"
+        isActive ? "bg-active" : "bg-transparent hover:bg-hover",
+        className
       )}
     >
       <div className="flex flex-col gap-0.5 w-full relative min-w-0">
