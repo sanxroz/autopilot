@@ -1,0 +1,19 @@
+src/components/WorktreeItem.tsx
+  s_f4444f002cd02f::t_b31821a416a556 113-115,168-169,171-172
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.4.8",
+  "base_commit_sha": "60447141f4daafb12ec1569f5c26eac509a47d98",
+  "prompts": {},
+  "sessions": {
+    "s_f4444f002cd02f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e314c-2d40-7851-ab37-0291b165ff7d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
