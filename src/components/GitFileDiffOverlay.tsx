@@ -1,169 +1,113 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { codeToTokens, type BundledLanguage } from "shiki";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { X, Loader, Eye, Code2, ChevronsRight, ChevronsLeft } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
-import { useThemeMode } from "../hooks/useTheme";
 import { useAppStore } from "../store";
 import { cn } from "../utils/cn";
-import { markdownSanitizeSchema, MarkdownErrorBoundary, markdownComponents } from "../lib/markdown-components";
+import {
+  markdownSanitizeSchema,
+  MarkdownErrorBoundary,
+  markdownComponents,
+} from "../lib/markdown-components";
 import type { FileDiffData } from "../types";
 
-interface LineInfo {
-  lineNum: number;
+interface DiffLine {
+  type: "context" | "add" | "del" | "hunk-header" | "meta";
   content: string;
-  type: "unchanged" | "added" | "deleted";
-  index: number;
+  oldLineNum?: number;
+  newLineNum?: number;
 }
 
-const LANG_MAP: Record<string, BundledLanguage> = {
-  ts: "typescript",
-  tsx: "tsx",
-  js: "javascript",
-  jsx: "jsx",
-  py: "python",
-  rb: "ruby",
-  rs: "rust",
-  go: "go",
-  java: "java",
-  c: "c",
-  cpp: "cpp",
-  h: "c",
-  hpp: "cpp",
-  css: "css",
-  scss: "scss",
-  html: "html",
-  json: "json",
-  yaml: "yaml",
-  yml: "yaml",
-  md: "markdown",
-  sql: "sql",
-  sh: "bash",
-  bash: "bash",
-  toml: "toml",
-  xml: "xml",
-};
-
-function getLang(filePath: string): BundledLanguage {
-  const ext = filePath.split(".").pop()?.toLowerCase() || "";
-  return LANG_MAP[ext] || "plaintext";
+interface EditIndicator {
+  top: number;
+  height: number;
+  type: "add" | "del";
 }
 
-function parseChangesFromPatch(patch: string): { 
-  addedLines: Set<number>; 
-  deletedAtLine: Map<number, string[]>;
-} {
-  const addedLines = new Set<number>();
-  const deletedAtLine = new Map<number, string[]>();
-  
-  if (!patch) return { addedLines, deletedAtLine };
+const LINE_HEIGHT = 20;
 
+function parsePatch(patch: string): DiffLine[] {
+  if (!patch || patch.trim() === "") return [];
+
+  const rows: DiffLine[] = [];
   const lines = patch.split("\n");
+  let oldLineNum = 0;
   let newLineNum = 0;
-  let pendingDeleted: string[] = [];
+  let inHunk = false;
 
-  for (const line of lines) {
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+
+    if (line === "" && index === lines.length - 1) {
+      continue;
+    }
+
+    if (
+      line.startsWith("diff --git") ||
+      line.startsWith("index ") ||
+      line.startsWith("--- ") ||
+      line.startsWith("+++ ")
+    ) {
+      continue;
+    }
+
     if (line.startsWith("@@")) {
-      if (pendingDeleted.length > 0) {
-        deletedAtLine.set(newLineNum, [...pendingDeleted]);
-        pendingDeleted = [];
-      }
-      const match = line.match(/@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
       if (match) {
-        newLineNum = parseInt(match[1], 10);
+        oldLineNum = parseInt(match[1], 10);
+        newLineNum = parseInt(match[2], 10);
       }
+      inHunk = true;
+      rows.push({ type: "hunk-header", content: line });
       continue;
     }
 
-    if (line.startsWith("---") || line.startsWith("+++") || 
-        line.startsWith("diff ") || line.startsWith("index ")) {
-      continue;
-    }
-
-    if (line.startsWith("-")) {
-      pendingDeleted.push(line.substring(1));
+    if (!inHunk) {
       continue;
     }
 
     if (line.startsWith("+")) {
-      if (pendingDeleted.length > 0) {
-        deletedAtLine.set(newLineNum, [...pendingDeleted]);
-        pendingDeleted = [];
-      }
-      addedLines.add(newLineNum);
+      rows.push({
+        type: "add",
+        content: line.substring(1),
+        newLineNum,
+      });
       newLineNum++;
       continue;
     }
 
-    if (line.startsWith(" ")) {
-      if (pendingDeleted.length > 0) {
-        deletedAtLine.set(newLineNum, [...pendingDeleted]);
-        pendingDeleted = [];
-      }
-      newLineNum++;
-    }
-  }
-
-  if (pendingDeleted.length > 0) {
-    deletedAtLine.set(newLineNum, [...pendingDeleted]);
-  }
-
-  return { addedLines, deletedAtLine };
-}
-
-function buildFullFileView(
-  newContent: string | null | undefined,
-  patch: string
-): LineInfo[] {
-  const result: LineInfo[] = [];
-  
-  if (!newContent) {
-    return result;
-  }
-
-  const { addedLines, deletedAtLine } = parseChangesFromPatch(patch);
-  const fileLines = newContent.split("\n");
-  let index = 0;
-
-  for (let i = 0; i < fileLines.length; i++) {
-    const lineNum = i + 1;
-    
-    const deletedLines = deletedAtLine.get(lineNum);
-    if (deletedLines) {
-      for (const deleted of deletedLines) {
-        result.push({
-          lineNum: -1,
-          content: deleted,
-          type: "deleted",
-          index: index++,
-        });
-      }
-    }
-
-    result.push({
-      lineNum,
-      content: fileLines[i],
-      type: addedLines.has(lineNum) ? "added" : "unchanged",
-      index: index++,
-    });
-  }
-
-  const trailingDeleted = deletedAtLine.get(fileLines.length + 1);
-  if (trailingDeleted) {
-    for (const deleted of trailingDeleted) {
-      result.push({
-        lineNum: -1,
-        content: deleted,
-        type: "deleted",
-        index: index++,
+    if (line.startsWith("-")) {
+      rows.push({
+        type: "del",
+        content: line.substring(1),
+        oldLineNum,
       });
+      oldLineNum++;
+      continue;
+    }
+
+    if (line.startsWith(" ")) {
+      rows.push({
+        type: "context",
+        content: line.substring(1),
+        oldLineNum,
+        newLineNum,
+      });
+      oldLineNum++;
+      newLineNum++;
+      continue;
+    }
+
+    if (line.startsWith("\\")) {
+      rows.push({ type: "meta", content: line });
     }
   }
 
-  return result;
+  return rows;
 }
 
 function getFileName(path: string): string {
@@ -176,27 +120,15 @@ function isMarkdownFile(filePath: string): boolean {
   return lower.endsWith(".md") || lower.endsWith(".mdx");
 }
 
-
-
-interface HighlightedLine {
-  tokens: Array<{ content: string; color?: string }>;
-}
-
-const LINE_HEIGHT = 20;
-
 export function GitFileDiffOverlay() {
-  const themeMode = useThemeMode();
-  const isLightMode = themeMode === "light";
-  
   const preview = useAppStore((state) => state.gitFileDiffPreview);
   const setPreview = useAppStore((state) => state.setGitFileDiffPreview);
   const codeReviewOpen = useAppStore((state) => state.codeReviewOpen);
   const setCodeReviewOpen = useAppStore((state) => state.setCodeReviewOpen);
-  
+
   const [diffData, setDiffData] = useState<FileDiffData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [highlightedLines, setHighlightedLines] = useState<Map<number, HighlightedLine>>(new Map());
   const [viewMode, setViewMode] = useState<"diff" | "preview">("diff");
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const hasScrolledRef = useRef(false);
@@ -214,7 +146,6 @@ export function GitFileDiffOverlay() {
     if (!filePath || !worktreePath) {
       setDiffData(null);
       setError(null);
-      setHighlightedLines(new Map());
       hasScrolledRef.current = false;
       return;
     }
@@ -230,6 +161,7 @@ export function GitFileDiffOverlay() {
           worktreePath,
           filePath,
           isStaged,
+          includeContent: isMd,
         });
         if (!cancelled) {
           setDiffData(diff);
@@ -246,82 +178,86 @@ export function GitFileDiffOverlay() {
       }
     };
 
-    loadDiff();
+    void loadDiff();
 
     return () => {
       cancelled = true;
     };
-  }, [filePath, worktreePath, isStaged]);
+  }, [filePath, worktreePath, isStaged, isMd]);
 
-  useEffect(() => {
-    if (!diffData?.new_content || !filePath) {
-      setHighlightedLines(new Map());
-      return;
-    }
+  const diffLines = useMemo(() => {
+    if (!diffData?.patch) return [];
+    return parsePatch(diffData.patch);
+  }, [diffData?.patch]);
 
-    const highlightCode = async () => {
-      try {
-        const lang = getLang(filePath);
-        const result = await codeToTokens(diffData.new_content!, {
-          lang,
-          theme: isLightMode ? "github-light" : "github-dark",
-        });
+  const firstChangeIndex = useMemo(
+    () => diffLines.findIndex((line) => line.type === "add" || line.type === "del"),
+    [diffLines]
+  );
 
-        const lineMap = new Map<number, HighlightedLine>();
-        result.tokens.forEach((lineTokens, index) => {
-          lineMap.set(index + 1, {
-            tokens: lineTokens.map(token => ({
-              content: token.content,
-              color: token.color,
-            })),
-          });
-        });
-        setHighlightedLines(lineMap);
-      } catch {
-        setHighlightedLines(new Map());
-      }
-    };
-
-    highlightCode();
-  }, [diffData?.new_content, filePath, isLightMode]);
-
-  const fileLines = useMemo(() => {
-    if (!diffData) return [];
-    return buildFullFileView(diffData.new_content, diffData.patch);
-  }, [diffData]);
-
-  const firstEditIndex = useMemo(() => {
-    return fileLines.findIndex(line => line.type === "added" || line.type === "deleted");
-  }, [fileLines]);
+  const rowVirtualizer = useVirtualizer({
+    count: diffLines.length,
+    getScrollElement: () => scrollContainerRef.current,
+    estimateSize: () => LINE_HEIGHT,
+    overscan: 20,
+  });
 
   useEffect(() => {
     if (viewMode === "preview") return;
-    if (firstEditIndex >= 0 && scrollContainerRef.current && !hasScrolledRef.current && !isLoading) {
-      hasScrolledRef.current = true;
-      const scrollTop = Math.max(0, (firstEditIndex - 3) * LINE_HEIGHT);
-      scrollContainerRef.current.scrollTop = scrollTop;
-    }
-  }, [firstEditIndex, isLoading, viewMode]);
+    if (firstChangeIndex < 0 || isLoading || hasScrolledRef.current) return;
 
-  const editIndicators = useMemo(() => {
-    if (fileLines.length === 0) return [];
-    return fileLines
-      .filter(line => line.type === "added" || line.type === "deleted")
-      .map(line => ({
-        position: line.index / fileLines.length,
-        type: line.type,
-      }));
-  }, [fileLines]);
+    hasScrolledRef.current = true;
+    rowVirtualizer.scrollToOffset(Math.max(0, (firstChangeIndex - 3) * LINE_HEIGHT));
+  }, [firstChangeIndex, isLoading, rowVirtualizer, viewMode]);
 
   const stats = useMemo(() => {
     let added = 0;
     let deleted = 0;
-    for (const line of fileLines) {
-      if (line.type === "added") added++;
-      if (line.type === "deleted") deleted++;
+
+    for (const line of diffLines) {
+      if (line.type === "add") added++;
+      if (line.type === "del") deleted++;
     }
+
     return { added, deleted };
-  }, [fileLines]);
+  }, [diffLines]);
+
+  const editIndicators = useMemo(() => {
+    if (diffLines.length === 0) return [] as EditIndicator[];
+
+    const indicators: EditIndicator[] = [];
+    let runStart = -1;
+    let runType: "add" | "del" | null = null;
+
+    const flushRun = (endIndex: number) => {
+      if (runStart < 0 || !runType) return;
+      indicators.push({
+        top: runStart / diffLines.length,
+        height: Math.max((endIndex - runStart + 1) / diffLines.length, 0.003),
+        type: runType,
+      });
+      runStart = -1;
+      runType = null;
+    };
+
+    diffLines.forEach((line, index) => {
+      if (line.type !== "add" && line.type !== "del") {
+        flushRun(index - 1);
+        return;
+      }
+
+      if (runType === line.type) {
+        return;
+      }
+
+      flushRun(index - 1);
+      runStart = index;
+      runType = line.type;
+    });
+
+    flushRun(diffLines.length - 1);
+    return indicators;
+  }, [diffLines]);
 
   const handleClose = useCallback(() => {
     setPreview(null);
@@ -337,24 +273,6 @@ export function GitFileDiffOverlay() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [preview, handleClose]);
 
-  const renderLineContent = useCallback((line: LineInfo) => {
-    const highlighted = line.lineNum > 0 ? highlightedLines.get(line.lineNum) : null;
-    
-    if (highlighted && highlighted.tokens.length > 0) {
-      return (
-        <>
-          {highlighted.tokens.map((token, i) => (
-            <span key={i} style={{ color: token.color }}>
-              {token.content}
-            </span>
-          ))}
-        </>
-      );
-    }
-    
-    return line.content || " ";
-  }, [highlightedLines]);
-
   if (!preview) return null;
 
   return (
@@ -363,22 +281,23 @@ export function GitFileDiffOverlay() {
         data-tauri-drag-region
         className="flex items-center justify-between select-none flex-shrink-0 h-[35px] min-h-[35px] px-3 border-b border-border bg-secondary"
       >
-        <div data-tauri-drag-region className="flex items-center gap-3 flex-1">
-          <span className="text-sm font-medium text-primary">
+        <div data-tauri-drag-region className="flex items-center gap-3 flex-1 min-w-0">
+          <span className="text-sm font-medium text-primary truncate">
             {getFileName(preview.filePath)}
           </span>
           <span className="text-[11px] px-1.5 py-0.5 rounded text-tertiary bg-tertiary">
             {preview.isStaged ? "staged" : "unstaged"}
           </span>
-          {stats.added > 0 && (
-            <span className="text-[11px] font-mono text-semantic-success">
-              +{stats.added}
+          {viewMode === "diff" && (
+            <span className="text-[11px] px-1.5 py-0.5 rounded text-tertiary bg-tertiary">
+              changed hunks
             </span>
           )}
+          {stats.added > 0 && (
+            <span className="text-[11px] font-mono text-semantic-success">+{stats.added}</span>
+          )}
           {stats.deleted > 0 && (
-            <span className="text-[11px] font-mono text-semantic-error">
-              -{stats.deleted}
-            </span>
+            <span className="text-[11px] font-mono text-semantic-error">-{stats.deleted}</span>
           )}
         </div>
         <div className="flex items-center gap-1">
@@ -427,66 +346,108 @@ export function GitFileDiffOverlay() {
       </div>
 
       <div className="flex-1 flex overflow-hidden relative">
-        <div 
-          ref={scrollContainerRef}
-          className="flex-1 overflow-auto"
-        >
+        <div ref={scrollContainerRef} className="flex-1 overflow-auto">
           {isLoading ? (
             <div className="flex items-center justify-center gap-2 py-12 text-tertiary">
               <Loader className="w-4 h-4 animate-spin" />
               <span className="text-sm">Loading...</span>
             </div>
           ) : error ? (
-            <div className="px-4 py-12 text-center text-sm text-semantic-error">
-              {error}
-            </div>
-          ) : viewMode === "preview" && isMd && diffData?.new_content != null ? (
-            <MarkdownErrorBoundary key={filePath} rawContent={diffData.new_content ?? ""}>
-            <article
-              className="mx-auto"
+            <div className="px-4 py-12 text-center text-sm text-semantic-error">{error}</div>
+          ) : viewMode === "preview" && isMd ? (
+            diffData?.new_content != null ? (
+              <MarkdownErrorBoundary key={filePath} rawContent={diffData.new_content ?? ""}>
+                <article
+                  className="mx-auto"
+                  style={{
+                    maxWidth: 720,
+                    padding: "2.5em 2em 4em",
+                    fontFamily: "Georgia, 'Times New Roman', serif",
+                    fontSize: "16.5px",
+                    lineHeight: 1.85,
+                    WebkitFontSmoothing: "antialiased",
+                  }}
+                >
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema]]}
+                    components={markdownComponents}
+                  >
+                    {diffData.new_content}
+                  </ReactMarkdown>
+                </article>
+              </MarkdownErrorBoundary>
+            ) : (
+              <div className="px-4 py-12 text-center text-sm text-tertiary">
+                No preview available for this file
+              </div>
+            )
+          ) : diffLines.length > 0 ? (
+            <div
+              className="font-mono text-[13px]"
               style={{
-                maxWidth: 720,
-                padding: "2.5em 2em 4em",
-                fontFamily: "Georgia, 'Times New Roman', serif",
-                fontSize: "16.5px",
-                lineHeight: 1.85,
-                WebkitFontSmoothing: "antialiased",
+                height: rowVirtualizer.getTotalSize(),
+                lineHeight: `${LINE_HEIGHT}px`,
+                position: "relative",
               }}
             >
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema]]}
-                components={markdownComponents}
-              >
-                {diffData.new_content}
-              </ReactMarkdown>
-            </article>
-            </MarkdownErrorBoundary>
-          ) : fileLines.length > 0 ? (
-            <div className="font-mono text-[13px]" style={{ lineHeight: `${LINE_HEIGHT}px` }}>
-              {fileLines.map((line) => {
-                const isAdd = line.type === "added";
-                const isDel = line.type === "deleted";
+              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                const line = diffLines[virtualRow.index];
+                if (!line) return null;
+
+                if (line.type === "hunk-header" || line.type === "meta") {
+                  return (
+                    <div
+                      key={virtualRow.index}
+                      className={cn(
+                        "absolute left-0 right-0 px-3 text-[12px]",
+                        line.type === "hunk-header"
+                          ? "bg-secondary text-tertiary border-y border-border-subtle"
+                          : "bg-primary text-muted"
+                      )}
+                      style={{
+                        top: 0,
+                        height: `${LINE_HEIGHT}px`,
+                        transform: `translateY(${virtualRow.start}px)`,
+                      }}
+                    >
+                      {line.content}
+                    </div>
+                  );
+                }
+
+                const isAdd = line.type === "add";
+                const isDel = line.type === "del";
 
                 return (
                   <div
-                    key={line.index}
+                    key={virtualRow.index}
                     className={cn(
-                      "flex",
+                      "absolute left-0 right-0 flex",
                       isAdd && "bg-semantic-success-muted",
                       isDel && "bg-semantic-error-muted"
                     )}
-                    style={{ height: `${LINE_HEIGHT}px` }}
+                    style={{
+                      top: 0,
+                      height: `${LINE_HEIGHT}px`,
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
                   >
                     <span
                       className={cn(
-                        "flex-shrink-0 text-right select-none w-[50px] px-2 text-muted border-r border-border-subtle",
-                        isAdd && "bg-semantic-success-muted",
-                        isDel && "bg-semantic-error-muted",
+                        "flex-shrink-0 text-right select-none w-[56px] px-2 text-muted border-r border-border-subtle",
                         !isAdd && !isDel && "bg-secondary"
                       )}
                     >
-                      {line.lineNum > 0 ? line.lineNum : ""}
+                      {line.oldLineNum ?? ""}
+                    </span>
+                    <span
+                      className={cn(
+                        "flex-shrink-0 text-right select-none w-[56px] px-2 text-muted border-r border-border-subtle",
+                        !isAdd && !isDel && "bg-secondary"
+                      )}
+                    >
+                      {line.newLineNum ?? ""}
                     </span>
                     <span
                       className={cn(
@@ -496,14 +457,18 @@ export function GitFileDiffOverlay() {
                         !isAdd && !isDel && "text-transparent"
                       )}
                     >
-                      {isAdd ? "+" : isDel ? "-" : ""}
+                      {isAdd ? "+" : isDel ? "-" : " "}
                     </span>
                     <pre className="flex-1 m-0 pl-2 pr-4 whitespace-pre overflow-visible">
-                      {renderLineContent(line)}
+                      {line.content || " "}
                     </pre>
                   </div>
                 );
               })}
+            </div>
+          ) : diffData?.patch?.trim() ? (
+            <div className="px-4 py-12 text-center text-sm text-tertiary">
+              Diff preview unavailable for this file
             </div>
           ) : (
             <div className="px-4 py-12 text-center text-sm text-tertiary">
@@ -512,16 +477,19 @@ export function GitFileDiffOverlay() {
           )}
         </div>
 
-        {editIndicators.length > 0 && (
+        {editIndicators.length > 0 && viewMode === "diff" && (
           <div className="absolute top-0 right-0 bottom-0 w-1.5 pointer-events-none">
-            {editIndicators.map((indicator, i) => (
+            {editIndicators.map((indicator, index) => (
               <div
-                key={i}
+                key={index}
                 className={cn(
-                  "absolute right-0 w-1.5 h-0.5",
-                  indicator.type === "added" ? "bg-semantic-success" : "bg-semantic-error"
+                  "absolute right-0 w-1.5",
+                  indicator.type === "add" ? "bg-semantic-success" : "bg-semantic-error"
                 )}
-                style={{ top: `${indicator.position * 100}%` }}
+                style={{
+                  top: `${indicator.top * 100}%`,
+                  height: `${indicator.height * 100}%`,
+                }}
               />
             ))}
           </div>

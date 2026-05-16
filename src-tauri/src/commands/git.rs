@@ -838,8 +838,10 @@ pub async fn get_uncommitted_diff(
     worktree_path: String,
     file_path: String,
     is_staged: Option<bool>,
+    include_content: Option<bool>,
 ) -> Result<FileDiffData, String> {
     tokio::task::spawn_blocking(move || {
+        let include_content = include_content.unwrap_or(true);
         let repo = Repository::open(&worktree_path).map_err(|e| e.message().to_string())?;
 
         let head_commit = repo
@@ -853,19 +855,21 @@ pub async fn get_uncommitted_diff(
         let full_path = workdir.join(&file_path);
 
         let index = repo.index().map_err(|e| e.message().to_string())?;
+        let file_path_ref = std::path::Path::new(&file_path);
 
-        let index_content = index
-            .get_path(std::path::Path::new(&file_path), 0)
-            .and_then(|entry| repo.find_blob(entry.id).ok())
-            .and_then(|blob| String::from_utf8(blob.content().to_vec()).ok());
-
-        let head_content = head_tree
-            .get_path(std::path::Path::new(&file_path))
+        let index_entry_id = index.get_path(file_path_ref, 0).map(|entry| entry.id);
+        let head_entry_id = head_tree
+            .get_path(file_path_ref)
             .ok()
-            .and_then(|entry| repo.find_blob(entry.id()).ok())
-            .and_then(|blob| String::from_utf8(blob.content().to_vec()).ok());
+            .map(|entry| entry.id());
 
-        let workdir_content = match std::fs::read_to_string(&full_path) {
+        let read_blob_content = |oid: git2::Oid| {
+            repo.find_blob(oid)
+                .ok()
+                .and_then(|blob| String::from_utf8(blob.content().to_vec()).ok())
+        };
+
+        let read_workdir_content = || match std::fs::read_to_string(&full_path) {
             Ok(content) => Some(content),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
             Err(e) => {
@@ -877,18 +881,38 @@ pub async fn get_uncommitted_diff(
             }
         };
 
+        let head_exists = head_entry_id.is_some();
+        let index_exists = index_entry_id.is_some();
+
+        let head_content = if include_content {
+            head_entry_id.and_then(|oid| read_blob_content(oid))
+        } else {
+            None
+        };
+
+        let index_content = if include_content {
+            index_entry_id.and_then(|oid| read_blob_content(oid))
+        } else {
+            None
+        };
+
+        let workdir_content = if include_content {
+            read_workdir_content()
+        } else {
+            None
+        };
+
         let (old_content, new_content, diff, is_new_file) = match is_staged {
             Some(true) => {
                 let old_content = head_content;
-                let new_content = index_content.clone();
+                let new_content = index_content;
                 let mut diff_opts = DiffOptions::new();
                 diff_opts.pathspec(&file_path);
                 diff_opts.include_untracked(true);
                 let diff = repo
                     .diff_tree_to_index(Some(&head_tree), Some(&index), Some(&mut diff_opts))
                     .map_err(|e| e.message().to_string())?;
-                let is_new_file = old_content.is_none();
-                (old_content, new_content, diff, is_new_file)
+                (old_content, new_content, diff, !head_exists)
             }
             Some(false) => {
                 let old_content = index_content.or(head_content);
@@ -899,8 +923,12 @@ pub async fn get_uncommitted_diff(
                 let diff = repo
                     .diff_index_to_workdir(Some(&index), Some(&mut diff_opts))
                     .map_err(|e| e.message().to_string())?;
-                let is_new_file = old_content.is_none();
-                (old_content, new_content, diff, is_new_file)
+                (
+                    old_content,
+                    new_content,
+                    diff,
+                    !index_exists && !head_exists,
+                )
             }
             None => {
                 let old_content = head_content;
@@ -912,8 +940,7 @@ pub async fn get_uncommitted_diff(
                 let diff = repo
                     .diff_tree_to_workdir_with_index(Some(&head_tree), Some(&mut diff_opts))
                     .map_err(|e| e.message().to_string())?;
-                let is_new_file = old_content.is_none();
-                (old_content, new_content, diff, is_new_file)
+                (old_content, new_content, diff, !head_exists)
             }
         };
 
@@ -931,8 +958,17 @@ pub async fn get_uncommitted_diff(
         .map_err(|e| e.message().to_string())?;
 
         let patch = if patch.is_empty() && is_new_file {
-            if let Some(ref content) = new_content {
-                build_synthetic_new_file_patch(&file_path, content)
+            let synthetic_content = if let Some(ref content) = new_content {
+                Some(content.clone())
+            } else {
+                match is_staged {
+                    Some(true) => index_entry_id.and_then(|oid| read_blob_content(oid)),
+                    _ => read_workdir_content(),
+                }
+            };
+
+            if let Some(content) = synthetic_content {
+                build_synthetic_new_file_patch(&file_path, &content)
             } else {
                 patch
             }
