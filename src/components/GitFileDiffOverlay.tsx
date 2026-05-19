@@ -334,7 +334,7 @@ export function GitFileDiffOverlay() {
                 : "text-tertiary hover:bg-hover hover:text-primary"
             )}
             title={codeReviewOpen ? "Close panel" : "Open panel"}
-            aria-label={codeReviewOpen ? "Close side panel" : "Open side panel"}
+            aria-label={codeReviewOpen ? "Close checks and review panel" : "Open checks and review panel"}
           >
             {codeReviewOpen ? (
               <ChevronsRight className="w-3.5 h-3.5" />
