@@ -22,7 +22,7 @@ import { cn } from "../utils/cn";
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 480;
 const DEFAULT_WIDTH = 288;
-const DRAG_START_THRESHOLD_PX = 4;
+const DRAG_START_THRESHOLD_PX = 10;
 
 function basename(path: string): string {
   const cleaned = path.replace(/\/+$/g, "");
@@ -214,7 +214,9 @@ export function Sidebar({ isOpen }: SidebarProps) {
     repoPath: string,
     worktreePath: string
   ) => {
-    if (e.button !== 0 || (e.target as HTMLElement).closest("button")) return;
+    const target = e.target as HTMLElement;
+    if (e.button !== 0 || target.closest("button")) return;
+
     e.currentTarget.setPointerCapture(e.pointerId);
     dragSessionRef.current = {
       repoPath,
@@ -242,10 +244,10 @@ export function Sidebar({ isOpen }: SidebarProps) {
       if (!session) return;
 
       if (!session.isDragging) {
-        const deltaX = e.clientX - session.startX;
-        const deltaY = e.clientY - session.startY;
+        const deltaX = Math.abs(e.clientX - session.startX);
+        const deltaY = Math.abs(e.clientY - session.startY);
 
-        if (Math.hypot(deltaX, deltaY) < DRAG_START_THRESHOLD_PX) {
+        if (Math.max(deltaX, deltaY) < DRAG_START_THRESHOLD_PX) {
           return;
         }
 
@@ -290,7 +292,22 @@ export function Sidebar({ isOpen }: SidebarProps) {
       const currentDrop = dropTargetRef.current;
 
       if (!dragSessionRef.current?.isDragging) {
+        const clickSession = dragSessionRef.current;
         endWorktreeDrag();
+        if (clickSession) {
+          const repo = useAppStore
+            .getState()
+            .repositories.find((item) => item.info.path === clickSession.repoPath);
+          const worktree = repo?.worktrees.find((item) => item.path === clickSession.worktreePath);
+
+          if (worktree) {
+            suppressNextWorktreeClickRef.current = true;
+            window.setTimeout(() => {
+              suppressNextWorktreeClickRef.current = false;
+            }, 250);
+            await selectWorktree(worktree);
+          }
+        }
         return;
       }
 
@@ -499,7 +516,10 @@ export function Sidebar({ isOpen }: SidebarProps) {
                               isActive={selectedWorktree?.path === wt.path}
                               onSelect={() => handleWorktreeClick(wt)}
                               onDelete={(e) => handleDeleteWorktree(e, group.repoPath, wt.name)}
-                              className={cn("cursor-grab active:cursor-grabbing", isDragSource && "opacity-60")}
+                              className={cn(
+                                draggedWorktree ? "cursor-grabbing" : "cursor-pointer",
+                                isDragSource && "opacity-60"
+                              )}
                             />
                             {showDropAfter && (
                               <div className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-border-strong" />
