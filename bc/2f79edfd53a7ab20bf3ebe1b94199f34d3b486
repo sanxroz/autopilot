@@ -1,0 +1,22 @@
+src/components/Sidebar.tsx
+  s_1ca518f4547f14::t_1029d32692a15c 218,520
+  s_1ca518f4547f14::t_f70625ab6a0a2e 217,219
+  s_1ca518f4547f14::t_5af71d55f51158 25,247-248,250,519,521-522
+  s_1ca518f4547f14::t_6640fc238a5e30 295,297-310
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.0",
+  "base_commit_sha": "bc2f79edfd53a7ab20bf3ebe1b94199f34d3b486",
+  "prompts": {},
+  "sessions": {
+    "s_1ca518f4547f14": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e5523-037b-7022-a318-5738dcdf6c59",
+        "model": "gpt-5.5"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
