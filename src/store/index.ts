@@ -283,7 +283,6 @@ async function saveWorktreeOrdersByRepo(worktreeOrdersByRepo: Record<string, str
     console.error('Failed to save worktree order state:', e);
   }
 }
-
 async function saveAddressedComments(addressedComments: AddressedCommentsMap): Promise<void> {
   try {
     const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
