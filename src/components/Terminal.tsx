@@ -32,6 +32,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
   const searchAddonRef = useRef<SearchAddon | null>(null);
   const prevVisibleRef = useRef(isVisible);
   const isVisibleRef = useRef(isVisible);
+  const themeFrameRef = useRef<number | null>(null);
   const theme = useTheme();
 
   useImperativeHandle(ref, () => ({
@@ -60,7 +61,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       try {
         fitAddonRef.current.fit();
         const dims = fitAddonRef.current.proposeDimensions();
-        if (dims) {
+        if (dims && dims.cols > 0 && dims.rows > 0) {
           invoke("resize_terminal", {
             terminalId,
             cols: dims.cols,
@@ -140,6 +141,10 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       const normalized = value.length === 3
         ? value.split("").map((char) => `${char}${char}`).join("")
         : value;
+      if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+        console.error(`hexToXtermRgb: invalid hex color "${hex}"`);
+        return "rgb:0000/0000/0000";
+      }
       const r = parseInt(normalized.slice(0, 2), 16);
       const g = parseInt(normalized.slice(2, 4), 16);
       const b = parseInt(normalized.slice(4, 6), 16);
@@ -193,6 +198,9 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       unlistenClose.then((fn) => fn());
       unobserve();
       term.dispose();
+      terminalRef.current = null;
+      fitAddonRef.current = null;
+      searchAddonRef.current = null;
     };
   }, [terminalId]);
 
@@ -247,14 +255,27 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
         brightCyan: t.terminal.brightCyan,
         brightWhite: t.terminal.brightWhite,
       };
-      requestAnimationFrame(() => {
+      if (themeFrameRef.current !== null) {
+        cancelAnimationFrame(themeFrameRef.current);
+      }
+      themeFrameRef.current = requestAnimationFrame(() => {
+        themeFrameRef.current = null;
         if (!terminalRef.current) return;
-        fit();
+        if (isVisibleRef.current) {
+          fit();
+        }
         terminalRef.current.refresh(0, terminalRef.current.rows - 1);
       });
     };
-    return subscribeTheme(updateTerminalTheme);
-  }, []);
+    const unsubscribe = subscribeTheme(updateTerminalTheme);
+    return () => {
+      unsubscribe();
+      if (themeFrameRef.current !== null) {
+        cancelAnimationFrame(themeFrameRef.current);
+        themeFrameRef.current = null;
+      }
+    };
+  }, [fit]);
 
   return (
     <div
