@@ -1,0 +1,47 @@
+src/components/Terminal.tsx
+  s_815bea2329625c::t_78c4c642fff839 103
+src/components/RightPanel/ChecksTab.tsx
+  s_815bea2329625c::t_b7fc93ae567768 120-121,147-148
+  s_815bea2329625c::t_5f5160a37c4117 119,130-134,145-146,149-151,173-175,192-196
+src/components/RightPanel/CommentsTab.tsx
+  s_815bea2329625c::t_701bd1217e2a31 138,148-152,160-161,164-166,186-188,204-208,535
+  s_815bea2329625c::t_b7fc93ae567768 139-140,162-163
+src/components/PRHub.tsx
+  s_815bea2329625c::t_5a241dcf6e50d0 353-361,464,469,482-484,487,622
+  s_815bea2329625c::t_804b82c408f6e0 1,19-20,196
+src/components/RightPanel/index.tsx
+  s_815bea2329625c::t_7d91bb7fc4346a 394
+src/hooks/useMergePR.ts
+  s_815bea2329625c::t_78c4c642fff839 19,30,36,41,71
+src/components/PRDetailView.tsx
+  s_815bea2329625c::t_be964399c253ee 199
+src/components/PRDetailView/PRDiffPanel.tsx
+  s_815bea2329625c::t_be964399c253ee 464-465
+src/hooks/useProcessStatus.ts
+  s_815bea2329625c::t_78c4c642fff839 4-5,11-13,25,30,73
+  s_815bea2329625c::t_2aabc2cb20539b 15-16,19-21,24,26-29,31,33-37
+  s_815bea2329625c::t_9ce506dbd523ac 53-66,70
+src/hooks/usePRHub.ts
+  s_815bea2329625c::t_e0afd87d0a47dc 4,9,15,39,70-75,83,87,115,117
+  s_815bea2329625c::t_e7caaa13860c01 6-8,16,20,47,49-51,53-68
+  s_815bea2329625c::t_2b7aae18682b5a 23-25
+  s_815bea2329625c::t_78c4c642fff839 78
+src-tauri/src/commands/watcher.rs
+  s_815bea2329625c::t_78c4c642fff839 315-316
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4ec7d35d5686b26681e762c65d9d9dc4629abedf",
+  "prompts": {},
+  "sessions": {
+    "s_815bea2329625c": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7970-a32c-7be3-9d68-e3e25be2159c",
+        "model": "gpt-5.5"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
