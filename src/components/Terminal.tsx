@@ -100,6 +100,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
 
     if (document.visibilityState === "visible") {
       outputFrameRef.current = requestAnimationFrame(flushPendingOutput);
+      return;
     }
 
     outputTimerRef.current = window.setTimeout(flushPendingOutput, 50);

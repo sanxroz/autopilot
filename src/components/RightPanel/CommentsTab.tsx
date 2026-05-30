@@ -135,12 +135,20 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
   const [expandedImage, setExpandedImage] = useState<{ src: string; alt: string } | null>(null);
   const lastPrStatusRef = useRef<PRStatus | null>(null);
   const initialFetchDoneRef = useRef(false);
+  const requestSeqRef = useRef(0);
+  const activeContextRef = useRef<{ repoPath: string | null; prNumber: number | null }>({ repoPath, prNumber });
+  activeContextRef.current = { repoPath, prNumber };
 
   const fetchData = useCallback(async (isPolling = false) => {
     if (!repoPath || !prNumber) {
       setPrDetails(null);
       return;
     }
+
+    const requestSeq = requestSeqRef.current + 1;
+    requestSeqRef.current = requestSeq;
+    const requestRepoPath = repoPath;
+    const requestPrNumber = prNumber;
 
     if (!isPolling) {
       setIsLoading(true);
@@ -149,6 +157,13 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
 
     try {
       const details = await invoke<PRDetailedInfo>("get_pr_details", { repoPath, prNumber });
+      if (
+        requestSeq !== requestSeqRef.current ||
+        activeContextRef.current.repoPath !== requestRepoPath ||
+        activeContextRef.current.prNumber !== requestPrNumber
+      ) {
+        return;
+      }
       setPrDetails(details);
       setPRDataCache(repoPath, prNumber, { prDetails: details });
       if (isPolling) {
@@ -168,6 +183,9 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
 
   useEffect(() => {
     if (!repoPath || !prNumber) return;
+
+    initialFetchDoneRef.current = false;
+    lastPrStatusRef.current = null;
     
     const cached = getPRDataCache(repoPath, prNumber);
     if (cached?.prDetails) {
@@ -183,6 +201,11 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
     if (!prStatus) return;
     
     const prev = lastPrStatusRef.current;
+    if (!prev) {
+      lastPrStatusRef.current = prStatus;
+      return;
+    }
+
     const hasChanged = !prev || 
       prStatus.checks_status !== prev.checks_status ||
       prStatus.review_decision !== prev.review_decision ||

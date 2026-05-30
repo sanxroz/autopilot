@@ -461,8 +461,8 @@ export function PRDiffPanel({
       });
     }
 
-    // Provide data on both sides so context lines (which have both old+new line numbers) are matched
-    return { newFile: fileExt, oldFile: {} };
+    // Provide data on both sides so old/deleted lines and context lines can match inline comments.
+    return { newFile: fileExt, oldFile: fileExt };
   }, [currentUser, fileComments, pendingReviewComments, selectedFile]);
   // Current file stats
   const currentFile = selectedFile ? files.find((f) => f.path === selectedFile) : null;

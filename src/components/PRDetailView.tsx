@@ -196,7 +196,7 @@ export function PRDetailView({
     } finally {
       setIsDiffLoading(false);
     }
-  }, [repoPath, pr.number, files.length]);
+  }, [repoPath, pr.number, files]);
 
   useEffect(() => {
     void fetchDiff();

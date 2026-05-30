@@ -116,6 +116,9 @@ export function ChecksTab({
   const [error, setError] = useState<string | null>(null);
   const lastPrStatusRef = useRef<PRStatus | null>(null);
   const initialFetchDoneRef = useRef(false);
+  const requestSeqRef = useRef(0);
+  const activeContextRef = useRef<{ repoPath: string | null; prNumber: number | null }>({ repoPath, prNumber });
+  activeContextRef.current = { repoPath, prNumber };
 
   const fetchData = useCallback(async (isPolling = false) => {
     if (!repoPath || !prNumber) {
@@ -123,6 +126,11 @@ export function ChecksTab({
       setPrDetails(null);
       return;
     }
+
+    const requestSeq = requestSeqRef.current + 1;
+    requestSeqRef.current = requestSeq;
+    const requestRepoPath = repoPath;
+    const requestPrNumber = prNumber;
 
     if (!isPolling) {
       setIsLoading(true);
@@ -134,6 +142,13 @@ export function ChecksTab({
         invoke<PRChecksResult>("get_pr_checks", { repoPath, prNumber }),
         invoke<PRDetailedInfo>("get_pr_details", { repoPath, prNumber }),
       ]);
+      if (
+        requestSeq !== requestSeqRef.current ||
+        activeContextRef.current.repoPath !== requestRepoPath ||
+        activeContextRef.current.prNumber !== requestPrNumber
+      ) {
+        return;
+      }
       setChecksResult(checks);
       setPrDetails(details);
       setPRDataCache(repoPath, prNumber, { checksResult: checks, prDetails: details });
@@ -155,6 +170,9 @@ export function ChecksTab({
 
   useEffect(() => {
     if (!repoPath || !prNumber) return;
+
+    initialFetchDoneRef.current = false;
+    lastPrStatusRef.current = null;
     
     const cached = getPRDataCache(repoPath, prNumber);
     if (cached?.checksResult && cached?.prDetails) {
@@ -171,6 +189,11 @@ export function ChecksTab({
     if (!prStatus) return;
     
     const prev = lastPrStatusRef.current;
+    if (!prev) {
+      lastPrStatusRef.current = prStatus;
+      return;
+    }
+
     const hasChanged = !prev || 
       prStatus.checks_status !== prev.checks_status ||
       prStatus.review_decision !== prev.review_decision ||

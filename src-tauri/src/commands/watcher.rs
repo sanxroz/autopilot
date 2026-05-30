@@ -312,7 +312,8 @@ impl GitWatcher {
         let watcher = RecommendedWatcher::new(
             move |res: Result<Event, notify::Error>| {
                 if let Ok(event) = res {
-                    if event
+                    if !event.paths.is_empty()
+                        && event
                         .paths
                         .iter()
                         .all(|p| {

@@ -391,7 +391,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
                     <span>Against base branch</span>
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    onClick={(e) => {
+                    onSelect={(e) => {
                       e.preventDefault();
                       setShowCustomPromptInput(true);
                     }}

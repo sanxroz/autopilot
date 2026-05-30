@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ComponentPropsWithoutRef } from 'react';
+import { useEffect, useMemo, useState, type ComponentPropsWithoutRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import {
@@ -16,7 +16,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useAppStore } from '../store';
-import type { GithubIssue, PRHubFilters, PRStatus, RepoPRStatuses, RepoPathInput } from '../types/github';
+import type { GithubIssue, PRHubFilters, PRStatus } from '../types/github';
+import { usePRHubRefresh } from '../hooks/usePRHub';
 import { cn } from '../utils/cn';
 import { PRKanbanCard, type PRAction } from './PRKanbanCard';
 import { PRDetailView } from './PRDetailView';
@@ -178,8 +179,6 @@ export function PRHub() {
   const prHubData = useAppStore((state) => state.prHubData);
   const assignedIssues = useAppStore((state) => state.assignedIssues);
 
-  const setPRHubData = useAppStore((state) => state.setPRHubData);
-  const setAssignedIssues = useAppStore((state) => state.setAssignedIssues);
   const githubSettings = useAppStore((state) => state.githubSettings);
   const prHubFilters = useAppStore((state) => state.prHubFilters);
   const setPRHubFilters = useAppStore((state) => state.setPRHubFilters);
@@ -194,24 +193,7 @@ export function PRHub() {
   const [selectedPR, setSelectedPR] = useState<{ repoPath: string; pr: PRStatus } | null>(null);
 
   const hasData = Object.keys(prHubData).length > 0;
-
-  const refreshData = useCallback(async () => {
-    try {
-      const repos: RepoPathInput[] = repositories.map((r) => ({ repo_path: r.info.path }));
-      const [prResults, issues] = await Promise.all([
-        invoke<RepoPRStatuses[]>('get_all_open_prs_for_repos', { repos }),
-        invoke<GithubIssue[]>('get_assigned_issues').catch(() => [] as GithubIssue[]),
-      ]);
-      const next: Record<string, RepoPRStatuses['statuses']> = {};
-      for (const result of prResults) {
-        next[result.repo_path] = result.statuses;
-      }
-      setPRHubData(next);
-      setAssignedIssues(issues);
-    } catch (e) {
-      console.error('Failed to refresh PR Hub data:', e);
-    }
-  }, [repositories, setPRHubData, setAssignedIssues]);
+  const refreshData = usePRHubRefresh();
 
   const repoNameByPath = useMemo(() => {
     const m = new Map<string, string>();
@@ -368,6 +350,15 @@ export function PRHub() {
     toast.success(`Merged #${prNumber}`);
   };
 
+  const runSingleActionWithToast = async (repoPath: string, prNumber: number, action: PRAction) => {
+    try {
+      await runSingleAction(repoPath, prNumber, action);
+      void refreshData();
+    } catch (e) {
+      toast.error(`Failed ${action} on #${prNumber}: ${String(e)}`);
+    }
+  };
+
 
   const runBatch = async (action: PRAction) => {
     const items = Array.from(selected)
@@ -470,12 +461,12 @@ export function PRHub() {
       if (focused.type === 'pr') {
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
           e.preventDefault();
-          void runSingleAction(focused.repoPath, focused.pr.number, 'approve');
+          void runSingleActionWithToast(focused.repoPath, focused.pr.number, 'approve');
           return;
         }
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'm') {
           e.preventDefault();
-          void runSingleAction(focused.repoPath, focused.pr.number, 'merge');
+          void runSingleActionWithToast(focused.repoPath, focused.pr.number, 'merge');
           return;
         }
       }
@@ -488,9 +479,12 @@ export function PRHub() {
   /* ── Render ── */
 
   if (selectedPR) {
+    const currentSelectedPR =
+      prHubData[selectedPR.repoPath]?.find((pr) => pr.number === selectedPR.pr.number) ?? selectedPR.pr;
+
     return (
       <PRDetailView
-        pr={selectedPR.pr}
+        pr={currentSelectedPR}
         repoPath={selectedPR.repoPath}
         repoName={repoNameByPath.get(selectedPR.repoPath) || selectedPR.repoPath.split('/').pop() || ''}
         onBack={() => setSelectedPR(null)}
@@ -625,7 +619,7 @@ export function PRHub() {
                           isSelected={selected.has(item.id)}
                           needsMyReview={!!authUser && item.pr.requested_reviewers.includes(authUser)}
                           onToggleSelect={() => toggleSelected(item.id)}
-                          onAction={(action) => void runSingleAction(item.repoPath, item.pr.number, action)}
+                          onAction={(action) => void runSingleActionWithToast(item.repoPath, item.pr.number, action)}
                           onOpenDetail={() => setSelectedPR({ repoPath: item.repoPath, pr: item.pr })}
                         />
                       );

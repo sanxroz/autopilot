@@ -16,6 +16,7 @@ interface UseMergePRReturn {
 export function useMergePR({ repoPath, prNumber }: UseMergePROptions): UseMergePRReturn {
   const [isMerging, setIsMerging] = useState(false);
   const [hasMerged, setHasMerged] = useState(false);
+  const isMergingRef = useRef(false);
 
   // Track the active PR to detect stale async callbacks
   const activePrRef = useRef<{ repoPath: string | null; prNumber: number | null }>({
@@ -26,15 +27,18 @@ export function useMergePR({ repoPath, prNumber }: UseMergePROptions): UseMergeP
   useEffect(() => {
     setHasMerged(false);
     setIsMerging(false);
+    isMergingRef.current = false;
     activePrRef.current = { repoPath, prNumber };
   }, [prNumber, repoPath]);
 
   const handleMerge = useCallback(async () => {
     if (!repoPath || !prNumber) return;
+    if (isMergingRef.current) return;
 
     const mergeRepoPath = repoPath;
     const mergePrNumber = prNumber;
 
+    isMergingRef.current = true;
     setIsMerging(true);
     try {
       const result = await invoke<{ success: boolean; message: string }>('merge_pr', {
@@ -64,6 +68,7 @@ export function useMergePR({ repoPath, prNumber }: UseMergePROptions): UseMergeP
       if (!isStale) {
         setIsMerging(false);
       }
+      isMergingRef.current = false;
     }
   }, [repoPath, prNumber]);
 

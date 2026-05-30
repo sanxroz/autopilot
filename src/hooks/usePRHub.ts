@@ -1,28 +1,28 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../store';
-import type { RepoPRStatuses, RepoPathInput } from '../types/github';
+import type { GithubIssue, RepoPRStatuses, RepoPathInput } from '../types/github';
 
-export function usePRHubPolling() {
+let refreshInFlight: Promise<void> | null = null;
+let refreshQueued = false;
+
+export function usePRHubRefresh() {
   const repositories = useAppStore((state) => state.repositories);
   const githubSettings = useAppStore((state) => state.githubSettings);
   const setPRHubData = useAppStore((state) => state.setPRHubData);
   const setAssignedIssues = useAppStore((state) => state.setAssignedIssues);
 
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const isFetchingRef = useRef(false);
-
-  const fetchAllOpenPRs = useCallback(async () => {
-    if (!githubSettings.ghCliAvailable || repositories.length === 0 || isFetchingRef.current) {
+  return useCallback(async () => {
+    if (!githubSettings.ghCliAvailable) {
       return;
     }
 
-    isFetchingRef.current = true;
-    try {
+    const fetchOnce = async () => {
       const fetchPromises: Promise<void>[] = [];
 
-      if (repositories.length > 0) {
+      if (repositories.length === 0) {
+        setPRHubData({});
+      } else {
         fetchPromises.push((async () => {
           const repos: RepoPathInput[] = repositories.map((r) => ({ repo_path: r.info.path }));
           const results = await invoke<RepoPRStatuses[]>('get_all_open_prs_for_repos', { repos });
@@ -36,7 +36,7 @@ export function usePRHubPolling() {
 
       fetchPromises.push((async () => {
         try {
-          const issues = await invoke<any[]>('get_assigned_issues');
+          const issues = await invoke<GithubIssue[]>('get_assigned_issues');
           setAssignedIssues(issues);
         } catch (e) {
           console.error('Failed to fetch assigned issues:', e);
@@ -44,25 +44,47 @@ export function usePRHubPolling() {
       })());
 
       await Promise.allSettled(fetchPromises);
+    };
 
-    } catch (e) {
-      console.error('Failed to fetch PR Hub data:', e);
-    } finally {
-      isFetchingRef.current = false;
+    if (refreshInFlight) {
+      refreshQueued = true;
+      return refreshInFlight;
     }
+
+    const runRefresh = async () => {
+      try {
+        do {
+          refreshQueued = false;
+          await fetchOnce();
+        } while (refreshQueued);
+      } catch (e) {
+        console.error('Failed to fetch PR Hub data:', e);
+      } finally {
+        refreshInFlight = null;
+      }
+    };
+
+    refreshInFlight = runRefresh();
+    return refreshInFlight;
   }, [githubSettings.ghCliAvailable, repositories, setPRHubData, setAssignedIssues]);
+}
+
+export function usePRHubPolling() {
+  const githubSettings = useAppStore((state) => state.githubSettings);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const refresh = usePRHubRefresh();
 
   useEffect(() => {
-    if (!githubSettings.ghCliAvailable || repositories.length === 0) {
+    if (!githubSettings.ghCliAvailable) {
       return;
     }
 
     const startPolling = () => {
-      fetchAllOpenPRs();
+      refresh();
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
       }
-      pollingRef.current = setInterval(fetchAllOpenPRs, githubSettings.pollingIntervalMs);
+      pollingRef.current = setInterval(refresh, githubSettings.pollingIntervalMs);
     };
 
     const stopPolling = () => {
@@ -90,7 +112,7 @@ export function usePRHubPolling() {
       stopPolling();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [githubSettings.ghCliAvailable, githubSettings.pollingIntervalMs, fetchAllOpenPRs]);
+  }, [githubSettings.ghCliAvailable, githubSettings.pollingIntervalMs, refresh]);
 
-  return { refresh: fetchAllOpenPRs };
+  return { refresh };
 }
