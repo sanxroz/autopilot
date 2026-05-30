@@ -10,8 +10,6 @@ import { useTheme } from "../hooks/useTheme";
 import { getTheme, subscribeTheme } from "../theme";
 import { observeResize } from "../utils/sharedResizeObserver";
 
-
-
 interface Props {
   terminalId: string;
   isActive: boolean;
@@ -138,9 +136,13 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     
     // Convert hex color to xterm RGB format: rgb:RRRR/GGGG/BBBB
     const hexToXtermRgb = (hex: string): string => {
-      const r = parseInt(hex.slice(1, 3), 16);
-      const g = parseInt(hex.slice(3, 5), 16);
-      const b = parseInt(hex.slice(5, 7), 16);
+      const value = hex.startsWith("#") ? hex.slice(1) : hex;
+      const normalized = value.length === 3
+        ? value.split("").map((char) => `${char}${char}`).join("")
+        : value;
+      const r = parseInt(normalized.slice(0, 2), 16);
+      const g = parseInt(normalized.slice(2, 4), 16);
+      const b = parseInt(normalized.slice(4, 6), 16);
       // xterm uses 16-bit color values (0000-ffff)
       const r16 = (r << 8 | r).toString(16).padStart(4, '0');
       const g16 = (g << 8 | g).toString(16).padStart(4, '0');
@@ -162,9 +164,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     // OSC 11: query/set background color  
     term.parser.registerOscHandler(11, (data) => {
       if (data === '?') {
-        const t = getTheme();
-        // Use a solid color for background detection since our bg is transparent
-        const bgColor = t.bg.primary;
+        const bgColor = getTheme().bg.primary;
         const response = `\x1b]11;${hexToXtermRgb(bgColor)}\x1b\\`;
         invoke("write_to_terminal", { terminalId, data: response }).catch(console.error);
       }
@@ -247,6 +247,11 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
         brightCyan: t.terminal.brightCyan,
         brightWhite: t.terminal.brightWhite,
       };
+      requestAnimationFrame(() => {
+        if (!terminalRef.current) return;
+        fit();
+        terminalRef.current.refresh(0, terminalRef.current.rows - 1);
+      });
     };
     return subscribeTheme(updateTerminalTheme);
   }, []);
@@ -266,7 +271,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       tabIndex={0}
       aria-label={`Terminal ${terminalId}`}
       className="w-full h-full bg-transparent relative"
-      style={{ padding: "4px" }}
+      style={{ padding: "4px", background: theme.terminal.surfaceBackground }}
     >
       {isActive && isVisible && (
         <div
