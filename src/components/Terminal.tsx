@@ -34,6 +34,9 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
   const searchAddonRef = useRef<SearchAddon | null>(null);
   const prevVisibleRef = useRef(isVisible);
   const isVisibleRef = useRef(isVisible);
+  const pendingOutputRef = useRef("");
+  const outputFrameRef = useRef<number | null>(null);
+  const outputTimerRef = useRef<number | null>(null);
   const theme = useTheme();
 
   useImperativeHandle(ref, () => ({
@@ -74,6 +77,33 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       }
     }
   }, [terminalId]);
+
+  const flushPendingOutput = useCallback(() => {
+    if (outputFrameRef.current !== null) {
+      cancelAnimationFrame(outputFrameRef.current);
+      outputFrameRef.current = null;
+    }
+    if (outputTimerRef.current !== null) {
+      clearTimeout(outputTimerRef.current);
+      outputTimerRef.current = null;
+    }
+
+    const output = pendingOutputRef.current;
+    if (!output || !terminalRef.current) return;
+
+    pendingOutputRef.current = "";
+    terminalRef.current.write(output);
+  }, []);
+
+  const scheduleOutputFlush = useCallback(() => {
+    if (outputFrameRef.current !== null || outputTimerRef.current !== null) return;
+
+    if (document.visibilityState === "visible") {
+      outputFrameRef.current = requestAnimationFrame(flushPendingOutput);
+    }
+
+    outputTimerRef.current = window.setTimeout(flushPendingOutput, 50);
+  }, [flushPendingOutput]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -174,11 +204,13 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     const unlisten = listen<string>(
       `terminal-output-${terminalId}`,
       (event) => {
-        term.write(event.payload);
+        pendingOutputRef.current += event.payload;
+        scheduleOutputFlush();
       }
     );
 
     const unlistenClose = listen<void>(`terminal-closed-${terminalId}`, () => {
+      flushPendingOutput();
       term.write("\r\n\x1b[31m[Process exited]\x1b[0m\r\n");
     });
 
@@ -191,10 +223,20 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     return () => {
       unlisten.then((fn) => fn());
       unlistenClose.then((fn) => fn());
+      if (outputFrameRef.current !== null) {
+        cancelAnimationFrame(outputFrameRef.current);
+        outputFrameRef.current = null;
+      }
+      if (outputTimerRef.current !== null) {
+        clearTimeout(outputTimerRef.current);
+        outputTimerRef.current = null;
+      }
+      flushPendingOutput();
+      pendingOutputRef.current = "";
       unobserve();
       term.dispose();
     };
-  }, [terminalId]);
+  }, [terminalId, scheduleOutputFlush, flushPendingOutput]);
 
   useEffect(() => {
     const wasHidden = !prevVisibleRef.current;

@@ -2,7 +2,7 @@ use notify::event::ModifyKind;
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
@@ -39,6 +39,44 @@ pub struct GitWatcher {
 
 fn canonicalize_path(path: &PathBuf) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.clone())
+}
+
+fn is_ignored_worktree_event_path(
+    repo: Option<&git2::Repository>,
+    worktree_path: &Path,
+    path: &Path,
+) -> bool {
+    let Some(relative_path) = worktree_event_relative_path(worktree_path, path) else {
+        return false;
+    };
+
+    if is_git_internal_path(&relative_path) {
+        return true;
+    }
+
+    repo.and_then(|repo| repo.status_should_ignore(&relative_path).ok())
+        .unwrap_or(false)
+}
+
+fn worktree_event_relative_path(worktree_path: &Path, path: &Path) -> Option<PathBuf> {
+    if path.is_relative() {
+        Some(path.to_path_buf())
+    } else if let Ok(relative_path) = path.strip_prefix(worktree_path) {
+        Some(relative_path.to_path_buf())
+    } else if let Ok(normalized_path) = path.canonicalize() {
+        normalized_path
+            .strip_prefix(worktree_path)
+            .map(Path::to_path_buf)
+            .ok()
+    } else {
+        None
+    }
+}
+
+fn is_git_internal_path(relative_path: &Path) -> bool {
+    relative_path
+        .components()
+        .any(|component| component.as_os_str() == ".git")
 }
 
 impl GitWatcher {
@@ -261,6 +299,8 @@ impl GitWatcher {
         let app_handle = self.app_handle.clone();
         let worktree_path_clone = worktree_path.clone();
         let worktree_pathbuf = PathBuf::from(&worktree_path);
+        let ignored_path_root = canonicalize_path(&worktree_pathbuf);
+        let ignored_repo = git2::Repository::open(&ignored_path_root).ok();
 
         if !worktree_pathbuf.exists() {
             return Err("Worktree path does not exist".to_string());
@@ -272,11 +312,17 @@ impl GitWatcher {
         let watcher = RecommendedWatcher::new(
             move |res: Result<Event, notify::Error>| {
                 if let Ok(event) = res {
-                    let dominated_by_git = event.paths.iter().any(|p| {
-                        p.to_string_lossy().contains("/.git/")
-                            || p.to_string_lossy().contains("\\.git\\")
-                    });
-                    if dominated_by_git {
+                    if event
+                        .paths
+                        .iter()
+                        .all(|p| {
+                            is_ignored_worktree_event_path(
+                                ignored_repo.as_ref(),
+                                &ignored_path_root,
+                                p,
+                            )
+                        })
+                    {
                         return;
                     }
 
