@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Search, FolderPlus, Plus, GitCompare, Settings, Sun, Moon, GitBranch } from "lucide-react";
+import { Search, FolderPlus, Plus, GitCompare, Settings, Sun, Moon, GitBranch, LayoutList } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
 import * as CommandMenuUI from "./ui/command-menu";
 import { useThemeMode } from "../hooks/useTheme";
@@ -18,6 +18,7 @@ export function CommandMenu({ open: isOpen, onOpenChange }: CommandMenuProps) {
   const addRepository = useAppStore((state) => state.addRepository);
   const selectWorktree = useAppStore((state) => state.selectWorktree);
   const toggleCodeReview = useAppStore((state) => state.toggleCodeReview);
+  const togglePRHub = useAppStore((state) => state.togglePRHub);
   const toggleSettings = useAppStore((state) => state.toggleSettings);
   const setThemeMode = useAppStore((state) => state.setThemeMode);
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
@@ -75,6 +76,11 @@ export function CommandMenu({ open: isOpen, onOpenChange }: CommandMenuProps) {
   const handleOpenSettings = () => {
     onOpenChange(false);
     toggleSettings();
+  };
+
+  const handleTogglePRHub = () => {
+    onOpenChange(false);
+    togglePRHub();
   };
 
   const handleToggleTheme = () => {
@@ -136,9 +142,13 @@ export function CommandMenu({ open: isOpen, onOpenChange }: CommandMenuProps) {
         </CommandMenuUI.Group>
 
         <CommandMenuUI.Group heading="Navigation">
+          <CommandMenuUI.Item onSelect={handleTogglePRHub} className="text-primary">
+            <CommandMenuUI.ItemIcon as={LayoutList} className="text-tertiary" />
+            Toggle PR Hub
+          </CommandMenuUI.Item>
           <CommandMenuUI.Item onSelect={handleToggleCodeReview} className="text-primary">
             <CommandMenuUI.ItemIcon as={GitCompare} className="text-tertiary" />
-            Toggle Side Panel
+            Toggle Code Review
           </CommandMenuUI.Item>
           <CommandMenuUI.Item onSelect={handleOpenSettings} className="text-primary">
             <CommandMenuUI.ItemIcon as={Settings} className="text-tertiary" />

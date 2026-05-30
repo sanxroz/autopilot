@@ -61,6 +61,13 @@ export function GitTab({ worktreePath }: GitTabProps) {
   const [isStaging, setIsStaging] = useState(false);
   const [revertingFile, setRevertingFile] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshInFlightRef = useRef(false);
+  const refreshAgainRef = useRef(false);
+  const activeFetchIdRef = useRef(0);
+  const inFlightWorktreePathRef = useRef<string | null>(null);
+  const isMountedRef = useRef(true);
+  const latestWorktreePathRef = useRef(worktreePath);
   const defaultAIAgent = useAppStore((state) => state.defaultAIAgent);
   const gitFileDiffPreview = useAppStore((state) => state.gitFileDiffPreview);
   const setGitFileDiffPreview = useAppStore((state) => state.setGitFileDiffPreview);
@@ -68,25 +75,101 @@ export function GitTab({ worktreePath }: GitTabProps) {
   const isOperationInProgress =
     isStaging || revertingFile !== null || isCommitting || isPushing || isGenerating;
 
+  latestWorktreePathRef.current = worktreePath;
+
   const fetchStatus = useCallback(async () => {
+    if (!isMountedRef.current) return;
+
     if (!worktreePath) {
+      refreshInFlightRef.current = false;
+      inFlightWorktreePathRef.current = null;
+      refreshAgainRef.current = false;
+      setIsLoading(false);
       setGitStatus(null);
       return;
     }
 
+    if (refreshInFlightRef.current) {
+      if (inFlightWorktreePathRef.current === worktreePath) {
+        refreshAgainRef.current = true;
+        return;
+      }
+
+      activeFetchIdRef.current += 1;
+      refreshInFlightRef.current = false;
+      refreshAgainRef.current = false;
+    }
+
+    const fetchId = activeFetchIdRef.current + 1;
+    activeFetchIdRef.current = fetchId;
+    refreshInFlightRef.current = true;
+    inFlightWorktreePathRef.current = worktreePath;
     setIsLoading(true);
     setError(null);
 
     try {
       const status = await invoke<GitStatus>("get_git_status", { worktreePath });
+      if (
+        !isMountedRef.current ||
+        activeFetchIdRef.current !== fetchId ||
+        latestWorktreePathRef.current !== worktreePath
+      ) {
+        return;
+      }
       setGitStatus(status);
     } catch (e) {
+      if (
+        !isMountedRef.current ||
+        activeFetchIdRef.current !== fetchId ||
+        latestWorktreePathRef.current !== worktreePath
+      ) {
+        return;
+      }
       setError(String(e));
       setGitStatus(null);
     } finally {
+      if (
+        !isMountedRef.current ||
+        activeFetchIdRef.current !== fetchId ||
+        latestWorktreePathRef.current !== worktreePath
+      ) {
+        return;
+      }
+      refreshInFlightRef.current = false;
+      inFlightWorktreePathRef.current = null;
       setIsLoading(false);
+      if (refreshAgainRef.current) {
+        refreshAgainRef.current = false;
+        if (refreshTimerRef.current) {
+          clearTimeout(refreshTimerRef.current);
+        }
+        refreshTimerRef.current = setTimeout(() => {
+          refreshTimerRef.current = null;
+          fetchStatus();
+        }, 500);
+      }
     }
   }, [worktreePath]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+      activeFetchIdRef.current += 1;
+    };
+  }, []);
+
+  const scheduleStatusRefresh = useCallback(() => {
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current);
+    }
+
+    refreshTimerRef.current = setTimeout(() => {
+      refreshTimerRef.current = null;
+      fetchStatus();
+    }, 500);
+  }, [fetchStatus]);
 
   useEffect(() => {
     fetchStatus();
@@ -99,22 +182,26 @@ export function GitTab({ worktreePath }: GitTabProps) {
 
     const unlistenFileChanged = listen<{ worktree_path: string }>("file-changed", (event) => {
       if (event.payload.worktree_path === worktreePath) {
-        fetchStatus();
+        scheduleStatusRefresh();
       }
     });
 
     const unlistenIndexChanged = listen<{ worktree_path: string }>("git-index-changed", (event) => {
       if (event.payload.worktree_path === worktreePath) {
-        fetchStatus();
+        scheduleStatusRefresh();
       }
     });
 
     return () => {
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
       invoke("stop_watching_worktree_files", { worktreePath }).catch(console.error);
       unlistenFileChanged.then((fn) => fn());
       unlistenIndexChanged.then((fn) => fn());
     };
-  }, [worktreePath, fetchStatus]);
+  }, [worktreePath, scheduleStatusRefresh]);
 
   useEffect(() => {
     if (gitFileDiffPreview && gitStatus) {

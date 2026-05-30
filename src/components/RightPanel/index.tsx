@@ -1,16 +1,27 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
+  GitPullRequest,
+  GitMerge,
   ChevronDown,
+  ExternalLink,
+  ListTodo,
+  ClipboardList,
+  type LucideIcon,
   Diff,
+  ScanSearch,
   GitBranch,
   MessageSquare,
-  ScanSearch,
-  type LucideIcon,
+  Loader,
 } from "lucide-react";
+import { usePRStatusForBranch } from "../../hooks/usePRStatus";
+import { useMergePR } from "../../hooks/useMergePR";
 import { useAppStore } from "../../store";
+import { isReadyToMerge } from "../../lib/pr-domain";
 import { cn } from "../../utils/cn";
 
+import { ChecksTab } from "./ChecksTab";
+import { CommentsTab } from "./CommentsTab";
 import { DiffTab } from "./DiffTab";
 import { GitTab } from "./GitTab";
 import { Tabs, TabsList, TabsTrigger } from "../ui/segmented-control";
@@ -21,12 +32,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+import { AI_AGENTS } from "../../types";
 
 interface RightPanelProps {
   worktreePath: string | null;
 }
 
-type TabId = "changes" | "git";
+type TabId = "checks" | "comments" | "changes" | "git";
 
 const MIN_WIDTH = 300;
 const MAX_WIDTH = 800;
@@ -40,24 +52,33 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const [isResizing, setIsResizing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const widthRef = useRef(DEFAULT_WIDTH);
-  const diffViewMode = useAppStore((state) => state.diffViewMode);
-  const addTerminalWithCommand = useAppStore((state) => state.addTerminalWithCommand);
-  const [activeTab, setActiveTab] = useState<TabId>(
-    diffViewMode === "sidebar" ? "changes" : "git",
-  );
+  const [activeTab, setActiveTab] = useState<TabId>("checks");
   const [showCustomPromptInput, setShowCustomPromptInput] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
   const customPromptInputRef = useRef<HTMLTextAreaElement>(null);
-  const prevDiffViewModeRef = useRef(diffViewMode);
 
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.preventDefault();
-      widthRef.current = width;
-      setIsResizing(true);
-    },
-    [width],
-  );
+  const selectedWorktree = useAppStore((state) => state.selectedWorktree);
+  const repositories = useAppStore((state) => state.repositories);
+  const addTerminalWithCommand = useAppStore((state) => state.addTerminalWithCommand);
+  const defaultAIAgent = useAppStore((state) => state.defaultAIAgent);
+
+  const repoPath =
+    repositories.find((r) => r.worktrees.some((w) => w.path === worktreePath))
+      ?.info.path ?? null;
+
+  const branch = selectedWorktree?.branch ?? null;
+  const prStatus = usePRStatusForBranch(repoPath ?? "", branch);
+
+  const { isMerging, hasMerged, handleMerge } = useMergePR({
+    repoPath,
+    prNumber: prStatus?.number ?? null,
+  });
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    widthRef.current = width;
+    setIsResizing(true);
+  }, [width]);
 
   useEffect(() => {
     if (!isResizing) return;
@@ -88,6 +109,33 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
     };
   }, [isResizing]);
 
+  const handleCreatePR = useCallback(
+    (draft: boolean) => {
+      const agent = AI_AGENTS.find((a) => a.id === defaultAIAgent) || AI_AGENTS[0];
+      if (!agent) return;
+
+      const draftFlag = draft ? " as a draft" : "";
+      const prompt = `Review all changes in this worktree. If the branch name doesn't reflect the changes, rename it to something descriptive. Stage and commit any uncommitted changes with a clear commit message. Push the branch to remote. Then create a pull request${draftFlag} with a title that reflects what the branch accomplishes and a focused description summarizing the key changes.`;
+      const escapedPrompt = prompt.replace(/'/g, "'\\''");
+
+      let command: string;
+      if (agent.promptFlag === null) {
+        command = agent.command;
+      } else if (agent.promptFlag === "") {
+        command = `${agent.command} '${escapedPrompt}'`;
+      } else {
+        command = `${agent.command} ${agent.promptFlag} '${escapedPrompt}'`;
+      }
+
+      addTerminalWithCommand(command);
+    },
+    [defaultAIAgent, addTerminalWithCommand],
+  );
+
+  const getChecksColor = () => {
+    return "text-secondary";
+  };
+
   const handleRunReview = useCallback(
     (mode: ReviewMode, prompt?: string) => {
       setShowCustomPromptInput(false);
@@ -96,6 +144,8 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
       if (mode === "base") {
         command = "cubic review --base";
       } else if (mode === "custom" && prompt) {
+        // Use single quotes to prevent shell expansion ($(...), backticks, variables)
+        // Escape single quotes by ending the string, adding escaped quote, starting new string
         const escapedPrompt = prompt.replace(/'/g, "'\\''");
         command = `cubic review --prompt '${escapedPrompt}'`;
       }
@@ -123,26 +173,38 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
     }
   }, [showCustomPromptInput]);
 
+  const canMergePR = prStatus ? isReadyToMerge(prStatus) : false;
+
+  const diffViewMode = useAppStore((state) => state.diffViewMode);
+  const prevDiffViewModeRef = useRef(diffViewMode);
+
   const showChangesTab = diffViewMode === "sidebar";
 
   useEffect(() => {
     const prevMode = prevDiffViewModeRef.current;
     prevDiffViewModeRef.current = diffViewMode;
 
-    if (!showChangesTab && activeTab === "changes") {
-      setActiveTab("git");
-      return;
-    }
-
-    if (showChangesTab && prevMode === "overlay") {
+    if (diffViewMode === 'sidebar' && prevMode === 'overlay') {
       setActiveTab("changes");
+    } else if (diffViewMode === 'overlay' && prevMode === 'sidebar' && activeTab === "changes") {
+      setActiveTab("checks");
     }
-  }, [activeTab, diffViewMode, showChangesTab]);
+  }, [diffViewMode, activeTab]);
 
-  const tabs: { id: TabId; label: string; icon: LucideIcon }[] = [
-    ...(showChangesTab ? [{ id: "changes" as const, label: "Changes", icon: Diff }] : []),
-    { id: "git", label: "Git", icon: GitBranch },
-  ];
+  const tabs: { id: TabId; label: string; icon: LucideIcon; color?: string }[] =
+    [
+      {
+        id: "checks",
+        label: "Checks",
+        icon: ListTodo,
+        color: getChecksColor(),
+      },
+      { id: "comments", label: "Comments", icon: ClipboardList },
+      ...(showChangesTab
+        ? [{ id: "changes" as TabId, label: "Changes", icon: Diff }]
+        : []),
+      { id: "git", label: "Git", icon: GitBranch },
+    ];
 
   return (
     <motion.div
@@ -165,11 +227,24 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         onMouseDown={handleMouseDown}
         className={cn(
           "absolute top-0 left-0 w-1 h-full cursor-col-resize z-10 transition-colors",
-          isResizing ? "bg-border-strong" : "bg-transparent",
+          isResizing ? "bg-border-strong" : "bg-transparent"
         )}
       />
 
       <div className="flex items-center gap-1 px-3 h-[35px] min-h-[35px]">
+        {prStatus && (
+          <a
+            href={prStatus.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors mr-2 text-secondary hover:bg-hover hover:text-primary"
+            title={prStatus.title}
+          >
+            <span className="font-medium">#{prStatus.number}</span>
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        )}
+
         <Tooltip.Provider delayDuration={300}>
           <Tabs
             value={activeTab}
@@ -186,7 +261,13 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
                     <Tooltip.Trigger asChild>
                       <TabsTrigger
                         value={tab.id}
-                        className={isActive ? "text-primary" : "text-secondary"}
+                        className={cn(
+                          tab.color
+                            ? tab.color
+                            : isActive
+                              ? "text-primary"
+                              : "text-secondary"
+                        )}
                       >
                         <tab.icon className="w-3.5 h-3.5" />
                       </TabsTrigger>
@@ -204,119 +285,160 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         <div className="flex-1" />
 
         {worktreePath && (
-          <DropdownMenu
-            onOpenChange={(open) => {
-              if (!open) {
-                setShowCustomPromptInput(false);
-                setCustomPrompt("");
-              }
+        <DropdownMenu
+          onOpenChange={(open) => {
+            if (!open) {
+              setShowCustomPromptInput(false);
+              setCustomPrompt("");
+            }
+          }}
+        >
+          <DropdownMenuTrigger asChild>
+            <button className="flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium transition-colors hover:bg-opacity-80 text-primary">
+              <ScanSearch className="w-3.5 h-3.5" />
+              Review
+              <ChevronDown className="w-3.5 h-3.5 opacity-50" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <motion.div
+              animate={{ width: showCustomPromptInput ? 280 : "auto" }}
+              transition={{
+                duration: reducedMotion ? 0 : 0.2,
+                ease: [0.215, 0.61, 0.355, 1], // cubic-out
+              }}
+              style={{ overflow: "hidden" }}
+            >
+              <AnimatePresence mode="wait">
+                {showCustomPromptInput ? (
+                <motion.div
+                  key="custom-prompt"
+                  initial={reducedMotion ? false : { opacity: 0, scale: 0.95, y: -8, x: 12 }}
+                  animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
+                  exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95, x: -12 }}
+                  transition={{
+                    duration: reducedMotion ? 0 : 0.2,
+                    ease: [0.215, 0.61, 0.355, 1], // cubic-out
+                  }}
+                  className="p-1"
+                >
+                  <textarea
+                    ref={customPromptInputRef}
+                    value={customPrompt}
+                    onChange={(e) => setCustomPrompt(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        handleCustomPromptSubmit();
+                      }
+                      if (e.key === "Escape") {
+                        handleCustomPromptCancel();
+                      }
+                    }}
+                    placeholder="Enter review prompt..."
+                    className="w-full px-2 py-1.5 text-sm rounded outline-none resize-none"
+                    style={{
+                      background: "transparent",
+                      minHeight: "56px",
+                    }}
+                    autoFocus
+                    aria-label="Review prompt"
+                  />
+                  <div className="flex items-center justify-end gap-1 px-1 pb-0.5">
+                    <button
+                      onClick={handleCustomPromptCancel}
+                      className="px-2 py-1 text-xs rounded transition-colors text-tertiary hover:text-primary"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleCustomPromptSubmit}
+                      disabled={!customPrompt.trim()}
+                      className={cn(
+                        "px-2 py-1 text-xs rounded transition-colors flex items-center gap-1",
+                        customPrompt.trim()
+                          ? "bg-accent-primary text-white"
+                          : "bg-transparent text-muted"
+                      )}
+                    >
+                      <ScanSearch className="w-3 h-3" />
+                      Run
+                    </button>
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="menu-items"
+                  initial={reducedMotion ? false : { opacity: 0, scale: 0.95, y: -8 }}
+                  animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
+                  exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95, x: -12 }}
+                  transition={{
+                    duration: reducedMotion ? 0 : 0.2,
+                    ease: [0.215, 0.61, 0.355, 1], // cubic-out
+                  }}
+                >
+                  <DropdownMenuItem onClick={() => handleRunReview("uncommitted")}>
+                    <ScanSearch className="w-3 h-3" />
+                    <span>Uncommitted changes</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => handleRunReview("base")}>
+                    <GitPullRequest className="w-3 h-3" />
+                    <span>Against base branch</span>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={(e) => {
+                      e.preventDefault();
+                      setShowCustomPromptInput(true);
+                    }}
+                  >
+                    <MessageSquare className="w-3 h-3" />
+                    <span>With custom prompt...</span>
+                  </DropdownMenuItem>
+                </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        )}
+
+        {canMergePR && !hasMerged && (
+          <button
+            onClick={handleMerge}
+            disabled={isMerging}
+            className="px-2.5 py-1 rounded text-xs font-medium flex items-center gap-1.5 transition-colors disabled:opacity-70"
+            style={{
+              background: "#22C55E",
+              color: "white",
             }}
           >
+            {isMerging ? (
+              <Loader className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <GitMerge className="w-3.5 h-3.5" />
+            )}
+            {isMerging ? "Merging..." : "Merge"}
+          </button>
+        )}
+
+        {!prStatus && repoPath && (
+          <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium transition-colors hover:bg-opacity-80 text-primary">
-                <ScanSearch className="w-3.5 h-3.5" />
-                Review
+                <GitPullRequest className="w-3.5 h-3.5" />
+                Create PR
                 <ChevronDown className="w-3.5 h-3.5 opacity-50" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <motion.div
-                animate={{ width: showCustomPromptInput ? 280 : "auto" }}
-                transition={{
-                  duration: reducedMotion ? 0 : 0.2,
-                  ease: [0.215, 0.61, 0.355, 1],
-                }}
-                style={{ overflow: "hidden" }}
-              >
-                <AnimatePresence mode="wait">
-                  {showCustomPromptInput ? (
-                    <motion.div
-                      key="custom-prompt"
-                      initial={reducedMotion ? false : { opacity: 0, scale: 0.95, y: -8, x: 12 }}
-                      animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
-                      exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95, x: -12 }}
-                      transition={{
-                        duration: reducedMotion ? 0 : 0.2,
-                        ease: [0.215, 0.61, 0.355, 1],
-                      }}
-                      className="p-1"
-                    >
-                      <textarea
-                        ref={customPromptInputRef}
-                        value={customPrompt}
-                        onChange={(e) => setCustomPrompt(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            handleCustomPromptSubmit();
-                          }
-                          if (e.key === "Escape") {
-                            handleCustomPromptCancel();
-                          }
-                        }}
-                        placeholder="Enter review prompt..."
-                        className="w-full px-2 py-1.5 text-sm rounded outline-none resize-none"
-                        style={{
-                          background: "transparent",
-                          minHeight: "56px",
-                        }}
-                        autoFocus
-                        aria-label="Review prompt"
-                      />
-                      <div className="flex items-center justify-end gap-1 px-1 pb-0.5">
-                        <button
-                          onClick={handleCustomPromptCancel}
-                          className="px-2 py-1 text-xs rounded transition-colors text-tertiary hover:text-primary"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={handleCustomPromptSubmit}
-                          disabled={!customPrompt.trim()}
-                          className={cn(
-                            "px-2 py-1 text-xs rounded transition-colors flex items-center gap-1",
-                            customPrompt.trim()
-                              ? "bg-accent-primary text-white"
-                              : "bg-transparent text-muted",
-                          )}
-                        >
-                          <ScanSearch className="w-3 h-3" />
-                          Run
-                        </button>
-                      </div>
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key="menu-items"
-                      initial={reducedMotion ? false : { opacity: 0, scale: 0.95, y: -8 }}
-                      animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
-                      exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95, x: -12 }}
-                      transition={{
-                        duration: reducedMotion ? 0 : 0.2,
-                        ease: [0.215, 0.61, 0.355, 1],
-                      }}
-                    >
-                      <DropdownMenuItem onSelect={() => handleRunReview("uncommitted")}>
-                        <ScanSearch className="w-3 h-3" />
-                        <span>Uncommitted changes</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => handleRunReview("base")}>
-                        <GitBranch className="w-3 h-3" />
-                        <span>Against base branch</span>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={(e) => {
-                          e.preventDefault();
-                          setShowCustomPromptInput(true);
-                        }}
-                      >
-                        <MessageSquare className="w-3 h-3" />
-                        <span>With custom prompt...</span>
-                      </DropdownMenuItem>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </motion.div>
+              <DropdownMenuItem onClick={() => handleCreatePR(false)}>
+                <GitPullRequest className="w-3 h-3" />
+                <span>Create PR</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => handleCreatePR(true)}>
+                <GitPullRequest className="w-3 h-3" />
+                <span>Create draft PR</span>
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         )}
@@ -324,7 +446,46 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
 
       <div className="flex-1 overflow-hidden flex flex-col">
         <AnimatePresence mode="wait">
-          {activeTab === "changes" && showChangesTab && (
+          {activeTab === "checks" && (
+            <motion.div
+              key="checks"
+              initial={reducedMotion ? { opacity: 1 } : { opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: -10 }}
+              transition={{
+                duration: reducedMotion ? 0 : 0.15,
+                ease: [0.215, 0.61, 0.355, 1],
+              }}
+              className="h-full overflow-hidden flex flex-col"
+            >
+              <ChecksTab
+                repoPath={repoPath}
+                prNumber={prStatus?.number ?? null}
+                prStatus={prStatus}
+              />
+            </motion.div>
+          )}
+          {activeTab === "comments" && (
+            <motion.div
+              key="comments"
+              initial={reducedMotion ? { opacity: 1 } : { opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: -10 }}
+              transition={{
+                duration: reducedMotion ? 0 : 0.15,
+                ease: [0.215, 0.61, 0.355, 1],
+              }}
+              className="h-full overflow-hidden flex flex-col"
+            >
+              <CommentsTab
+                repoPath={repoPath}
+                prNumber={prStatus?.number ?? null}
+                prStatus={prStatus}
+              />
+            </motion.div>
+          )}
+
+          {activeTab === "changes" && (
             <motion.div
               key="changes"
               initial={reducedMotion ? { opacity: 1 } : { opacity: 0, x: 10 }}
