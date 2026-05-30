@@ -9,7 +9,6 @@ import { markdownComponents as sharedMarkdownComponents } from "../../lib/markdo
 import { useAppStore } from "../../store";
 import { cn } from "../../utils/cn";
 import type { PRDetailedInfo, PRStatus, PRComment } from "../../types/github";
-import { useTheme } from "../../hooks/useTheme";
 
 const AVATAR_COLORS = [
   '#6366F1', '#8B5CF6', '#EC4899', '#F97316', '#14B8A6',
@@ -127,7 +126,6 @@ function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
 }
 
 export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) {
-  const theme = useTheme();
   const getPRDataCache = useAppStore((state) => state.getPRDataCache);
   const setPRDataCache = useAppStore((state) => state.setPRDataCache);
   

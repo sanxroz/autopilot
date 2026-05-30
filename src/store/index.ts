@@ -12,9 +12,16 @@ import type {
   AgentRunState,
   AgentStatusEvent,
 } from '../types';
-import type { GitHubSettings, PRStatus, PRChecksResult, PRDetailedInfo, PRHubFilters, RepoPRStatuses } from '../types/github';
+import type {
+  GitHubSettings,
+  GithubIssue,
+  PRStatus,
+  PRChecksResult,
+  PRDetailedInfo,
+  PRHubFilters,
+  RepoPRStatuses,
+} from '../types/github';
 import { DEFAULT_GITHUB_SETTINGS, DEFAULT_PR_HUB_FILTERS } from '../types/github';
-import type { GithubIssue } from '../types/github';
 import { setThemeMode as setGlobalThemeMode, getThemeMode, type ThemeMode } from '../theme';
 
 interface PersistedState {
@@ -256,26 +263,6 @@ async function fetchRepoAvatarUrl(repoPath: string): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-function normalizePRStatusBatch(batch: PRStatusBatch | RepoPRStatuses[]): PRStatusBatch {
-  if (!Array.isArray(batch)) {
-    return batch;
-  }
-
-  const normalized: PRStatusBatch = {};
-
-  for (const result of batch) {
-    const repoStatuses = normalized[result.repo_path] ?? {};
-
-    for (const status of result.statuses) {
-      repoStatuses[status.head_branch] = status;
-    }
-
-    normalized[result.repo_path] = repoStatuses;
-  }
-
-  return normalized;
 }
 
 export const useAppStore = create<AppStore>((set, get) => ({
@@ -734,10 +721,39 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   setPRStatusBatch: (batch: PRStatusBatch | RepoPRStatuses[]) => {
-    const normalizedBatch = normalizePRStatusBatch(batch);
-    set((state) => ({
-      prStatusByBranch: { ...state.prStatusByBranch, ...normalizedBatch },
-    }));
+    set((state) => {
+      if (!Array.isArray(batch)) {
+        return {
+          prStatusByBranch: { ...state.prStatusByBranch, ...batch },
+        };
+      }
+
+      const nextByRepo = { ...state.prStatusByBranch };
+
+      for (const result of batch) {
+        const existingRepoStatuses = nextByRepo[result.repo_path] ?? {};
+        const nextRepoStatuses = { ...existingRepoStatuses };
+        const refreshedStatuses = new Map(
+          result.statuses.map((pr) => [pr.head_branch, pr])
+        );
+
+        for (const [branch, prStatus] of refreshedStatuses) {
+          nextRepoStatuses[branch] = prStatus;
+        }
+
+        for (const branch of result.checked_branches ?? []) {
+          if (!refreshedStatuses.has(branch)) {
+            delete nextRepoStatuses[branch];
+          }
+        }
+
+        nextByRepo[result.repo_path] = nextRepoStatuses;
+      }
+
+      return {
+        prStatusByBranch: nextByRepo,
+      };
+    });
   },
 
   setPRDataCache: (repoPath: string, prNumber: number, data: { checksResult?: PRChecksResult | null; prDetails?: PRDetailedInfo | null }) => {
