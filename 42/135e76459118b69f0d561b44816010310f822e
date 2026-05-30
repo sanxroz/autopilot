@@ -1,0 +1,28 @@
+src-tauri/src/commands/github.rs
+  61c410b74a17c48d 336-343,483-484,490,494-496,502,505-507,517,521-522,610-611,615,617-622,624-625,627-632,637-641,644-648,650-652,670-697,700-715,718-723,732,734-748,750-760,813-814
+src/store/index.ts
+  61c410b74a17c48d 17-23,724-756
+src/types/github.ts
+  61c410b74a17c48d 37-38
+src/hooks/usePRStatus.ts
+  61c410b74a17c48d 40-49,51-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "42135e76459118b69f0d561b44816010310f822e",
+  "prompts": {
+    "61c410b74a17c48d": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "3bde652b-7213-4108-9e80-f08e7b4f14b6",
+        "model": "gpt-5.4-high"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>",
+      "total_additions": 188,
+      "total_deletions": 70,
+      "accepted_lines": 172,
+      "overriden_lines": 0
+    }
+  }
+}
