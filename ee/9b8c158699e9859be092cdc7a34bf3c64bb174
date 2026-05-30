@@ -1,0 +1,58 @@
+src/lib/diff-index.ts
+  s_943707efa1e0b6::t_67ca5ed1212623 1-65
+src/hooks/useMergePR.ts
+  s_20655ddf24dccf::t_53253800f0cfe0 70
+src/components/PRHub.tsx
+  s_943707efa1e0b6::t_bd6536e5154446 19,27,131-133,148-154,157,219,237,244,295,532,539,546
+  s_943707efa1e0b6::t_0cea0f43534ca7 20
+src/components/PRDetailView.tsx
+  s_943707efa1e0b6::t_288ae3bc34ae83 79
+  s_943707efa1e0b6::t_5a67638860fc84 16,21,138-142,154,356,485,536
+src/components/PRDetailView/PRDiffPanel.tsx
+  s_943707efa1e0b6::t_8c0c821b5bdb69 101-105,430
+  s_943707efa1e0b6::t_73cceb80839342 19,96-99,107-112,295-296,300-301,429,433-434,440-441,569
+src/hooks/useProcessStatus.ts
+  s_20655ddf24dccf::t_53253800f0cfe0 6,17-18,22-24,27-35,38,46-51,55-59
+src/hooks/usePRHub.ts
+  s_20655ddf24dccf::t_53253800f0cfe0 7,49-52,54,60-65
+src/components/RightPanel/ChecksTab.tsx
+  s_943707efa1e0b6::t_0300af8a3785db 9,11,100-104
+src/hooks/usePRActions.ts
+  s_943707efa1e0b6::t_67ca5ed1212623 1-67
+src/hooks/useCachedPRData.ts
+  s_943707efa1e0b6::t_0193c4bf076afc 70-73
+  s_943707efa1e0b6::t_67ca5ed1212623 1-69,74-100,107-155
+  s_943707efa1e0b6::t_33ebb76c0005b4 101-106
+src/components/RightPanel/index.tsx
+  s_943707efa1e0b6::t_49827e561377e3 20,176,405
+src/lib/pr-domain.ts
+  s_943707efa1e0b6::t_67ca5ed1212623 1-8,11-62,65-68,71-77,79-87,89-130
+  s_943707efa1e0b6::t_8f74a64979da25 78
+  s_943707efa1e0b6::t_3315863ad952e4 9-10,63-64,69-70,88
+src/components/RightPanel/CommentsTab.tsx
+  s_943707efa1e0b6::t_45913a816e4310 1,8,10,129
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ee9b8c158699e9859be092cdc7a34bf3c64bb174",
+  "prompts": {},
+  "sessions": {
+    "s_20655ddf24dccf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e79c4-7392-7ef0-aeb8-c1f353ccd85d",
+        "model": "gpt-5.5"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    },
+    "s_943707efa1e0b6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019e7a02-c4e4-7310-a854-e09d092b1a1c",
+        "model": "gpt-5.5"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
