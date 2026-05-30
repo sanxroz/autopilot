@@ -16,6 +16,7 @@ import rehypeSanitize from 'rehype-sanitize';
 import { cn } from '../../utils/cn';
 import { markdownComponents } from '../../lib/markdown-components';
 import { getDiffHighlighter, type DiffHighlighter } from '../../lib/diff-highlighter';
+import { buildDiffIndex } from '../../lib/diff-index';
 import { DiffErrorBoundary, getLangFromPath } from '../DiffFileList';
 import type { PRFile, PRComment } from '../../types/github';
 
@@ -24,8 +25,6 @@ type PendingReviewComment = {
   line: number;
   body: string;
 };
-
-/* ── Avatar (matching CommentsTab pattern) ─────────────────────────── */
 
 const AVATAR_COLORS = [
   '#6366F1', '#8B5CF6', '#EC4899', '#F97316', '#14B8A6',
@@ -94,30 +93,23 @@ function formatDate(dateStr: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-/* ── Diff parsing helpers ──────────────────────────────────────────── */
+type LineReviewData = {
+  comments: PRComment[];
+  pendingComments: PRComment[];
+};
 
-function extractFileDiff(fullDiff: string, filePath: string): string | null {
-  const lines = fullDiff.split('\n');
-  const expectedHeader = `diff --git a/${filePath} b/${filePath}`;
-  let capture = false;
-  const result: string[] = [];
+type LineReviewDataByLine = Record<string, { data: LineReviewData }>;
+type DiffExtendData = {
+  newFile: LineReviewDataByLine;
+  oldFile: LineReviewDataByLine;
+};
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    if (line.startsWith('diff --git')) {
-      if (capture) break; // finished capturing previous file
-      if (line === expectedHeader) {
-        capture = true;
-      }
-    }
-
-    if (capture) {
-      result.push(line);
-    }
-  }
-
-  return result.length > 0 ? result.join('\n') : null;
+function toLineReviewData(data: unknown): LineReviewData {
+  const lineData = data as Partial<LineReviewData> | undefined;
+  return {
+    comments: lineData?.comments ?? [],
+    pendingComments: lineData?.pendingComments ?? [],
+  };
 }
 
 /* ── Inline comment block ──────────────────────────────────────────── */
@@ -300,11 +292,13 @@ export function PRDiffPanel({
     };
   }, []);
 
+  const diffIndex = useMemo(() => (fullDiff ? buildDiffIndex(fullDiff) : null), [fullDiff]);
+
   // Extract patch for selected file
   const patch = useMemo(() => {
     if (!fullDiff || !selectedFile) return null;
-    return extractFileDiff(fullDiff, selectedFile);
-  }, [fullDiff, selectedFile]);
+    return diffIndex?.get(selectedFile) ?? null;
+  }, [diffIndex, fullDiff, selectedFile]);
 
   // Build DiffFile instance
   const diffFile = useMemo(() => {
@@ -432,25 +426,19 @@ export function PRDiffPanel({
 
 
   // Group line comments for inline display
-  const extendData = useMemo(() => {
-    const fileExt: Record<string, { data: { comments?: PRComment[]; pendingComments?: PRComment[] } }> = {};
+  const extendData = useMemo<DiffExtendData>(() => {
+    const fileExt: LineReviewDataByLine = {};
     for (const comment of fileComments) {
       if (comment.line) {
-        if (!fileExt[comment.line]) fileExt[comment.line] = { data: {} };
-        if (!fileExt[comment.line].data.comments) {
-          fileExt[comment.line].data.comments = [];
-        }
-        fileExt[comment.line].data.comments?.push(comment);
+        if (!fileExt[comment.line]) fileExt[comment.line] = { data: { comments: [], pendingComments: [] } };
+        fileExt[comment.line].data.comments.push(comment);
       }
     }
 
     for (const pendingComment of pendingReviewComments) {
       if (pendingComment.path !== selectedFile) continue;
-      if (!fileExt[pendingComment.line]) fileExt[pendingComment.line] = { data: {} };
-      if (!fileExt[pendingComment.line].data.pendingComments) {
-        fileExt[pendingComment.line].data.pendingComments = [];
-      }
-      fileExt[pendingComment.line].data.pendingComments?.push({
+      if (!fileExt[pendingComment.line]) fileExt[pendingComment.line] = { data: { comments: [], pendingComments: [] } };
+      fileExt[pendingComment.line].data.pendingComments.push({
         author: currentUser,
         body: pendingComment.body,
         created_at: new Date().toISOString(),
@@ -578,8 +566,7 @@ export function PRDiffPanel({
                   />
                 )}
                 renderExtendLine={({ data }) => {
-                  const lineComments = data?.comments as PRComment[];
-                  const pendingLineComments = data?.pendingComments as PRComment[];
+                  const { comments: lineComments, pendingComments: pendingLineComments } = toLineReviewData(data);
                   if (!lineComments?.length && !pendingLineComments?.length) return null;
                   return (
                     <div className="flex flex-col border-y border-border-subtle bg-primary">

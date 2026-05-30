@@ -13,19 +13,18 @@ import { cn } from '../utils/cn';
 import { useAppStore } from '../store';
 import { useMergePR } from '../hooks/useMergePR';
 import { useThemeMode } from '../hooks/useTheme';
+import { useCachedPRData } from '../hooks/useCachedPRData';
 import { PRStatusBadge } from './PRStatusBadge';
 import { PRFileTree } from './PRDetailView/PRFileTree';
 import { PRDiffPanel } from './PRDetailView/PRDiffPanel';
 import { PRMetadataSidebar } from './PRDetailView/PRMetadataSidebar';
-import type { PRStatus, PRFile, PRCommit, PRDetailedInfo, PRComment } from '../types/github';
+import type { PRStatus, PRFile, PRCommit, PRComment } from '../types/github';
 
 type PendingReviewComment = {
   path: string;
   line: number;
   body: string;
 };
-
-/* ── Helpers ───────────────────────────────────────────────────────── */
 
 const AVATAR_COLORS = [
   '#6366F1', '#8B5CF6', '#EC4899', '#F97316', '#14B8A6',
@@ -77,6 +76,7 @@ function Avatar({ name, size = 'md', className, title }: { name: string; size?: 
     </div>
   );
 }
+
 function toAgeLabel(iso: string): string {
   if (!iso) return '';
   const ts = new Date(iso).getTime();
@@ -131,11 +131,15 @@ export function PRDetailView({
   const [files, setFiles] = useState<PRFile[]>([]);
   const [commits, setCommits] = useState<PRCommit[]>([]);
   const [fullDiff, setFullDiff] = useState<string | null>(null);
-  const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [isDiffLoading, setIsDiffLoading] = useState(false);
   const [pendingReviewComments, setPendingReviewComments] = useState<PendingReviewComment[]>([]);
+  const { prDetails, isLoading: isPRDetailsLoading, fetchData: fetchPRDetails } = useCachedPRData({
+    repoPath,
+    prNumber: pr.number,
+    prStatus: pr,
+  });
 
   /* ── Sidebar resize state ──────────────────────────────────────── */
   const [leftWidth, setLeftWidth] = useState(LEFT_SIDEBAR_DEFAULT);
@@ -147,15 +151,13 @@ export function PRDetailView({
   const fetchData = useCallback(async () => {
     setIsDataLoading(true);
     try {
-      const [filesResult, commitsResult, detailsResult] = await Promise.all([
+      const [filesResult, commitsResult] = await Promise.all([
         invoke<PRFile[]>('get_pr_files', { repoPath, prNumber: pr.number }),
         invoke<PRCommit[]>('get_pr_commits', { repoPath, prNumber: pr.number }),
-        invoke<PRDetailedInfo>('get_pr_details', { repoPath, prNumber: pr.number }),
       ]);
 
       setFiles(filesResult);
       setCommits(commitsResult);
-      setPrDetails(detailsResult);
 
       setSelectedFile((prevSelectedFile) => {
         if (filesResult.length === 0) {
@@ -351,6 +353,7 @@ export function PRDetailView({
       );
 
       void fetchData();
+      void fetchPRDetails(true);
       onRefresh();
       return true;
     } catch (error) {
@@ -479,7 +482,7 @@ export function PRDetailView({
             files={files}
             selectedFile={selectedFile}
             onSelectFile={setSelectedFile}
-            isLoading={isDataLoading}
+            isLoading={isDataLoading || isPRDetailsLoading}
           />
         </div>
 
@@ -530,7 +533,7 @@ export function PRDetailView({
             body={prDetails?.body ?? null}
             commits={commits}
             comments={comments}
-            isLoading={isDataLoading}
+            isLoading={isDataLoading || isPRDetailsLoading}
             repoPath={repoPath}
             onApprove={handleApprove}
             onMerge={handleMergeClick}

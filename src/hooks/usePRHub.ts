@@ -4,7 +4,7 @@ import { useAppStore } from '../store';
 import type { GithubIssue, RepoPRStatuses, RepoPathInput } from '../types/github';
 
 let refreshInFlight: Promise<void> | null = null;
-let refreshQueued = false;
+let refreshQueuedCallback: (() => Promise<void>) | null = null;
 
 export function usePRHubRefresh() {
   const repositories = useAppStore((state) => state.repositories);
@@ -46,17 +46,23 @@ export function usePRHubRefresh() {
       await Promise.allSettled(fetchPromises);
     };
 
+    const runLatestRefresh = async () => {
+      await fetchOnce();
+    };
+
     if (refreshInFlight) {
-      refreshQueued = true;
+      refreshQueuedCallback = runLatestRefresh;
       return refreshInFlight;
     }
 
     const runRefresh = async () => {
       try {
-        do {
-          refreshQueued = false;
-          await fetchOnce();
-        } while (refreshQueued);
+        await runLatestRefresh();
+        while (refreshQueuedCallback) {
+          const queuedCallback = refreshQueuedCallback;
+          refreshQueuedCallback = null;
+          await queuedCallback();
+        }
       } catch (e) {
         console.error('Failed to fetch PR Hub data:', e);
       } finally {

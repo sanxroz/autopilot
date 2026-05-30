@@ -17,6 +17,7 @@ import {
 import { usePRStatusForBranch } from "../../hooks/usePRStatus";
 import { useMergePR } from "../../hooks/useMergePR";
 import { useAppStore } from "../../store";
+import { isReadyToMerge } from "../../lib/pr-domain";
 import { cn } from "../../utils/cn";
 
 import { ChecksTab } from "./ChecksTab";
@@ -172,13 +173,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
     }
   }, [showCustomPromptInput]);
 
-  const isReadyToMerge =
-    prStatus &&
-    !prStatus.merged &&
-    prStatus.state === "open" &&
-    prStatus.checks_status === "success" &&
-    (prStatus.review_decision === "APPROVED" ||
-      prStatus.review_decision === null);
+  const canMergePR = prStatus ? isReadyToMerge(prStatus) : false;
 
   const diffViewMode = useAppStore((state) => state.diffViewMode);
   const prevDiffViewModeRef = useRef(diffViewMode);
@@ -407,7 +402,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         </DropdownMenu>
         )}
 
-        {isReadyToMerge && !hasMerged && (
+        {canMergePR && !hasMerged && (
           <button
             onClick={handleMerge}
             disabled={isMerging}

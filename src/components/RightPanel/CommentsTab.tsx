@@ -1,14 +1,13 @@
-import { useEffect, useState, useCallback, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useState } from "react";
 import { Loader, MessageSquare, Copy, Check, X, CheckCircle2, Code2, ChevronDown } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
 import { markdownComponents as sharedMarkdownComponents } from "../../lib/markdown-components";
-import { useAppStore } from "../../store";
+import { useCachedPRData } from "../../hooks/useCachedPRData";
 import { cn } from "../../utils/cn";
-import type { PRDetailedInfo, PRStatus, PRComment } from "../../types/github";
+import type { PRStatus, PRComment } from "../../types/github";
 
 const AVATAR_COLORS = [
   '#6366F1', '#8B5CF6', '#EC4899', '#F97316', '#14B8A6',
@@ -126,101 +125,8 @@ function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
 }
 
 export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) {
-  const getPRDataCache = useAppStore((state) => state.getPRDataCache);
-  const setPRDataCache = useAppStore((state) => state.setPRDataCache);
-  
-  const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [expandedImage, setExpandedImage] = useState<{ src: string; alt: string } | null>(null);
-  const lastPrStatusRef = useRef<PRStatus | null>(null);
-  const initialFetchDoneRef = useRef(false);
-  const requestSeqRef = useRef(0);
-  const activeContextRef = useRef<{ repoPath: string | null; prNumber: number | null }>({ repoPath, prNumber });
-  activeContextRef.current = { repoPath, prNumber };
-
-  const fetchData = useCallback(async (isPolling = false) => {
-    if (!repoPath || !prNumber) {
-      setPrDetails(null);
-      return;
-    }
-
-    const requestSeq = requestSeqRef.current + 1;
-    requestSeqRef.current = requestSeq;
-    const requestRepoPath = repoPath;
-    const requestPrNumber = prNumber;
-
-    if (!isPolling) {
-      setIsLoading(true);
-      setError(null);
-    }
-
-    try {
-      const details = await invoke<PRDetailedInfo>("get_pr_details", { repoPath, prNumber });
-      if (
-        requestSeq !== requestSeqRef.current ||
-        activeContextRef.current.repoPath !== requestRepoPath ||
-        activeContextRef.current.prNumber !== requestPrNumber
-      ) {
-        return;
-      }
-      setPrDetails(details);
-      setPRDataCache(repoPath, prNumber, { prDetails: details });
-      if (isPolling) {
-        setError(null);
-      }
-    } catch (e) {
-      if (!isPolling) {
-        setError(String(e));
-        setPrDetails(null);
-      }
-    } finally {
-      if (!isPolling) {
-        setIsLoading(false);
-      }
-    }
-  }, [repoPath, prNumber, setPRDataCache]);
-
-  useEffect(() => {
-    if (!repoPath || !prNumber) return;
-
-    initialFetchDoneRef.current = false;
-    lastPrStatusRef.current = null;
-    
-    const cached = getPRDataCache(repoPath, prNumber);
-    if (cached?.prDetails) {
-      setPrDetails(cached.prDetails);
-      setError(null);
-    } else {
-      fetchData();
-    }
-    initialFetchDoneRef.current = true;
-  }, [repoPath, prNumber, getPRDataCache, fetchData]);
-
-  useEffect(() => {
-    if (!prStatus) return;
-    
-    const prev = lastPrStatusRef.current;
-    if (!prev) {
-      lastPrStatusRef.current = prStatus;
-      return;
-    }
-
-    const hasChanged = !prev || 
-      prStatus.checks_status !== prev.checks_status ||
-      prStatus.review_decision !== prev.review_decision ||
-      prStatus.state !== prev.state ||
-      prStatus.merged !== prev.merged ||
-      prStatus.draft !== prev.draft;
-    
-    if (hasChanged) {
-      lastPrStatusRef.current = prStatus;
-      // Only fetch if initial load has completed (prevents double fetch on mount)
-      if (initialFetchDoneRef.current) {
-        fetchData(true);
-      }
-    }
-  }, [prStatus, fetchData]);
+  const { prDetails, isLoading, error, fetchData } = useCachedPRData({ repoPath, prNumber, prStatus });
 
   const markdownComponents = {
     ...sharedMarkdownComponents,

@@ -3,6 +3,7 @@ import { useAppStore } from '../store';
 
 const ACTIVE_POLLING_INTERVAL = 3000;
 const IDLE_POLLING_INTERVAL = 10000;
+const REFRESH_TIMEOUT = 30000;
 
 export function useProcessStatusPolling() {
   const refreshProcessStatuses = useAppStore((state) => state.refreshProcessStatuses);
@@ -13,14 +14,28 @@ export function useProcessStatusPolling() {
   );
   const intervalRef = useRef<number | null>(null);
   const inFlightRefreshRef = useRef<Promise<void> | null>(null);
+  const refreshStartedAtRef = useRef<number | null>(null);
+  const staleRefreshRetryInFlightRef = useRef(false);
   const needsRerunRef = useRef(false);
 
   const refreshIfIdle = useCallback(async () => {
+    const now = Date.now();
+    let isStaleRetry = false;
+
     if (inFlightRefreshRef.current) {
       needsRerunRef.current = true;
-      return inFlightRefreshRef.current;
+      if (
+        staleRefreshRetryInFlightRef.current ||
+        refreshStartedAtRef.current === null ||
+        now - refreshStartedAtRef.current < REFRESH_TIMEOUT
+      ) {
+        return inFlightRefreshRef.current;
+      }
+      staleRefreshRetryInFlightRef.current = true;
+      isStaleRetry = true;
     }
 
+    let refreshPromise: Promise<void>;
     const runRefresh = async () => {
       try {
         do {
@@ -28,12 +43,20 @@ export function useProcessStatusPolling() {
           await refreshProcessStatuses();
         } while (needsRerunRef.current);
       } finally {
-        inFlightRefreshRef.current = null;
+        if (isStaleRetry) {
+          staleRefreshRetryInFlightRef.current = false;
+        } else if (inFlightRefreshRef.current === refreshPromise) {
+          inFlightRefreshRef.current = null;
+          refreshStartedAtRef.current = null;
+        }
       }
     };
 
-    const refreshPromise = runRefresh();
-    inFlightRefreshRef.current = refreshPromise;
+    refreshPromise = runRefresh();
+    if (!isStaleRetry) {
+      refreshStartedAtRef.current = now;
+      inFlightRefreshRef.current = refreshPromise;
+    }
     return refreshPromise;
   }, [refreshProcessStatuses]);
 

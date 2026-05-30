@@ -1,6 +1,4 @@
 import { useEffect, useMemo, useState, type ComponentPropsWithoutRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-import { toast } from 'sonner';
 import {
   ChevronDown,
   CircleDot,
@@ -18,19 +16,15 @@ import {
 import { useAppStore } from '../store';
 import type { GithubIssue, PRHubFilters, PRStatus } from '../types/github';
 import { usePRHubRefresh } from '../hooks/usePRHub';
+import { usePRActions } from '../hooks/usePRActions';
+import { buildPRHubColumns, isReadyToMerge, type PRColumnKey } from '../lib/pr-domain';
 import { cn } from '../utils/cn';
 import { PRKanbanCard, type PRAction } from './PRKanbanCard';
 import { PRDetailView } from './PRDetailView';
 
 /* ── Types ─────────────────────────────────────────────────────────── */
 
-type HubItem =
-  | { type: 'pr'; id: string; repoPath: string; pr: PRStatus }
-  | { type: 'issue'; id: string; issue: GithubIssue };
-
-type ColumnKey = 'needs_review' | 'draft' | 'changes_requested' | 'in_review' | 'ready' | 'issues';
-
-const COLUMN_DEFS: { key: ColumnKey; label: string; icon: LucideIcon; dotColor: string }[] = [
+const COLUMN_DEFS: { key: PRColumnKey; label: string; icon: LucideIcon; dotColor: string }[] = [
   { key: 'needs_review', label: 'Needs Review', icon: Eye, dotColor: 'bg-semantic-warning' },
   { key: 'draft', label: 'Drafts', icon: Pencil, dotColor: 'bg-tertiary' },
   { key: 'changes_requested', label: 'Changes Requested', icon: XCircle, dotColor: 'bg-semantic-error' },
@@ -38,8 +32,6 @@ const COLUMN_DEFS: { key: ColumnKey; label: string; icon: LucideIcon; dotColor: 
   { key: 'ready', label: 'Ready to Merge', icon: GitMerge, dotColor: 'bg-semantic-success' },
   { key: 'issues', label: 'Issues', icon: CircleDot, dotColor: 'bg-semantic-merged' },
 ];
-
-/* ── Helpers ────────────────────────────────────────────────────────── */
 
 function toAgeLabel(iso: string): string {
   if (!iso) return 'unknown';
@@ -50,62 +42,6 @@ function toAgeLabel(iso: string): string {
   const hours = Math.floor(mins / 60);
   if (hours < 24) return `${hours}h`;
   return `${Math.floor(hours / 24)}d`;
-}
-
-function reviewRank(pr: PRStatus): number {
-  if (pr.review_decision === 'CHANGES_REQUESTED') return 0;
-  if (pr.review_decision === 'REVIEW_REQUIRED' || pr.review_decision === null) return 1;
-  if (pr.review_decision === 'APPROVED') return 2;
-  return 3;
-}
-
-function checksRank(pr: PRStatus): number {
-  if (pr.checks_status === 'failure') return 0;
-  if (pr.checks_status === 'pending') return 1;
-  if (pr.checks_status === 'success') return 2;
-  return 3;
-}
-
-function applyFilters(pr: PRStatus, repoPath: string, filters: PRHubFilters, authUser: string | null): boolean {
-  // Scope: 'mine' = only my PRs + PRs where I'm requested reviewer
-  if (filters.scope === 'mine' && authUser) {
-    const isMine = pr.author === authUser;
-    const needsMyReview = pr.requested_reviewers.includes(authUser);
-    if (!isMine && !needsMyReview) return false;
-  }
-
-  if (filters.status === 'draft' && !pr.draft) return false;
-  if (filters.status === 'ready' && pr.draft) return false;
-  if (filters.status === 'open' && pr.state !== 'open') return false;
-
-  if (filters.review === 'needs_review' && !(pr.review_decision === 'REVIEW_REQUIRED' || pr.review_decision === null)) {
-    return false;
-  }
-  if (filters.review === 'approved' && pr.review_decision !== 'APPROVED') return false;
-  if (filters.review === 'changes_requested' && pr.review_decision !== 'CHANGES_REQUESTED') return false;
-
-  if (filters.repo !== 'all' && filters.repo !== repoPath) return false;
-  if (filters.authorType === 'bot' && !pr.is_bot) return false;
-  if (filters.authorType === 'human' && pr.is_bot) return false;
-
-  return true;
-}
-
-function sortItems(items: HubItem[], authUser: string | null): HubItem[] {
-  return [...items].sort((a, b) => {
-    if (a.type !== 'pr' || b.type !== 'pr') return 0;
-    // PRs requesting my review float to top
-    if (authUser) {
-      const aNeeds = a.pr.requested_reviewers.includes(authUser) ? 0 : 1;
-      const bNeeds = b.pr.requested_reviewers.includes(authUser) ? 0 : 1;
-      if (aNeeds !== bNeeds) return aNeeds - bNeeds;
-    }
-    const rA = reviewRank(a.pr), rB = reviewRank(b.pr);
-    if (rA !== rB) return rA - rB;
-    const cA = checksRank(a.pr), cB = checksRank(b.pr);
-    if (cA !== cB) return cA - cB;
-    return new Date(a.pr.created_at).getTime() - new Date(b.pr.created_at).getTime();
-  });
 }
 
 /* ── FilterSelect ──────────────────────────────────────────────────── */
@@ -188,12 +124,13 @@ export function PRHub() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [focusedCol, setFocusedCol] = useState(0);
   const [focusedRow, setFocusedRow] = useState(0);
-  const [batchRunning, setBatchRunning] = useState<PRAction | null>(null);
-  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number }>({ done: 0, total: 0 });
   const [selectedPR, setSelectedPR] = useState<{ repoPath: string; pr: PRStatus } | null>(null);
 
   const hasData = Object.keys(prHubData).length > 0;
   const refreshData = usePRHubRefresh();
+  const { batchRunning, batchProgress, runBatch, runSingleActionWithToast } = usePRActions({
+    onAfterAction: () => void refreshData(),
+  });
 
   const repoNameByPath = useMemo(() => {
     const m = new Map<string, string>();
@@ -208,50 +145,16 @@ export function PRHub() {
   /* ── Build columns ── */
 
   const columns = useMemo(() => {
-    const colMap: Record<ColumnKey, HubItem[]> = {
-      needs_review: [],
-      draft: [],
-      changes_requested: [],
-      in_review: [],
-      ready: [],
-      issues: [],
-    };
-
-    for (const [repoPath, prs] of Object.entries(prHubData)) {
-      const filtered = prs.filter((pr) => applyFilters(pr, repoPath, prHubFilters, authUser));
-
-      for (const pr of filtered) {
-        const item: HubItem = { type: 'pr', id: `pr:${repoPath}#${pr.number}`, repoPath, pr };
-        const isMine = authUser ? pr.author === authUser : false;
-
-        if (pr.draft) {
-          colMap.draft.push(item);
-        } else if (pr.review_decision === 'CHANGES_REQUESTED') {
-          colMap.changes_requested.push(item);
-        } else if (pr.review_decision === 'APPROVED') {
-          colMap.ready.push(item);
-        } else if (!isMine) {
-          colMap.needs_review.push(item);
-        } else {
-          colMap.in_review.push(item);
-        }
-      }
-    }
-
-    // Sort each PR column
-    for (const key of ['needs_review', 'draft', 'changes_requested', 'in_review', 'ready'] as ColumnKey[]) {
-      colMap[key] = sortItems(colMap[key], authUser);
-    }
-
-    colMap.issues = assignedIssues.map((issue) => ({
-      type: 'issue' as const,
-      id: `issue:${issue.repo_name}#${issue.number}`,
-      issue,
-    }));
-
+    const keyedColumns = buildPRHubColumns(
+      COLUMN_DEFS.map((def) => def.key),
+      prHubData,
+      assignedIssues,
+      prHubFilters,
+      authUser,
+    );
     return COLUMN_DEFS.map((def) => ({
       ...def,
-      items: colMap[def.key],
+      items: keyedColumns.find((column) => column.key === def.key)?.items ?? [],
     }));
   }, [prHubData, prHubFilters, authUser, assignedIssues]);
 
@@ -313,8 +216,7 @@ export function PRHub() {
       for (const item of col.items) {
         if (item.type !== 'pr') continue;
         const { pr, id } = item;
-        const ready = !pr.draft && pr.state === 'open' && pr.checks_status === 'success' && (pr.review_decision === 'APPROVED' || pr.review_decision === null);
-        if (ready) next.add(id);
+        if (isReadyToMerge(pr)) next.add(id);
       }
     }
     setSelected(next);
@@ -332,61 +234,14 @@ export function PRHub() {
     return Number(inner.split('#')[1]);
   };
 
-  const runSingleAction = async (repoPath: string, prNumber: number, action: PRAction) => {
-    if (action === 'approve') {
-      await invoke<boolean>('approve_pr', { repoPath, prNumber });
-      toast.success(`Approved #${prNumber}`);
-      return;
-    }
-    if (action === 'close') {
-      await invoke<boolean>('close_pr', { repoPath, prNumber });
-      toast.success(`Closed #${prNumber}`);
-      return;
-    }
-    const result = await invoke<{ success: boolean; message: string }>('merge_pr', { repoPath, prNumber });
-    if (!result.success) {
-      throw new Error(result.message || `Failed to merge #${prNumber}`);
-    }
-    toast.success(`Merged #${prNumber}`);
-  };
-
-  const runSingleActionWithToast = async (repoPath: string, prNumber: number, action: PRAction) => {
-    try {
-      await runSingleAction(repoPath, prNumber, action);
-      void refreshData();
-    } catch (e) {
-      toast.error(`Failed ${action} on #${prNumber}: ${String(e)}`);
-    }
-  };
-
-
-  const runBatch = async (action: PRAction) => {
+  const runSelectedBatch = async (action: PRAction) => {
     const items = Array.from(selected)
       .filter((id) => id.startsWith('pr:'))
       .map((id) => ({
         repoPath: getRepoPathFromId(id),
         prNumber: getPRNumberFromId(id),
       }));
-    if (items.length === 0) return;
-
-    setBatchRunning(action);
-    setBatchProgress({ done: 0, total: items.length });
-
-    for (let i = 0; i < items.length; i += 1) {
-      const item = items[i];
-      try {
-        await runSingleAction(item.repoPath, item.prNumber, action);
-      } catch (e) {
-        toast.error(`Failed ${action} on #${item.prNumber}: ${String(e)}`);
-      } finally {
-        setBatchProgress({ done: i + 1, total: items.length });
-      }
-    }
-
-    toast.success(`Batch ${action} finished (${items.length})`);
-    setBatchRunning(null);
-    setSelected(new Set());
-    void refreshData();
+    await runBatch(action, items, () => setSelected(new Set()));
   };
 
   /* ── 2D keyboard navigation ── */
@@ -437,7 +292,7 @@ export function PRHub() {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
         if (selected.size > 0) {
-          void runBatch('merge');
+          void runSelectedBatch('merge');
         }
         return;
       }
@@ -674,21 +529,21 @@ export function PRHub() {
 
             <button
               className="rounded-lg px-2.5 py-1 text-xs font-medium text-primary hover:bg-semantic-success-muted hover:text-semantic-success transition-colors disabled:opacity-40"
-              onClick={() => void runBatch('approve')}
+              onClick={() => void runSelectedBatch('approve')}
               disabled={!!batchRunning}
             >
               Approve
             </button>
             <button
               className="rounded-lg px-2.5 py-1 text-xs font-medium text-primary hover:bg-hover transition-colors disabled:opacity-40"
-              onClick={() => void runBatch('merge')}
+              onClick={() => void runSelectedBatch('merge')}
               disabled={!!batchRunning}
             >
               Merge
             </button>
             <button
               className="rounded-lg px-2.5 py-1 text-xs font-medium text-primary hover:bg-semantic-error-muted hover:text-semantic-error transition-colors disabled:opacity-40"
-              onClick={() => void runBatch('close')}
+              onClick={() => void runSelectedBatch('close')}
               disabled={!!batchRunning}
             >
               Close

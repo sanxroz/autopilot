@@ -1,5 +1,3 @@
-import { useEffect, useState, useCallback, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import {
   Check,
   X,
@@ -7,10 +5,10 @@ import {
   Loader,
   Circle,
 } from "lucide-react";
-import { useAppStore } from "../../store";
 import { useMergePR } from "../../hooks/useMergePR";
+import { useCachedPRData } from "../../hooks/useCachedPRData";
 import { cn } from "../../utils/cn";
-import type { PRChecksResult, PRDetailedInfo, PRStatus } from "../../types/github";
+import type { PRStatus } from "../../types/github";
 
 interface ChecksTabProps {
   repoPath: string | null;
@@ -98,117 +96,13 @@ export function ChecksTab({
   prNumber,
   prStatus,
 }: ChecksTabProps) {
-  const getPRDataCache = useAppStore((state) => state.getPRDataCache);
-  const setPRDataCache = useAppStore((state) => state.setPRDataCache);
   const { isMerging, hasMerged, handleMerge } = useMergePR({ repoPath, prNumber });
-  
-  // Initialize state from the cache (via a lazy initializer) to avoid the initial render
-  // briefly showing "No checks" even when cached data exists.
-  const [checksResult, setChecksResult] = useState<PRChecksResult | null>(() => {
-    const cached = repoPath && prNumber ? getPRDataCache(repoPath, prNumber) : null;
-    return cached?.checksResult ?? null;
+  const { checksResult, prDetails, isLoading, error, fetchData } = useCachedPRData({
+    repoPath,
+    prNumber,
+    prStatus,
+    includeChecks: true,
   });
-  const [prDetails, setPrDetails] = useState<PRDetailedInfo | null>(() => {
-    const cached = repoPath && prNumber ? getPRDataCache(repoPath, prNumber) : null;
-    return cached?.prDetails ?? null;
-  });
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const lastPrStatusRef = useRef<PRStatus | null>(null);
-  const initialFetchDoneRef = useRef(false);
-  const requestSeqRef = useRef(0);
-  const activeContextRef = useRef<{ repoPath: string | null; prNumber: number | null }>({ repoPath, prNumber });
-  activeContextRef.current = { repoPath, prNumber };
-
-  const fetchData = useCallback(async (isPolling = false) => {
-    if (!repoPath || !prNumber) {
-      setChecksResult(null);
-      setPrDetails(null);
-      return;
-    }
-
-    const requestSeq = requestSeqRef.current + 1;
-    requestSeqRef.current = requestSeq;
-    const requestRepoPath = repoPath;
-    const requestPrNumber = prNumber;
-
-    if (!isPolling) {
-      setIsLoading(true);
-      setError(null);
-    }
-
-    try {
-      const [checks, details] = await Promise.all([
-        invoke<PRChecksResult>("get_pr_checks", { repoPath, prNumber }),
-        invoke<PRDetailedInfo>("get_pr_details", { repoPath, prNumber }),
-      ]);
-      if (
-        requestSeq !== requestSeqRef.current ||
-        activeContextRef.current.repoPath !== requestRepoPath ||
-        activeContextRef.current.prNumber !== requestPrNumber
-      ) {
-        return;
-      }
-      setChecksResult(checks);
-      setPrDetails(details);
-      setPRDataCache(repoPath, prNumber, { checksResult: checks, prDetails: details });
-      if (isPolling) {
-        setError(null);
-      }
-    } catch (e) {
-      if (!isPolling) {
-        setError(String(e));
-        setChecksResult(null);
-        setPrDetails(null);
-      }
-    } finally {
-      if (!isPolling) {
-        setIsLoading(false);
-      }
-    }
-  }, [repoPath, prNumber, setPRDataCache]);
-
-  useEffect(() => {
-    if (!repoPath || !prNumber) return;
-
-    initialFetchDoneRef.current = false;
-    lastPrStatusRef.current = null;
-    
-    const cached = getPRDataCache(repoPath, prNumber);
-    if (cached?.checksResult && cached?.prDetails) {
-      setChecksResult(cached.checksResult);
-      setPrDetails(cached.prDetails);
-      setError(null);
-    } else {
-      fetchData();
-    }
-    initialFetchDoneRef.current = true;
-  }, [repoPath, prNumber, getPRDataCache, fetchData]);
-
-  useEffect(() => {
-    if (!prStatus) return;
-    
-    const prev = lastPrStatusRef.current;
-    if (!prev) {
-      lastPrStatusRef.current = prStatus;
-      return;
-    }
-
-    const hasChanged = !prev || 
-      prStatus.checks_status !== prev.checks_status ||
-      prStatus.review_decision !== prev.review_decision ||
-      prStatus.state !== prev.state ||
-      prStatus.merged !== prev.merged ||
-      prStatus.draft !== prev.draft;
-    
-    if (hasChanged) {
-      lastPrStatusRef.current = prStatus;
-      // Only fetch if initial load has completed (prevents double fetch on mount)
-      if (initialFetchDoneRef.current) {
-        fetchData(true);
-      }
-    }
-  }, [prStatus, fetchData]);
 
 
   if (!prNumber) {

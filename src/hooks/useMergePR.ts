@@ -67,8 +67,8 @@ export function useMergePR({ repoPath, prNumber }: UseMergePROptions): UseMergeP
                       activePrRef.current.prNumber !== mergePrNumber;
       if (!isStale) {
         setIsMerging(false);
+        isMergingRef.current = false;
       }
-      isMergingRef.current = false;
     }
   }, [repoPath, prNumber]);
 
