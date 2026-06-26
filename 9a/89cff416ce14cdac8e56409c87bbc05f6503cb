@@ -1,0 +1,20 @@
+src/store/index.ts
+  s_1eb7a431e97002::t_8cb7d9fd5612a0 4
+  s_1eb7a431e97002::t_0b98633d01b715 835-849,851-854,858-861,863-871
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "9a89cff416ce14cdac8e56409c87bbc05f6503cb",
+  "prompts": {},
+  "sessions": {
+    "s_1eb7a431e97002": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ses_0fa108e45ffeb5s9Yl2tC2vdz8",
+        "model": "unknown"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
