@@ -16,6 +16,8 @@ import { useAppStore } from "../store";
 import type { WorktreeInfo } from "../types";
 import { NewWorktreeDialog } from "./NewWorktreeDialog";
 import { WorktreeItem } from "./WorktreeItem";
+import { StackGroup } from "./StackGroup";
+import { detectStacks, getStackLabel } from "../lib/pr-stacks";
 import { useThemeMode } from "../hooks/useTheme";
 import { cn } from "../utils/cn";
 
@@ -417,21 +419,21 @@ export function Sidebar({ isOpen }: SidebarProps) {
                   <div className="h-px -mx-2 w-[calc(100%+1rem)] mt-1.5 mb-1 bg-border-subtle" />
                 )}
 
-                <div
-                   className="flex items-center justify-between px-3 py-1.5 mt-0.5 mb-1 group w-full min-w-0 rounded-md cursor-pointer bg-transparent hover:bg-hover"
-                   role="button"
-                   tabIndex={0}
-                   onClick={() => toggleRepoCollapsed(group.repoPath)}
-                   onKeyDown={(e) => {
-                     if (e.target !== e.currentTarget) return;
-                     if (e.key === "Enter" || e.key === " ") {
-                       e.preventDefault();
-                       toggleRepoCollapsed(group.repoPath);
-                     }
-                   }}
-                    aria-expanded={!isCollapsed}
-                    aria-label={`${group.repoName} repository, ${isCollapsed ? "collapsed" : "expanded"}`}
-                  >
+<div
+                    className="flex items-center justify-between px-3 py-1.5 mt-0.5 mb-1 group w-full min-w-0 rounded-md cursor-pointer bg-secondary hover:bg-hover transition-colors duration-200"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => toggleRepoCollapsed(group.repoPath)}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        toggleRepoCollapsed(group.repoPath);
+                      }
+                    }}
+                     aria-expanded={!isCollapsed}
+                     aria-label={`${group.repoName} repository, ${isCollapsed ? "collapsed" : "expanded"}`}
+                   >
                     <div className="flex items-center gap-1.5 min-w-0">
                       {showAvatar ? (
                         <img
@@ -486,48 +488,100 @@ export function Sidebar({ isOpen }: SidebarProps) {
 
                 {!isCollapsed && (
                    <div className="w-full min-w-0 space-y-1">
-                     {group.worktrees.map((wt) => {
-                        const prStatus = wt.branch ? prStatusByBranch[group.repoPath]?.[wt.branch] ?? null : null;
-                        const processStatus = processStatusByPath[wt.path] || 'none';
-                        const agentRunState = agentSidebarLifecycleEnabled ? agentRunByWorktreePath[wt.path] : undefined;
-                        const isDragSource = draggedWorktree?.worktreePath === wt.path;
-                        const showDropBefore = dropTarget?.repoPath === group.repoPath && dropTarget.worktreePath === wt.path && dropTarget.position === "before";
-                        const showDropAfter = dropTarget?.repoPath === group.repoPath && dropTarget.worktreePath === wt.path && dropTarget.position === "after";
-                        return (
-                          <div
-                            key={wt.path}
-                            data-worktree-drop-target="true"
-                            data-repo-path={group.repoPath}
-                            data-worktree-path={wt.path}
-                            onPointerDown={(e) => handleWorktreePointerDown(e, group.repoPath, wt.path)}
-                            className={cn("relative", isReorderPointerActive && "select-none")}
-                          >
-                            {showDropBefore && (
-                              <div className="absolute inset-x-2 top-0 h-0.5 rounded-full bg-border-strong" />
-                            )}
-                            <WorktreeItem
-                              name={wt.name}
-                              branch={wt.branch}
-                              lastModified={wt.last_modified}
-                              diffStats={wt.diff_stats}
-                              prStatus={prStatus}
-                              processStatus={processStatus}
-                              agentRunState={agentRunState}
-                              isActive={selectedWorktree?.path === wt.path}
-                              onSelect={() => handleWorktreeClick(wt)}
-                              onDelete={(e) => handleDeleteWorktree(e, group.repoPath, wt.name)}
-                              className={cn(
-                                draggedWorktree ? "cursor-grabbing" : "cursor-pointer",
-                                isDragSource && "opacity-60"
-                              )}
-                            />
-                            {showDropAfter && (
-                              <div className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-border-strong" />
-                            )}
-                          </div>
-                       );
-                     })}
-                  </div>
+                     {(() => {
+                       const repoPrs = prStatusByBranch[group.repoPath] ?? {};
+                       const { stacks, standalone } = detectStacks(repoPrs);
+                       const standaloneBranches = new Set(standalone.map((p) => p.head_branch));
+
+                       const stackWts: { stackIndex: number; wt: WorktreeInfo }[] = [];
+                       const soloWts: WorktreeInfo[] = [];
+
+                       for (const wt of group.worktrees) {
+                         const pr = wt.branch ? repoPrs[wt.branch] : undefined;
+                         if (!pr || standaloneBranches.has(pr.head_branch)) {
+                           soloWts.push(wt);
+                         } else {
+                           const idx = stacks.findIndex((s) =>
+                             s.allPrs.some((sp) => sp.head_branch === pr.head_branch)
+                           );
+                           if (idx >= 0) stackWts.push({ stackIndex: idx, wt });
+                           else soloWts.push(wt);
+                         }
+                       }
+
+                       const stackGroups = new Map<number, WorktreeInfo[]>();
+                       for (const { stackIndex, wt } of stackWts) {
+                         if (!stackGroups.has(stackIndex)) stackGroups.set(stackIndex, []);
+                         stackGroups.get(stackIndex)!.push(wt);
+                       }
+
+                       const renderItem = (wt: WorktreeInfo) => {
+                         const prStatus = wt.branch ? prStatusByBranch[group.repoPath]?.[wt.branch] ?? null : null;
+                         const processStatus = processStatusByPath[wt.path] || 'none';
+                         const agentRunState = agentSidebarLifecycleEnabled ? agentRunByWorktreePath[wt.path] : undefined;
+                         const isDragSource = draggedWorktree?.worktreePath === wt.path;
+                         const showDropBefore = dropTarget?.repoPath === group.repoPath && dropTarget.worktreePath === wt.path && dropTarget.position === "before";
+                         const showDropAfter = dropTarget?.repoPath === group.repoPath && dropTarget.worktreePath === wt.path && dropTarget.position === "after";
+
+                         return (
+                           <div
+                             key={wt.path}
+                             data-worktree-drop-target="true"
+                             data-repo-path={group.repoPath}
+                             data-worktree-path={wt.path}
+                             onPointerDown={(e) => handleWorktreePointerDown(e, group.repoPath, wt.path)}
+                             className={cn("relative", isReorderPointerActive && "select-none")}
+                           >
+                             {showDropBefore && (
+                               <div className="absolute inset-x-2 top-0 h-0.5 rounded-full bg-border-strong" />
+                             )}
+                             <WorktreeItem
+                               name={wt.name}
+                               branch={wt.branch}
+                               lastModified={wt.last_modified}
+                               diffStats={wt.diff_stats}
+                               prStatus={prStatus}
+                               processStatus={processStatus}
+                               agentRunState={agentRunState}
+                               isActive={selectedWorktree?.path === wt.path}
+                               onSelect={() => handleWorktreeClick(wt)}
+                               onDelete={(e) => handleDeleteWorktree(e, group.repoPath, wt.name)}
+                               className={cn(
+                                 draggedWorktree ? "cursor-grabbing" : "cursor-pointer",
+                                 isDragSource && "opacity-60"
+                               )}
+                             />
+                             {showDropAfter && (
+                               <div className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-border-strong" />
+                             )}
+                           </div>
+                         );
+                       };
+
+                       const elements: React.ReactNode[] = [];
+
+                       for (const [stackIndex, wts] of stackGroups) {
+                         const stack = stacks[stackIndex];
+                         elements.push(
+                           <StackGroup key={`stack-${stackIndex}`} label={getStackLabel(stack)} count={wts.length}>
+                             {wts.map(renderItem)}
+                           </StackGroup>
+                         );
+                       }
+
+                       if (stackGroups.size > 0 && soloWts.length > 0) {
+                          elements.push(
+                            <div key="stack-divider" className="h-px bg-border-subtle mx-2" />
+                          );
+                        }
+
+                        for (const wt of soloWts) {
+                          elements.push(renderItem(wt));
+                        }
+
+                        return elements;
+                     })()}
+                   </div>
                 )}
               </div>
             );

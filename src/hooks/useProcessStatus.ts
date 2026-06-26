@@ -83,7 +83,7 @@ export function useProcessStatusPolling() {
 
     intervalRef.current = window.setInterval(() => {
       if (document.visibilityState === 'visible') {
-        refreshIfIdle();
+        void refreshIfIdle();
       }
     }, hasActiveProcesses ? ACTIVE_POLLING_INTERVAL : IDLE_POLLING_INTERVAL);
 

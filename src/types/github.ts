@@ -14,6 +14,7 @@ export interface PRStatus {
   additions: number;
   deletions: number;
   head_branch: string;
+  base_branch: string;
   author: string;
   created_at: string;
   updated_at: string;

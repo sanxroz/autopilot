@@ -67,7 +67,9 @@ export function usePRStatusPolling() {
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
       }
-      pollingRef.current = setInterval(fetchAllPRs, githubSettings.pollingIntervalMs);
+      pollingRef.current = setInterval(() => {
+        void fetchAllPRs();
+      }, githubSettings.pollingIntervalMs);
     };
 
     const stopPolling = () => {

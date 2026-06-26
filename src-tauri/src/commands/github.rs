@@ -16,6 +16,7 @@ pub struct PRStatus {
     pub additions: u64,
     pub deletions: u64,
     pub head_branch: String,
+    pub base_branch: String,
     pub author: String,
     pub created_at: String,
     pub updated_at: String,
@@ -133,6 +134,8 @@ struct GhPRResponse {
     deletions: u64,
     head_ref_name: String,
     #[serde(default)]
+    base_ref_name: String,
+    #[serde(default)]
     author: Option<GhUser>,
     #[serde(default)]
     created_at: Option<String>,
@@ -226,6 +229,7 @@ fn map_gh_pr_to_status(pr: GhPRResponse) -> PRStatus {
         additions: pr.additions,
         deletions: pr.deletions,
         head_branch: pr.head_ref_name.clone(),
+        base_branch: pr.base_ref_name.clone(),
         author: author.clone(),
         created_at,
         updated_at,
@@ -279,7 +283,7 @@ pub fn check_gh_auth() -> Result<String, String> {
     }
 }
 
-const PR_JSON_FIELDS: &str = "number,title,url,state,isDraft,mergedAt,reviewDecision,statusCheckRollup,additions,deletions,headRefName,author,createdAt,updatedAt,labels,reviewRequests";
+const PR_JSON_FIELDS: &str = "number,title,url,state,isDraft,mergedAt,reviewDecision,statusCheckRollup,additions,deletions,headRefName,baseRefName,author,createdAt,updatedAt,labels,reviewRequests";
 
 #[tauri::command]
 pub async fn get_pr_for_branch(
@@ -389,6 +393,7 @@ fn parse_graphql_pr_node(node: &serde_json::Value) -> Option<PRStatus> {
     let additions = node["additions"].as_u64().unwrap_or(0);
     let deletions = node["deletions"].as_u64().unwrap_or(0);
     let head_ref_name = node["headRefName"].as_str()?.to_string();
+    let base_ref_name = node["baseRefName"].as_str().unwrap_or("").to_string();
     let author = node["author"]["login"]
         .as_str()
         .unwrap_or("unknown")
@@ -462,6 +467,7 @@ fn parse_graphql_pr_node(node: &serde_json::Value) -> Option<PRStatus> {
         additions,
         deletions,
         head_branch: head_ref_name.clone(),
+        base_branch: base_ref_name.clone(),
         author: author.clone(),
         created_at,
         updated_at,
@@ -532,7 +538,7 @@ fn fetch_prs_graphql(
                 format!(
                     r#"b{i}: pullRequests(headRefName: "{escaped}", first: 1, states: [OPEN, CLOSED, MERGED], orderBy: {{field: CREATED_AT, direction: DESC}}) {{
                         nodes {{
-                            number title url state isDraft mergedAt reviewDecision additions deletions headRefName
+                            number title url state isDraft mergedAt reviewDecision additions deletions headRefName baseRefName
                             author {{ login }}
                             createdAt
                             updatedAt
