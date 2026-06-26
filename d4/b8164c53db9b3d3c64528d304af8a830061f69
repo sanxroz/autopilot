@@ -1,0 +1,23 @@
+src/store/index.ts
+  s_f045f5268dcdc1::t_e122a0211b01b0 61
+  s_f045f5268dcdc1::t_e9f1336e64369b 522-525
+  s_f045f5268dcdc1::t_a526976da3c1d6 532-533
+  s_f045f5268dcdc1::t_58f301c06fe246 360
+  s_f045f5268dcdc1::t_bd02a3da7535fa 846-861,872-877,882-899,903
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "d4b8164c53db9b3d3c64528d304af8a830061f69",
+  "prompts": {},
+  "sessions": {
+    "s_f045f5268dcdc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ses_0f9e2f7daffe572s5GAkf7f6Gc",
+        "model": "unknown"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
