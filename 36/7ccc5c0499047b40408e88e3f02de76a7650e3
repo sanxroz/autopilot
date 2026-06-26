@@ -1,0 +1,29 @@
+src/types/github.ts
+  s_a6c2983451c0f2::t_9782d810e6279c 14
+src-tauri/src/commands/github.rs
+  s_a6c2983451c0f2::t_5e1ece3358b80e 128-129
+  s_a6c2983451c0f2::t_a0235557547cf4 16
+  s_a6c2983451c0f2::t_d873b2e328a046 396-399
+  s_a6c2983451c0f2::t_42c5fbb0a100ba 229-232,502,750-752,1602-1604
+  s_a6c2983451c0f2::t_2250fefbe40b40 473
+  s_a6c2983451c0f2::t_fd56f8a913baf8 289
+  s_a6c2983451c0f2::t_6d87c3737474c9 546
+src/components/WorktreeItem.tsx
+  s_a6c2983451c0f2::t_03214e6149c6d8 42-45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "367ccc5c0499047b40408e88e3f02de76a7650e3",
+  "prompts": {},
+  "sessions": {
+    "s_a6c2983451c0f2": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ses_0fa20c0d9ffeygbpoiT7HDHTZF",
+        "model": "unknown"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
