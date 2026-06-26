@@ -1,0 +1,83 @@
+vite.config.ts
+  s_5c18b79311641e::t_d3a3f66b59e079 28
+  s_4022c20ccb53cc::t_a3050cab2c1208 31
+src/hooks/useProcessStatus.ts
+  s_4022c20ccb53cc::t_2622c8a62b459d 86
+src/types/github.ts
+  s_f4be93e4d6b5b3::t_2baef3b18179fb 17
+src-tauri/src/commands/github.rs
+  s_f4be93e4d6b5b3::t_543d98dcaa7e22 137-138
+  s_f4be93e4d6b5b3::t_386b3f6baa95fa 286
+  s_f4be93e4d6b5b3::t_623d1532600637 396
+  s_f4be93e4d6b5b3::t_208ec8e8bff3f3 470
+  s_f4be93e4d6b5b3::t_1bedac96aaf386 541
+  s_f4be93e4d6b5b3::t_eb21d193fadfa9 19
+  s_f4be93e4d6b5b3::t_9e176d16250dcc 232
+src/components/StackGroup.tsx
+  s_f4be93e4d6b5b3::t_39a8b557082f10 1,5-8,10-11,13,15-16,18,23-24,26,28-33,35,53,68-70
+  s_7aefd3f02cb721::t_ebcb99d83739eb 9,12,25,27,34,52,54-61,65,67
+  s_2aef0213e32afe::t_99d30658b45995 20-21,36-51
+  s_f4be93e4d6b5b3::t_31286e7f4c2619 2,14,63,66
+  s_2aef0213e32afe::t_fdd654d8c3c1fc 62
+  s_2aef0213e32afe::t_c33b026d7ffe9d 3-4,17,19,22
+  s_2aef0213e32afe::t_204c9937ab763e 64
+src/lib/pr-stacks.ts
+  s_f4be93e4d6b5b3::t_9061ddce41dcb7 1-113
+src/hooks/usePRHub.ts
+  s_4022c20ccb53cc::t_88d34ec2a766f3 93-95
+src/components/Sidebar.tsx
+  s_7aefd3f02cb721::t_637ff8445f8289 422-436
+  s_2aef0213e32afe::t_af25a92485db08 572-582
+  s_f4be93e4d6b5b3::t_6c8d9f6449dd12 19-20
+  s_f4be93e4d6b5b3::t_0e563685eb5496 491-571,583-584
+src/hooks/usePRStatus.ts
+  s_4022c20ccb53cc::t_3718b642b59d0e 70-72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "97bec984c3c28b2ff306225a467b050fca2797bb",
+  "prompts": {},
+  "sessions": {
+    "s_2aef0213e32afe": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ses_0fa2e57fdffeMIXawB9bvFI7DC",
+        "model": "unknown"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    },
+    "s_4022c20ccb53cc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ses_0fa3b31a2ffewGrXBgkRh1WLCr",
+        "model": "unknown"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    },
+    "s_5c18b79311641e": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ses_0fa2b6c07ffeZ4yxVt5ULpakBT",
+        "model": "unknown"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    },
+    "s_7aefd3f02cb721": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ses_0fa489393ffeZS7LMEQCEyYSrd",
+        "model": "unknown"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    },
+    "s_f4be93e4d6b5b3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ses_0fb2ce602ffeJLq1JXNe8H5WUe",
+        "model": "unknown"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
