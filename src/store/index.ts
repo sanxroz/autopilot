@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { load } from '@tauri-apps/plugin-store';
+import { toast } from 'sonner';
 import type {
   Repository,
   RepoInfo,
@@ -831,25 +832,44 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   deleteWorktree: async (repoPath: string, worktreeName: string) => {
-    try {
-      const worktreePath = get()
-        .repositories
-        .find((repo) => repo.info.path === repoPath)
-        ?.worktrees.find((wt) => wt.name === worktreeName)?.path;
+    const state = get();
+    const repo = state.repositories.find((r) => r.info.path === repoPath);
+    const worktree = repo?.worktrees.find((wt) => wt.name === worktreeName);
+    if (!worktree) return;
 
-      if (worktreePath) {
-        try {
-          await invoke<number>('close_terminals_for_worktree', { worktreePath });
-        } catch (e) {
-          console.error('Failed to close terminals for worktree:', e);
-        }
+    set((s) => ({
+      repositories: s.repositories.map((r) =>
+        r.info.path === repoPath
+          ? { ...r, worktrees: r.worktrees.filter((wt) => wt.name !== worktreeName) }
+          : r
+      ),
+      selectedWorktree:
+        s.selectedWorktree?.path === worktree.path ? null : s.selectedWorktree,
+    }));
+
+    try {
+      try {
+        await invoke<number>('close_terminals_for_worktree', { worktreePath: worktree.path });
+      } catch (e) {
+        console.error('Failed to close terminals for worktree:', e);
       }
 
       await invoke('delete_worktree', { repoPath, worktreeName, force: true });
-      await get().refreshWorktrees(repoPath);
+
+      toast.success(`Worktree "${worktreeName}" deleted`);
+
+      get().refreshWorktrees(repoPath);
     } catch (e) {
+      set((s) => ({
+        repositories: s.repositories.map((r) =>
+          r.info.path === repoPath
+            ? { ...r, worktrees: [...r.worktrees, worktree] }
+            : r
+        ),
+      }));
+
+      toast.error(`Failed to delete worktree: ${e}`);
       console.error('Failed to delete worktree:', e);
-      throw e;
     }
   },
 
