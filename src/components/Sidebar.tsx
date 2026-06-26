@@ -563,7 +563,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
                        for (const [stackIndex, wts] of stackGroups) {
                          const stack = stacks[stackIndex];
                          elements.push(
-                           <StackGroup key={`stack-${stackIndex}`} label={getStackLabel(stack)} count={wts.length}>
+                            <StackGroup key={`stack-${stackIndex}`} label={getStackLabel(stack)} count={stack.allPrs.length}>
                              {wts.map(renderItem)}
                            </StackGroup>
                          );

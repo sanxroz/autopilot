@@ -78,8 +78,8 @@ export function detectStacks(
 
   for (const root of roots) {
     const node = buildNode(root, 0);
-    if (node.children.length > 0 || headMap.has(root.base_branch)) {
-      // Has dependents or is itself a dependent → it's a stack
+    if (node.children.length > 0) {
+      // Has dependents → it's a stack
       const allPrs = flattenTree(node);
       stacks.push({ root: node, allPrs });
     } else {
