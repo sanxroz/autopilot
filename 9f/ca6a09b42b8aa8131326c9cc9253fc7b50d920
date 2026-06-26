@@ -1,0 +1,21 @@
+src/components/Sidebar.tsx
+  s_ae223dbf4839ac::t_540de03a1cd7b1 566
+src/lib/pr-stacks.ts
+  s_ae223dbf4839ac::t_424a621109e7f2 81-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "9fca6a09b42b8aa8131326c9cc9253fc7b50d920",
+  "prompts": {},
+  "sessions": {
+    "s_ae223dbf4839ac": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ses_0f9e2bc8fffeAcDgPjT9zKADOJ",
+        "model": "unknown"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
