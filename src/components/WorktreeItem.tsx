@@ -39,6 +39,10 @@ function getStatusInfo(prStatus: PRStatus | null): StatusInfo {
     return { label: "Closed", colorClass: "text-semantic-error" };
   }
 
+  if (prStatus.mergeable === "CONFLICTING") {
+    return { label: "Conflicts", colorClass: "text-semantic-error" };
+  }
+
   if (prStatus.draft) {
     return { label: "Draft", colorClass: "text-tertiary" };
   }
