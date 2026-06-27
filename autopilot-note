@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+
+exec bun run "$(dirname "$0")/scripts/autopilot-note.mjs" "$@"

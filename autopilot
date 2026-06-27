@@ -1,0 +1,22 @@
+#!/bin/sh
+set -eu
+
+case "${1:-}" in
+  note)
+    shift
+    exec bun run "$(dirname "$0")/scripts/autopilot-note.mjs" "$@"
+    ;;
+  --help|-h|help|"")
+    cat <<'EOF'
+Usage:
+  autopilot note [--worktree <path>] set --text <markdown>
+  autopilot note [--worktree <path>] set --stdin
+  autopilot note [--worktree <path>] get
+  autopilot note [--worktree <path>] clear
+EOF
+    ;;
+  *)
+    printf 'Unknown autopilot command: %s\n' "$1" >&2
+    exit 1
+    ;;
+esac
