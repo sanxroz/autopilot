@@ -1,8 +1,35 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { getPreferredPortConfig } from "./scripts/dev-port.mjs";
 
-// @ts-expect-error process is a nodejs global
-const host = process.env.TAURI_DEV_HOST;
+const processRef = (
+  globalThis as typeof globalThis & {
+    process?: {
+      cwd?: () => string;
+      env?: Record<string, string | undefined>;
+    };
+  }
+).process;
+const env = processRef?.env ?? {};
+const host = env.TAURI_DEV_HOST;
+const explicitDevPort = env.AUTOPILOT_DEV_PORT;
+const explicitHmrPort = env.AUTOPILOT_HMR_PORT;
+const hasAssignedPorts = explicitDevPort !== undefined;
+
+function getPortConfig() {
+  if (explicitDevPort) {
+    const devPort = Number(explicitDevPort);
+    const hmrPort = explicitHmrPort ? Number(explicitHmrPort) : devPort + 1;
+
+    return { devPort, hmrPort };
+  }
+
+  const cwd = processRef?.cwd?.() ?? "";
+
+  return getPreferredPortConfig(cwd);
+}
+
+const { devPort, hmrPort } = getPortConfig();
 
 export default defineConfig(async () => ({
   plugins: [react()],
@@ -11,16 +38,15 @@ export default defineConfig(async () => ({
   //
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
-  // 2. tauri expects a fixed port, fail if that port is not available
   server: {
-    port: 1420,
-    strictPort: true,
+    port: devPort,
+    strictPort: hasAssignedPorts,
     host: host || false,
-    hmr: host
+    hmr: host && hasAssignedPorts
       ? {
           protocol: "ws",
           host,
-          port: 1421,
+          port: hmrPort,
         }
       : undefined,
     watch: {
