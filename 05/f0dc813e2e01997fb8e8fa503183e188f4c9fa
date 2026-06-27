@@ -1,0 +1,26 @@
+src-tauri/src/commands/github.rs
+  s_2934d9adbdec31::t_c25d868c6957f5 16,129-130,232-235,400-403,478,508,756-758,1608-1610
+  s_2934d9adbdec31::t_23889f31daaaf7 293,552
+src/components/WorktreeItem.tsx
+  s_2934d9adbdec31::t_c25d868c6957f5 42-45
+src/store/index.ts
+  s_2934d9adbdec31::t_c25d868c6957f5 4,61,360,522-525,532-533,841-862,864-867,871-880,882-901
+src/types/github.ts
+  s_2934d9adbdec31::t_c25d868c6957f5 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "05f0dc813e2e01997fb8e8fa503183e188f4c9fa",
+  "prompts": {},
+  "sessions": {
+    "s_2934d9adbdec31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0743-cd94-7cc2-a317-508460d1d81a",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
