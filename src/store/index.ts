@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import { load } from '@tauri-apps/plugin-store';
+import { LazyStore, load } from '@tauri-apps/plugin-store';
 import { toast } from 'sonner';
 import type {
   Repository,
@@ -29,6 +29,7 @@ interface PersistedState {
   defaultAIAgent?: AIAgent;
   repoAvatarCache?: Record<string, string>;
   worktreeOrdersByRepo?: Record<string, string[]>;
+  sidebarNotesMarkdown?: string;
 }
 
 interface WorktreeTerminals {
@@ -69,6 +70,7 @@ interface AppStore {
   agentSidebarLifecycleEnabled: boolean;
   defaultAIAgent: AIAgent;
   addressedComments: AddressedCommentsMap;
+  sidebarNotesMarkdown: string;
 
   initialize: () => Promise<void>;
   preloadInstalledIdes: () => Promise<void>;
@@ -112,9 +114,12 @@ interface AppStore {
   isCommentAddressed: (repoPath: string, prNumber: number, commentId: string) => boolean;
   getAddressedCount: (repoPath: string, prNumber: number) => number;
   clearAddressedComments: (repoPath: string, prNumber: number) => void;
+  setSidebarNotesMarkdown: (markdown: string) => Promise<void>;
 }
 
 const STORE_PATH = 'autopilot-settings.json';
+const persistedStore = new LazyStore(STORE_PATH, { autoSave: true, defaults: {} });
+let sidebarNotesSaveQueue = Promise.resolve();
 const AGENT_COMPLETED_TTL_MS = 5000;
 
 const KNOWN_AGENTS: AIAgent[] = ['opencode', 'claude', 'droid', 'amp', 'codex'];
@@ -233,6 +238,7 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
     const defaultAIAgent = await store.get<AIAgent>('defaultAIAgent');
     const repoAvatarCache = await store.get<Record<string, string>>('repoAvatarCache');
     const worktreeOrdersByRepo = await store.get<Record<string, string[]>>('worktreeOrdersByRepo');
+    const sidebarNotesMarkdown = await store.get<string>('sidebarNotesMarkdown');
     const rawAddressed = await store.get<Record<string, string[]>>('addressedComments');
     let addressedComments: AddressedCommentsMap | undefined;
     if (rawAddressed) {
@@ -248,9 +254,10 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
       addressedComments,
       repoAvatarCache: repoAvatarCache || {},
       worktreeOrdersByRepo: worktreeOrdersByRepo || {},
+      sidebarNotesMarkdown: sidebarNotesMarkdown || "",
     };
   } catch {
-    return { repositoryPaths: [], repoAvatarCache: {}, worktreeOrdersByRepo: {} };
+    return { repositoryPaths: [], repoAvatarCache: {}, worktreeOrdersByRepo: {}, sidebarNotesMarkdown: "" };
   }
 }
 
@@ -305,6 +312,13 @@ async function saveRepoAvatarCacheEntry(repoPath: string, avatarUrl: string | nu
   }
 }
 
+async function saveSidebarNotesMarkdown(markdown: string): Promise<void> {
+  sidebarNotesSaveQueue = sidebarNotesSaveQueue.catch(() => undefined).then(async () => {
+    await persistedStore.set('sidebarNotesMarkdown', markdown);
+  });
+  await sidebarNotesSaveQueue;
+}
+
 async function fetchRepoAvatarUrl(repoPath: string): Promise<string | null> {
   try {
     const nameWithOwner = await invoke<string | null>('get_repo_from_remote', { repoPath });
@@ -348,6 +362,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   agentSidebarLifecycleEnabled: true,
   defaultAIAgent: 'opencode',
   addressedComments: {},
+  sidebarNotesMarkdown: "",
 
   initialize: async () => {
     if (get().isInitialized) return;
@@ -370,6 +385,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     if (persisted.worktreeOrdersByRepo) {
       set({ worktreeOrdersByRepo: persisted.worktreeOrdersByRepo });
+    }
+
+    if (persisted.sidebarNotesMarkdown !== undefined) {
+      set({ sidebarNotesMarkdown: persisted.sidebarNotesMarkdown });
     }
     
     const repoAvatarCache = persisted.repoAvatarCache || {};
@@ -1194,5 +1213,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
       saveAddressedComments(rest);
       return { addressedComments: rest };
     });
+  },
+
+  setSidebarNotesMarkdown: async (markdown: string) => {
+    set({ sidebarNotesMarkdown: markdown });
+    try {
+      await saveSidebarNotesMarkdown(markdown);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error('Failed to save sidebar notes:', message);
+      toast.error('Failed to save sidebar notes');
+    }
   },
 }));
