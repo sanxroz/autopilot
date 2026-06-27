@@ -541,6 +541,8 @@ fn resolve_candidate_for_worktree(
         {
             return Some(candidate.status.clone());
         }
+
+        return None;
     }
 
     candidates
@@ -2176,4 +2178,72 @@ pub async fn get_notifications() -> Result<Vec<GithubNotification>, String> {
         .collect();
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pr_status(number: u64, state: &str) -> PRStatus {
+        PRStatus {
+            number,
+            title: format!("PR {number}"),
+            url: format!("https://example.com/pr/{number}"),
+            state: state.to_string(),
+            merged: false,
+            draft: false,
+            review_decision: None,
+            checks_status: None,
+            mergeable: None,
+            additions: 0,
+            deletions: 0,
+            head_branch: "feature".to_string(),
+            base_branch: "master".to_string(),
+            author: "tester".to_string(),
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: "2026-01-01T00:00:00Z".to_string(),
+            labels: Vec::new(),
+            requested_reviewers: Vec::new(),
+            is_bot: false,
+        }
+    }
+
+    #[test]
+    fn resolve_candidate_for_worktree_requires_matching_head_oid_when_present() {
+        let worktree = WorktreePRLookup {
+            worktree_path: "/tmp/worktree".to_string(),
+            branch: "feature".to_string(),
+            head_oid: Some("wanted".to_string()),
+        };
+        let candidates = vec![PRStatusCandidate {
+            status: pr_status(42, "open"),
+            head_oid: Some("different".to_string()),
+        }];
+
+        assert!(resolve_candidate_for_worktree(&worktree, &candidates).is_none());
+    }
+
+    #[test]
+    fn resolve_candidate_for_worktree_falls_back_to_open_pr_without_head_oid() {
+        let worktree = WorktreePRLookup {
+            worktree_path: "/tmp/worktree".to_string(),
+            branch: "feature".to_string(),
+            head_oid: None,
+        };
+        let candidates = vec![
+            PRStatusCandidate {
+                status: pr_status(41, "closed"),
+                head_oid: Some("old".to_string()),
+            },
+            PRStatusCandidate {
+                status: pr_status(42, "open"),
+                head_oid: Some("current".to_string()),
+            },
+        ];
+
+        let resolved = resolve_candidate_for_worktree(&worktree, &candidates)
+            .expect("expected open PR fallback");
+
+        assert_eq!(resolved.number, 42);
+    }
 }
