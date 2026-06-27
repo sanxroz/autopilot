@@ -541,14 +541,18 @@ fn resolve_candidate_for_worktree(
         {
             return Some(candidate.status.clone());
         }
+    }
 
+    let mut open_candidates = candidates
+        .iter()
+        .filter(|candidate| candidate.status.state == "open");
+    let first_open = open_candidates.next()?;
+
+    if open_candidates.next().is_some() {
         return None;
     }
 
-    candidates
-        .iter()
-        .find(|candidate| candidate.status.state == "open")
-        .map(|candidate| candidate.status.clone())
+    Some(first_open.status.clone())
 }
 
 fn build_branch_fetch_result(
@@ -2209,16 +2213,71 @@ mod tests {
     }
 
     #[test]
-    fn resolve_candidate_for_worktree_requires_matching_head_oid_when_present() {
+    fn resolve_candidate_for_worktree_prefers_matching_head_oid_when_present() {
         let worktree = WorktreePRLookup {
             worktree_path: "/tmp/worktree".to_string(),
             branch: "feature".to_string(),
             head_oid: Some("wanted".to_string()),
         };
-        let candidates = vec![PRStatusCandidate {
-            status: pr_status(42, "open"),
-            head_oid: Some("different".to_string()),
-        }];
+        let candidates = vec![
+            PRStatusCandidate {
+                status: pr_status(41, "open"),
+                head_oid: Some("different".to_string()),
+            },
+            PRStatusCandidate {
+                status: pr_status(42, "open"),
+                head_oid: Some("wanted".to_string()),
+            },
+        ];
+
+        let resolved = resolve_candidate_for_worktree(&worktree, &candidates)
+            .expect("expected exact head match");
+
+        assert_eq!(resolved.number, 42);
+    }
+
+    #[test]
+    fn resolve_candidate_for_worktree_falls_back_to_single_open_pr_when_head_oid_is_stale() {
+        let worktree = WorktreePRLookup {
+            worktree_path: "/tmp/worktree".to_string(),
+            branch: "feature".to_string(),
+            head_oid: Some("stale-local-head".to_string()),
+        };
+        let candidates = vec![
+            PRStatusCandidate {
+                status: pr_status(41, "closed"),
+                head_oid: Some("older".to_string()),
+            },
+            PRStatusCandidate {
+                status: pr_status(42, "open"),
+                head_oid: Some("current-remote-head".to_string()),
+            },
+        ];
+
+        let resolved = resolve_candidate_for_worktree(&worktree, &candidates)
+            .expect("expected open PR fallback for stale worktree");
+
+        assert_eq!(resolved.number, 42);
+    }
+
+    #[test]
+    fn resolve_candidate_for_worktree_returns_none_when_multiple_open_prs_exist_without_head_match()
+    {
+        let worktree = WorktreePRLookup {
+            worktree_path: "/tmp/worktree".to_string(),
+            branch: "feature".to_string(),
+            head_oid: Some("stale-local-head".to_string()),
+        };
+        let candidates = vec![
+            PRStatusCandidate {
+                status: pr_status(41, "open"),
+                head_oid: Some("older".to_string()),
+            },
+            PRStatusCandidate {
+                status: pr_status(42, "open"),
+                head_oid: Some("current-remote-head".to_string()),
+            },
+        ];
 
         assert!(resolve_candidate_for_worktree(&worktree, &candidates).is_none());
     }
