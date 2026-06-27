@@ -1,0 +1,21 @@
+src-tauri/src/commands/github.rs
+  s_8ba8a609d8cfa9::t_ad34bd58a92352 1949
+  s_8ba8a609d8cfa9::t_e1990280b39596 721,723
+  s_8ba8a609d8cfa9::t_4e719bd5a6fad0 611-618,786-800,804,808-814,816
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "a8aaed3895bec1f042b512a7abf07e5ed9e618b1",
+  "prompts": {},
+  "sessions": {
+    "s_8ba8a609d8cfa9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0973-4409-7b43-811b-39610d1ededa",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
