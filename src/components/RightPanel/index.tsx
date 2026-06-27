@@ -11,9 +11,10 @@ import {
   Diff,
   GitBranch,
   Loader,
+  FileText,
   AppWindow,
 } from "lucide-react";
-import { usePRStatusForBranch } from "../../hooks/usePRStatus";
+import { usePRStatusForWorktree } from "../../hooks/usePRStatus";
 import { useMergePR } from "../../hooks/useMergePR";
 import {
   getOpenWithIconSources,
@@ -25,6 +26,7 @@ import { ChecksTab } from "./ChecksTab";
 import { CommentsTab } from "./CommentsTab";
 import { DiffTab } from "./DiffTab";
 import { GitTab } from "./GitTab";
+import { NotesTab } from "./NotesTab";
 import { Tabs, TabsList, TabsTrigger } from "../ui/segmented-control";
 import * as Tooltip from "../ui/tooltip";
 import {
@@ -33,12 +35,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
-import type { InstalledIde } from "../../types";
+import { type InstalledIde } from "../../types";
 interface RightPanelProps {
   worktreePath: string | null;
 }
 
-type TabId = "checks" | "comments" | "changes" | "git";
+type TabId = "checks" | "comments" | "notes" | "changes" | "git";
 
 const MIN_WIDTH = 300;
 const MAX_WIDTH = 800;
@@ -77,7 +79,7 @@ function OpenWithIcon({ ide }: { readonly ide: InstalledIde }) {
   );
 }
 
-function isReadyToMerge(prStatus: NonNullable<ReturnType<typeof usePRStatusForBranch>>): boolean {
+function isReadyToMerge(prStatus: NonNullable<ReturnType<typeof usePRStatusForWorktree>>): boolean {
   return (
     !prStatus.merged &&
     !prStatus.draft &&
@@ -96,7 +98,6 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>("checks");
   const [openingIdeId, setOpeningIdeId] = useState<string | null>(null);
 
-  const selectedWorktree = useAppStore((state) => state.selectedWorktree);
   const repositories = useAppStore((state) => state.repositories);
   const installedIdes = useAppStore((state) => state.installedIdes);
   const isLoadingIdes = useAppStore((state) => state.isLoadingInstalledIdes);
@@ -105,8 +106,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
     repositories.find((r) => r.worktrees.some((w) => w.path === worktreePath))
       ?.info.path ?? null;
 
-  const branch = selectedWorktree?.branch ?? null;
-  const prStatus = usePRStatusForBranch(repoPath ?? "", branch);
+  const prStatus = usePRStatusForWorktree(worktreePath);
 
   const { isMerging, hasMerged, handleMerge } = useMergePR({
     repoPath,
@@ -201,6 +201,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         color: getChecksColor(),
       },
       { id: "comments", label: "Comments", icon: ClipboardList },
+      { id: "notes", label: "Notes", icon: FileText },
       ...(showChangesTab
         ? [{ id: "changes" as TabId, label: "Changes", icon: Diff }]
         : []),
@@ -408,6 +409,22 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
               className="h-full overflow-hidden flex flex-col"
             >
               <DiffTab worktreePath={worktreePath} />
+            </motion.div>
+          )}
+
+          {activeTab === "notes" && (
+            <motion.div
+              key="notes"
+              initial={reducedMotion ? { opacity: 1 } : { opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={reducedMotion ? { opacity: 0 } : { opacity: 0, x: -10 }}
+              transition={{
+                duration: reducedMotion ? 0 : 0.15,
+                ease: [0.215, 0.61, 0.355, 1],
+              }}
+              className="h-full overflow-hidden flex flex-col"
+            >
+              <NotesTab worktreePath={worktreePath} />
             </motion.div>
           )}
 

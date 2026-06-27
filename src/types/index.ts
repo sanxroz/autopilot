@@ -8,6 +8,7 @@ export interface WorktreeInfo {
   readonly name: string;
   readonly path: string;
   readonly branch: string | null;
+  readonly head_oid?: string | null;
   readonly last_modified: string | null;
   readonly diff_stats?: DiffStats;
 }

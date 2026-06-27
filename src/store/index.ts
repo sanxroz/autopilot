@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import { load } from '@tauri-apps/plugin-store';
+import { LazyStore, load } from '@tauri-apps/plugin-store';
 import { toast } from 'sonner';
 import type {
   Repository,
@@ -34,6 +34,8 @@ interface PersistedState {
   worktreeOrdersByRepo?: Record<string, string[]>;
   autoFetchSettings?: AutoFetchSettings;
   repoPostCreateCommandsByPath?: Record<string, string>;
+  sidebarNotesByWorktreePath?: Record<string, string>;
+  sidebarNotesMarkdown?: string;
 }
 
 interface WorktreeTerminals {
@@ -60,6 +62,7 @@ interface AppStore {
   isInitialized: boolean;
   githubSettings: GitHubSettings;
   prStatusByBranch: Record<string, Record<string, PRStatus>>;
+  prStatusByWorktreePath: Record<string, PRStatus>;
   prDataCache: Record<string, PRDataCache>;
   worktreeOrdersByRepo: Record<string, string[]>;
   collapsedRepos: Set<string>;
@@ -77,6 +80,7 @@ interface AppStore {
   autoFetchSettings: AutoFetchSettings;
   repoPostCreateCommandsByPath: Record<string, string>;
   worktreeSetupByRepoPath: Record<string, string[]>;
+  sidebarNotesByWorktreePath: Record<string, string>;
 
   initialize: () => Promise<void>;
   preloadInstalledIdes: () => Promise<void>;
@@ -125,9 +129,17 @@ interface AppStore {
   isCommentAddressed: (repoPath: string, prNumber: number, commentId: string) => boolean;
   getAddressedCount: (repoPath: string, prNumber: number) => number;
   clearAddressedComments: (repoPath: string, prNumber: number) => void;
+  getSidebarNotesMarkdown: (worktreePath: string | null) => string;
+  loadSidebarNotesMarkdownFromDisk: (worktreePath: string) => Promise<string>;
+  replaceSidebarNotesMarkdown: (worktreePath: string, markdown: string) => void;
+  setSidebarNotesMarkdown: (worktreePath: string, markdown: string) => Promise<void>;
+  flushSidebarNotesPersistence: () => Promise<void>;
 }
 
 const STORE_PATH = 'autopilot-settings.json';
+const persistedStore = new LazyStore(STORE_PATH, { autoSave: true, defaults: {} });
+let sidebarNotesSaveQueue = Promise.resolve();
+let pendingLegacySidebarNotesMarkdown: string | null = null;
 const AGENT_COMPLETED_TTL_MS = 5000;
 const DEFAULT_AUTO_FETCH_SETTINGS: AutoFetchSettings = {
   enabled: false,
@@ -252,6 +264,8 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
     const worktreeOrdersByRepo = await store.get<Record<string, string[]>>('worktreeOrdersByRepo');
     const autoFetchSettings = await store.get<AutoFetchSettings>('autoFetchSettings');
     const repoPostCreateCommandsByPath = await store.get<Record<string, string>>('repoPostCreateCommandsByPath');
+    const sidebarNotesByWorktreePath = await store.get<Record<string, string>>('sidebarNotesByWorktreePath');
+    const sidebarNotesMarkdown = await store.get<string>('sidebarNotesMarkdown');
     const rawAddressed = await store.get<Record<string, string[]>>('addressedComments');
     let addressedComments: AddressedCommentsMap | undefined;
     if (rawAddressed) {
@@ -269,6 +283,8 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
       worktreeOrdersByRepo: worktreeOrdersByRepo || {},
       autoFetchSettings: autoFetchSettings || DEFAULT_AUTO_FETCH_SETTINGS,
       repoPostCreateCommandsByPath: repoPostCreateCommandsByPath || {},
+      sidebarNotesByWorktreePath: sidebarNotesByWorktreePath || {},
+      sidebarNotesMarkdown: sidebarNotesMarkdown || "",
     };
   } catch {
     return {
@@ -277,6 +293,8 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
       worktreeOrdersByRepo: {},
       autoFetchSettings: DEFAULT_AUTO_FETCH_SETTINGS,
       repoPostCreateCommandsByPath: {},
+      sidebarNotesByWorktreePath: {},
+      sidebarNotesMarkdown: "",
     };
   }
 }
@@ -342,6 +360,32 @@ async function saveStoreValue<T>(key: string, value: T): Promise<void> {
   }
 }
 
+async function saveSidebarNotesByWorktreePath(sidebarNotesByWorktreePath: Record<string, string>): Promise<void> {
+  sidebarNotesSaveQueue = sidebarNotesSaveQueue.catch(() => undefined).then(async () => {
+    await persistedStore.set('sidebarNotesByWorktreePath', sidebarNotesByWorktreePath);
+    await persistedStore.delete('sidebarNotesMarkdown');
+    await persistedStore.save();
+  });
+  await sidebarNotesSaveQueue;
+}
+
+async function flushSidebarNotesPersistence(): Promise<void> {
+  await sidebarNotesSaveQueue.catch(() => undefined);
+  await persistedStore.save();
+}
+
+async function loadSidebarNotesMarkdownFromDisk(worktreePath: string): Promise<string> {
+  try {
+    const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
+    const sidebarNotesByWorktreePath =
+      await store.get<Record<string, string>>('sidebarNotesByWorktreePath');
+    return sidebarNotesByWorktreePath?.[worktreePath] ?? '';
+  } catch (error) {
+    console.error('Failed to load sidebar notes from disk:', error);
+    return '';
+  }
+}
+
 async function fetchRepoAvatarUrl(repoPath: string): Promise<string | null> {
   try {
     const nameWithOwner = await invoke<string | null>('get_repo_from_remote', { repoPath });
@@ -371,6 +415,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   isInitialized: false,
   githubSettings: DEFAULT_GITHUB_SETTINGS,
   prStatusByBranch: {},
+  prStatusByWorktreePath: {},
   prDataCache: {},
   worktreeOrdersByRepo: {},
   collapsedRepos: new Set<string>(),
@@ -388,6 +433,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   autoFetchSettings: DEFAULT_AUTO_FETCH_SETTINGS,
   repoPostCreateCommandsByPath: {},
   worktreeSetupByRepoPath: {},
+  sidebarNotesByWorktreePath: {},
 
   initialize: async () => {
     if (get().isInitialized) return;
@@ -418,6 +464,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     if (persisted.repoPostCreateCommandsByPath) {
       set({ repoPostCreateCommandsByPath: persisted.repoPostCreateCommandsByPath });
+    }
+
+    pendingLegacySidebarNotesMarkdown =
+      Object.keys(persisted.sidebarNotesByWorktreePath ?? {}).length === 0 && persisted.sidebarNotesMarkdown
+        ? persisted.sidebarNotesMarkdown
+        : null;
+
+    if (persisted.sidebarNotesByWorktreePath) {
+      set({ sidebarNotesByWorktreePath: persisted.sidebarNotesByWorktreePath });
     }
     
     const repoAvatarCache = persisted.repoAvatarCache || {};
@@ -627,6 +682,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const state = get();
     
     if (state.selectedWorktree?.path === worktree.path) return;
+
+    if (pendingLegacySidebarNotesMarkdown && !state.sidebarNotesByWorktreePath[worktree.path]) {
+      const nextSidebarNotesByWorktreePath = {
+        ...state.sidebarNotesByWorktreePath,
+        [worktree.path]: pendingLegacySidebarNotesMarkdown,
+      };
+      pendingLegacySidebarNotesMarkdown = null;
+      set({ sidebarNotesByWorktreePath: nextSidebarNotesByWorktreePath });
+      void saveSidebarNotesByWorktreePath(nextSidebarNotesByWorktreePath);
+    }
 
     const existing = state.terminalsByWorktree[worktree.path];
     
@@ -935,6 +1000,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setPRStatusBatch: (results) => {
     set((state) => {
       const nextByRepo = { ...state.prStatusByBranch };
+      const nextByWorktreePath = { ...state.prStatusByWorktreePath };
 
       for (const result of results) {
         const existingRepoStatuses = nextByRepo[result.repo_path] ?? {};
@@ -947,9 +1013,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
           nextRepoStatuses[branch] = prStatus;
         }
 
-        for (const branch of result.checked_branches) {
-          if (!refreshedStatuses.has(branch)) {
-            delete nextRepoStatuses[branch];
+        for (const worktreeStatus of result.worktree_statuses) {
+          if (worktreeStatus.status) {
+            nextByWorktreePath[worktreeStatus.worktree_path] = worktreeStatus.status;
+            continue;
+          }
+
+          delete nextByWorktreePath[worktreeStatus.worktree_path];
+          if (!refreshedStatuses.has(worktreeStatus.branch)) {
+            delete nextRepoStatuses[worktreeStatus.branch];
           }
         }
 
@@ -958,6 +1030,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       return {
         prStatusByBranch: nextByRepo,
+        prStatusByWorktreePath: nextByWorktreePath,
       };
     });
   },
@@ -1333,4 +1406,43 @@ export const useAppStore = create<AppStore>((set, get) => ({
       return { addressedComments: rest };
     });
   },
+
+  getSidebarNotesMarkdown: (worktreePath: string | null) => {
+    if (!worktreePath) {
+      return '';
+    }
+
+    return get().sidebarNotesByWorktreePath[worktreePath] ?? '';
+  },
+
+  loadSidebarNotesMarkdownFromDisk: async (worktreePath: string) => {
+    return loadSidebarNotesMarkdownFromDisk(worktreePath);
+  },
+
+  replaceSidebarNotesMarkdown: (worktreePath: string, markdown: string) => {
+    set((state) => ({
+      sidebarNotesByWorktreePath: {
+        ...state.sidebarNotesByWorktreePath,
+        [worktreePath]: markdown,
+      },
+    }));
+  },
+
+  setSidebarNotesMarkdown: async (worktreePath: string, markdown: string) => {
+    const nextSidebarNotesByWorktreePath = {
+      ...get().sidebarNotesByWorktreePath,
+      [worktreePath]: markdown,
+    };
+    pendingLegacySidebarNotesMarkdown = null;
+    set({ sidebarNotesByWorktreePath: nextSidebarNotesByWorktreePath });
+    try {
+      await saveSidebarNotesByWorktreePath(nextSidebarNotesByWorktreePath);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error('Failed to save sidebar notes:', message);
+      toast.error('Failed to save sidebar notes');
+    }
+  },
+
+  flushSidebarNotesPersistence,
 }));

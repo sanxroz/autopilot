@@ -29,6 +29,7 @@ pub struct WorktreeInfo {
     pub name: String,
     pub path: String,
     pub branch: Option<String>,
+    pub head_oid: Option<String>,
     pub last_modified: Option<String>,
     pub diff_stats: Option<DiffStats>,
 }
@@ -96,6 +97,12 @@ fn get_worktree_branch(repo_path: &std::path::Path) -> Option<String> {
     let repo = Repository::open(repo_path).ok()?;
     let head = repo.head().ok()?;
     head.shorthand().map(String::from)
+}
+
+fn get_worktree_head_oid(repo_path: &std::path::Path) -> Option<String> {
+    let repo = Repository::open(repo_path).ok()?;
+    let head = repo.head().ok()?;
+    head.target().map(|oid| oid.to_string())
 }
 
 fn get_push_remote(repo: &Repository) -> Result<String, String> {
@@ -330,12 +337,14 @@ pub fn list_worktrees(repo_path: String) -> Result<Vec<WorktreeInfo>, String> {
     let main_workdir = repo.workdir().map(|p| p.to_path_buf());
     if let Some(main_path) = main_workdir {
         let branch = get_worktree_branch(&main_path);
+        let head_oid = get_worktree_head_oid(&main_path);
         let last_modified = get_last_modified(&main_path);
 
         result.push(WorktreeInfo {
             name: "main".to_string(),
             path: main_path.to_string_lossy().to_string(),
             branch,
+            head_oid,
             last_modified,
             diff_stats: None,
         });
@@ -345,12 +354,14 @@ pub fn list_worktrees(repo_path: String) -> Result<Vec<WorktreeInfo>, String> {
         if let Ok(wt) = repo.find_worktree(wt_name) {
             let wt_path = wt.path().to_path_buf();
             let branch = get_worktree_branch(&wt_path);
+            let head_oid = get_worktree_head_oid(&wt_path);
             let last_modified = get_last_modified(&wt_path);
 
             result.push(WorktreeInfo {
                 name: wt_name.to_string(),
                 path: wt_path.to_string_lossy().to_string(),
                 branch,
+                head_oid,
                 last_modified,
                 diff_stats: None,
             });
@@ -364,6 +375,7 @@ pub fn list_worktrees(repo_path: String) -> Result<Vec<WorktreeInfo>, String> {
 pub fn get_worktree_info(worktree_path: String) -> Result<WorktreeInfo, String> {
     let path = PathBuf::from(&worktree_path);
     let branch = get_worktree_branch(&path);
+    let head_oid = get_worktree_head_oid(&path);
     let last_modified = get_last_modified(&path);
     let diff_stats = get_diff_stats_vs_origin_default(&path);
 
@@ -377,6 +389,7 @@ pub fn get_worktree_info(worktree_path: String) -> Result<WorktreeInfo, String> 
         name,
         path: worktree_path,
         branch,
+        head_oid,
         last_modified,
         diff_stats,
     })
@@ -624,6 +637,7 @@ pub async fn create_worktree_auto(repo_path: String) -> Result<WorktreeInfo, Str
             name: worktree_name.clone(),
             path: wt_path.to_string_lossy().to_string(),
             branch: Some(worktree_name),
+            head_oid: get_worktree_head_oid(&wt_path),
             last_modified,
             diff_stats,
         })
@@ -683,6 +697,7 @@ pub async fn create_worktree(
             name: worktree_name,
             path: wt_path.to_string_lossy().to_string(),
             branch: Some(branch_name),
+            head_oid: get_worktree_head_oid(&wt_path),
             last_modified,
             diff_stats,
         })

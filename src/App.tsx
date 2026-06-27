@@ -11,6 +11,7 @@ import { UpdateNotification } from "./components/UpdateNotification";
 import { Toaster } from "sonner";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "./store";
 import { usePRStatusPolling } from "./hooks/usePRStatus";
 import { useGitWatcher } from "./hooks/useGitWatcher";
@@ -32,6 +33,7 @@ function App() {
   const settingsOpen = useAppStore((state) => state.settingsOpen);
   const toggleSettings = useAppStore((state) => state.toggleSettings);
   const setAgentRunState = useAppStore((state) => state.setAgentRunState);
+  const flushSidebarNotesPersistence = useAppStore((state) => state.flushSidebarNotesPersistence);
   const agentSidebarLifecycleEnabled = useAppStore((state) => state.agentSidebarLifecycleEnabled);
   const repositories = useAppStore((state) => state.repositories);
   const autoFetchSettings = useAppStore((state) => state.autoFetchSettings);
@@ -50,6 +52,55 @@ function App() {
   useEffect(() => {
     preloadOpenWithIcons(installedIdes);
   }, [installedIdes]);
+
+  useEffect(() => {
+    const appWindow = getCurrentWindow();
+    let isMounted = true;
+    let isClosing = false;
+    let unlistenCloseRequested: (() => void) | null = null;
+
+    const handleBeforeUnload = () => {
+      void flushSidebarNotesPersistence();
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    appWindow.onCloseRequested(async (event) => {
+      if (isClosing) {
+        return;
+      }
+
+      event.preventDefault();
+
+      try {
+        await flushSidebarNotesPersistence();
+      } catch (error) {
+        console.error("Failed to flush sidebar notes before close:", error);
+      }
+
+      isClosing = true;
+      await appWindow.destroy();
+    })
+      .then((fn) => {
+        if (isMounted) {
+          unlistenCloseRequested = fn;
+          return;
+        }
+
+        fn();
+      })
+      .catch((error) => {
+        console.error("Failed to subscribe to close-requested events:", error);
+      });
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      if (unlistenCloseRequested) {
+        unlistenCloseRequested();
+      }
+    };
+  }, [flushSidebarNotesPersistence]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

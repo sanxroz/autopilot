@@ -24,9 +24,21 @@ export interface PRStatus {
   is_bot: boolean;
 }
 
-export interface RepoWithBranches {
+export interface WorktreePRLookup {
+  worktree_path: string;
+  branch: string;
+  head_oid: string | null;
+}
+
+export interface RepoWithWorktrees {
   repo_path: string;
-  branches: string[];
+  worktrees: WorktreePRLookup[];
+}
+
+export interface WorktreePRStatus {
+  worktree_path: string;
+  branch: string;
+  status: PRStatus | null;
 }
 
 export interface RepoPathInput {
@@ -36,8 +48,9 @@ export interface RepoPathInput {
 export interface RepoPRStatuses {
   repo_path: string;
   statuses: PRStatus[];
-  checked_branches: string[];
-  failed_branches: string[];
+  worktree_statuses: WorktreePRStatus[];
+  checked_worktrees: string[];
+  failed_worktrees: string[];
 }
 
 export interface GitHubSettings {
@@ -53,16 +66,45 @@ export const DEFAULT_GITHUB_SETTINGS: GitHubSettings = {
 };
 export interface PRCheck {
   name: string;
-  status: string;
-  conclusion: string | null;
+  bucket: string;
+  state: string;
+  description: string | null;
+  workflow: string | null;
+  event: string | null;
   url: string | null;
   started_at: string | null;
   completed_at: string | null;
+  is_actions_job: boolean;
+  job_id: number | null;
+}
+
+export interface PRChecksSummary {
+  total: number;
+  passing: number;
+  failing: number;
+  pending: number;
+  skipped: number;
+  cancelled: number;
 }
 
 export interface PRChecksResult {
   checks: PRCheck[];
   overall_status: string;
+  summary: PRChecksSummary;
+}
+
+export interface PRCheckStep {
+  name: string;
+  status: string;
+  conclusion: string | null;
+  number: number;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export interface PRCheckDetail {
+  steps: PRCheckStep[];
+  failed_log_excerpt: string | null;
 }
 
 export interface CreatePRResult {
