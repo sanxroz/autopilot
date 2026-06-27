@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
-import { load } from '@tauri-apps/plugin-store';
+import { LazyStore, load } from '@tauri-apps/plugin-store';
 import { toast } from 'sonner';
 import type {
   Repository,
@@ -114,6 +114,8 @@ interface AppStore {
 }
 
 const STORE_PATH = 'autopilot-settings.json';
+const persistedStore = new LazyStore(STORE_PATH, { autoSave: true, defaults: {} });
+let sidebarNotesSaveQueue = Promise.resolve();
 const AGENT_COMPLETED_TTL_MS = 5000;
 
 const KNOWN_AGENTS: AIAgent[] = ['opencode', 'claude', 'droid', 'amp', 'codex'];
@@ -307,13 +309,10 @@ async function saveRepoAvatarCacheEntry(repoPath: string, avatarUrl: string | nu
 }
 
 async function saveSidebarNotesMarkdown(markdown: string): Promise<void> {
-  try {
-    const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
-    await store.set('sidebarNotesMarkdown', markdown);
-    await store.save();
-  } catch (e) {
-    console.error('Failed to save sidebar notes:', e);
-  }
+  sidebarNotesSaveQueue = sidebarNotesSaveQueue.catch(() => undefined).then(async () => {
+    await persistedStore.set('sidebarNotesMarkdown', markdown);
+  });
+  await sidebarNotesSaveQueue;
 }
 
 async function fetchRepoAvatarUrl(repoPath: string): Promise<string | null> {
@@ -1192,6 +1191,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setSidebarNotesMarkdown: async (markdown: string) => {
     set({ sidebarNotesMarkdown: markdown });
-    await saveSidebarNotesMarkdown(markdown);
+    try {
+      await saveSidebarNotesMarkdown(markdown);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      console.error('Failed to save sidebar notes:', message);
+      toast.error('Failed to save sidebar notes');
+    }
   },
 }));
