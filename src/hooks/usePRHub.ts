@@ -90,7 +90,9 @@ export function usePRHubPolling() {
       if (pollingRef.current) {
         clearInterval(pollingRef.current);
       }
-      pollingRef.current = setInterval(refresh, githubSettings.pollingIntervalMs);
+      pollingRef.current = setInterval(() => {
+        void refresh();
+      }, githubSettings.pollingIntervalMs);
     };
 
     const stopPolling = () => {
