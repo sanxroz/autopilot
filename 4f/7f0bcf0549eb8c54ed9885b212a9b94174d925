@@ -1,0 +1,19 @@
+.gitignore
+  s_5b08a8ce141237::t_fe484ac25784c5 30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "4f7f0bcf0549eb8c54ed9885b212a9b94174d925",
+  "prompts": {},
+  "sessions": {
+    "s_5b08a8ce141237": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0930-c4a0-7760-b9ca-6b83f278a48d",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
