@@ -84,13 +84,16 @@ async function acquireLock(lockPath) {
       try {
         const lockContents = await readFile(lockPath, "utf8");
         const lockPid = Number(lockContents.trim());
-        if (Number.isInteger(lockPid)) {
-          try {
-            process.kill(lockPid, 0);
-          } catch {
-            await unlink(lockPath);
-            continue;
-          }
+        if (!Number.isInteger(lockPid) || lockPid <= 0) {
+          await unlink(lockPath);
+          continue;
+        }
+
+        try {
+          process.kill(lockPid, 0);
+        } catch {
+          await unlink(lockPath);
+          continue;
         }
       } catch {
         // Keep waiting if the lock is transiently unavailable or unreadable.
