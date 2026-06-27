@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { ChevronDown, GitFork } from "lucide-react";
+import { ChevronDown, GitGraph } from "lucide-react";
 import { cn } from "../utils/cn";
 
 interface StackGroupProps {
@@ -34,7 +34,7 @@ export function StackGroup({ label, count, children }: StackGroupProps) {
         aria-label={`Stack: ${label}, ${count} PRs, ${collapsed ? "collapsed" : "expanded"}`}
       >
         <div className="flex items-center gap-2 w-full min-w-0">
-          <GitFork className="h-4 w-4 text-tertiary flex-shrink-0" />
+          <GitGraph className="h-3.5 w-3.5 flex-shrink-0 text-tertiary" />
           <span className="text-sm font-medium truncate min-w-0 flex-1 text-primary">
             {label}
           </span>
@@ -46,7 +46,7 @@ export function StackGroup({ label, count, children }: StackGroupProps) {
             <ChevronDown className="h-3.5 w-3.5" />
           </motion.span>
         </div>
-        <div className="text-xs flex items-center gap-1 pl-6 text-secondary">
+        <div className="text-xs flex items-center gap-1 pl-5 text-secondary">
           {count} {count === 1 ? "PR" : "PRs"}
         </div>
       </div>
