@@ -1,0 +1,19 @@
+scripts/autopilot-note.mjs
+  s_300b91b0851a9d::t_65817327a16023 87-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "226da0cee38114dc23e0155047971f8383203c54",
+  "prompts": {},
+  "sessions": {
+    "s_300b91b0851a9d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f09f6-06bc-7df2-b5f0-141ae07f3f28",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
