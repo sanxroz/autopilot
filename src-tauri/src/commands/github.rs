@@ -13,9 +13,11 @@ pub struct PRStatus {
     pub draft: bool,
     pub review_decision: Option<String>,
     pub checks_status: Option<String>,
+    pub mergeable: Option<String>,
     pub additions: u64,
     pub deletions: u64,
     pub head_branch: String,
+    pub base_branch: String,
     pub author: String,
     pub created_at: String,
     pub updated_at: String,
@@ -124,6 +126,8 @@ struct GhPRResponse {
     #[serde(default)]
     merged_at: Option<String>,
     #[serde(default)]
+    mergeable: Option<String>,
+    #[serde(default)]
     review_decision: Option<String>,
     #[serde(default)]
     status_check_rollup: Vec<GhStatusCheck>,
@@ -132,6 +136,8 @@ struct GhPRResponse {
     #[serde(default)]
     deletions: u64,
     head_ref_name: String,
+    #[serde(default)]
+    base_ref_name: String,
     #[serde(default)]
     author: Option<GhUser>,
     #[serde(default)]
@@ -223,9 +229,14 @@ fn map_gh_pr_to_status(pr: GhPRResponse) -> PRStatus {
         draft: pr.is_draft,
         review_decision: pr.review_decision.filter(|s| !s.is_empty()),
         checks_status: compute_checks_status(&pr.status_check_rollup),
+        mergeable: pr
+            .mergeable
+            .map(|s| s.to_uppercase())
+            .filter(|s| !s.is_empty()),
         additions: pr.additions,
         deletions: pr.deletions,
         head_branch: pr.head_ref_name.clone(),
+        base_branch: pr.base_ref_name.clone(),
         author: author.clone(),
         created_at,
         updated_at,
@@ -279,7 +290,7 @@ pub fn check_gh_auth() -> Result<String, String> {
     }
 }
 
-const PR_JSON_FIELDS: &str = "number,title,url,state,isDraft,mergedAt,reviewDecision,statusCheckRollup,additions,deletions,headRefName,author,createdAt,updatedAt,labels,reviewRequests";
+const PR_JSON_FIELDS: &str = "number,title,url,state,isDraft,mergedAt,mergeable,reviewDecision,statusCheckRollup,additions,deletions,headRefName,baseRefName,author,createdAt,updatedAt,labels,reviewRequests";
 
 #[tauri::command]
 pub async fn get_pr_for_branch(
@@ -386,9 +397,14 @@ fn parse_graphql_pr_node(node: &serde_json::Value) -> Option<PRStatus> {
         .as_str()
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
+    let mergeable = node["mergeable"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_uppercase());
     let additions = node["additions"].as_u64().unwrap_or(0);
     let deletions = node["deletions"].as_u64().unwrap_or(0);
     let head_ref_name = node["headRefName"].as_str()?.to_string();
+    let base_ref_name = node["baseRefName"].as_str().unwrap_or("").to_string();
     let author = node["author"]["login"]
         .as_str()
         .unwrap_or("unknown")
@@ -459,9 +475,11 @@ fn parse_graphql_pr_node(node: &serde_json::Value) -> Option<PRStatus> {
         draft: is_draft,
         review_decision,
         checks_status: compute_checks_status(&checks),
+        mergeable,
         additions,
         deletions,
         head_branch: head_ref_name.clone(),
+        base_branch: base_ref_name.clone(),
         author: author.clone(),
         created_at,
         updated_at,
@@ -487,8 +505,7 @@ fn fetch_all_prs_for_repo(gh_path: &str, repo: RepoWithBranches) -> RepoPRStatus
 
     // Try GraphQL first (single API call for all branches)
     if let Some((owner, name)) = parse_github_owner_repo(&repo.repo_path) {
-        if let Some(result) = fetch_prs_graphql(gh_path, &repo.repo_path, &owner, &name, branches)
-        {
+        if let Some(result) = fetch_prs_graphql(gh_path, &repo.repo_path, &owner, &name, branches) {
             return RepoPRStatuses {
                 repo_path: repo.repo_path,
                 statuses: result.statuses,
@@ -532,7 +549,7 @@ fn fetch_prs_graphql(
                 format!(
                     r#"b{i}: pullRequests(headRefName: "{escaped}", first: 1, states: [OPEN, CLOSED, MERGED], orderBy: {{field: CREATED_AT, direction: DESC}}) {{
                         nodes {{
-                            number title url state isDraft mergedAt reviewDecision additions deletions headRefName
+                            number title url state isDraft mergedAt mergeable reviewDecision additions deletions headRefName baseRefName
                             author {{ login }}
                             createdAt
                             updatedAt
@@ -736,7 +753,9 @@ pub async fn get_all_prs_for_repos(
 
     for repo in repos {
         let gh = gh_path.clone();
-        handles.push(std::thread::spawn(move || fetch_all_prs_for_repo(&gh, repo)));
+        handles.push(std::thread::spawn(move || {
+            fetch_all_prs_for_repo(&gh, repo)
+        }));
 
         if handles.len() >= MAX_CONCURRENT_REPO_FETCHES {
             for handle in handles.drain(..) {
@@ -1479,7 +1498,9 @@ async fn fetch_review_threads_graphql(
                 state: None,
                 path: Some(comment.path),
                 line: comment.line.or(comment.original_line),
-                review_id: comment.pull_request_review.map(|r| r.database_id.to_string()),
+                review_id: comment
+                    .pull_request_review
+                    .map(|r| r.database_id.to_string()),
                 is_resolved,
             });
         }

@@ -1,10 +1,7 @@
-import { useMemo } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import {
   GitBranch,
-  GitPullRequest,
   Diff,
-  LayoutList,
   ChevronsLeft,
   ChevronsRight,
   ChevronLeft,
@@ -25,18 +22,6 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
   const diffViewMode = useAppStore((state) => state.diffViewMode);
   const codeReviewOpen = useAppStore((state) => state.codeReviewOpen);
   const setCodeReviewOpen = useAppStore((state) => state.setCodeReviewOpen);
-  const prHubOpen = useAppStore((state) => state.prHubOpen);
-  const togglePRHub = useAppStore((state) => state.togglePRHub);
-  const prHubData = useAppStore((state) => state.prHubData);
-  const githubSettings = useAppStore((state) => state.githubSettings);
-
-  const hasPendingReviews = useMemo(() => {
-    const authUser = githubSettings?.ghAuthUser;
-    if (!authUser) return false;
-    return Object.values(prHubData)
-      .flat()
-      .some((pr) => pr.requested_reviewers.includes(authUser));
-  }, [prHubData, githubSettings?.ghAuthUser]);
   const reducedMotion = useReducedMotion();
 
   const handleToggleRightPanel = () => {
@@ -71,12 +56,7 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
         data-tauri-drag-region
         className="flex items-center gap-2 text-sm absolute left-1/2 transform -translate-x-1/2 max-w-[50%] overflow-hidden text-secondary"
       >
-        {prHubOpen ? (
-          <>
-            <GitPullRequest className="w-3.5 h-3.5 flex-shrink-0 text-tertiary" />
-            <span className="truncate min-w-0 text-primary">Pull Requests</span>
-          </>
-        ) : branchName && (
+        {branchName && (
           <>
             <GitBranch className="w-3.5 h-3.5 flex-shrink-0 text-tertiary" />
             <span className="truncate min-w-0 text-primary">{branchName}</span>
@@ -111,23 +91,6 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
             <Diff className="w-3.5 h-3.5" />
           </motion.button>
         )}
-        <motion.button
-          onClick={togglePRHub}
-          className={cn(
-            "relative py-1.5 px-2 rounded-md border-none cursor-pointer bg-transparent",
-            prHubOpen ? "text-accent-primary" : "text-tertiary hover:bg-hover hover:text-primary"
-          )}
-          whileHover={reducedMotion ? {} : { scale: 1.05 }}
-          whileTap={reducedMotion ? {} : { scale: 0.95 }}
-          transition={{ duration: 0.15 }}
-          title="PR Hub"
-          aria-label="Toggle PR Hub"
-        >
-          <LayoutList className="w-3.5 h-3.5" />
-          {hasPendingReviews && (
-            <span className="absolute top-1 right-0.5 size-2 rounded-full bg-semantic-error" />
-          )}
-        </motion.button>
         <motion.button
           onClick={handleToggleRightPanel}
           className={cn(

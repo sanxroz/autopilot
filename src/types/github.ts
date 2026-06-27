@@ -11,9 +11,11 @@ export interface PRStatus {
   draft: boolean;
   review_decision: PRReviewDecision;
   checks_status: ChecksStatus;
+  mergeable: string | null;
   additions: number;
   deletions: number;
   head_branch: string;
+  base_branch: string;
   author: string;
   created_at: string;
   updated_at: string;
@@ -37,22 +39,6 @@ export interface RepoPRStatuses {
   checked_branches: string[];
   failed_branches: string[];
 }
-
-export interface PRHubFilters {
-  scope: 'mine' | 'all';
-  status: 'all' | 'open' | 'draft' | 'ready';
-  review: 'all' | 'needs_review' | 'approved' | 'changes_requested';
-  repo: string;
-  authorType: 'all' | 'human' | 'bot';
-}
-
-export const DEFAULT_PR_HUB_FILTERS: PRHubFilters = {
-  scope: 'mine',
-  status: 'all',
-  review: 'all',
-  repo: 'all',
-  authorType: 'all',
-};
 
 export interface GitHubSettings {
   ghCliAvailable: boolean;
@@ -150,18 +136,6 @@ export interface PRCommit {
   message_headline: string;
   committed_date: string;
   author_name: string;
-}
-
-export interface GithubIssue {
-  number: number;
-  title: string;
-  url: string;
-  state: string;
-  repo_name: string;
-  author: string;
-  created_at: string;
-  updated_at: string;
-  labels: string[];
 }
 
 export interface GithubNotification {

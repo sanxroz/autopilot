@@ -17,7 +17,6 @@ import {
 import { usePRStatusForBranch } from "../../hooks/usePRStatus";
 import { useMergePR } from "../../hooks/useMergePR";
 import { useAppStore } from "../../store";
-import { isReadyToMerge } from "../../lib/pr-domain";
 import { cn } from "../../utils/cn";
 
 import { ChecksTab } from "./ChecksTab";
@@ -45,6 +44,16 @@ const MAX_WIDTH = 800;
 const DEFAULT_WIDTH = 450;
 
 type ReviewMode = "uncommitted" | "base" | "custom";
+
+function isReadyToMerge(prStatus: NonNullable<ReturnType<typeof usePRStatusForBranch>>): boolean {
+  return (
+    !prStatus.merged &&
+    !prStatus.draft &&
+    prStatus.state === "open" &&
+    prStatus.checks_status === "success" &&
+    (prStatus.review_decision === "APPROVED" || prStatus.review_decision === null)
+  );
+}
 
 export function RightPanel({ worktreePath }: RightPanelProps) {
   const reducedMotion = useReducedMotion();

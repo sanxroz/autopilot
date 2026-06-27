@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { load } from '@tauri-apps/plugin-store';
+import { toast } from 'sonner';
 import type {
   Repository,
   RepoInfo,
@@ -14,21 +15,18 @@ import type {
 } from '../types';
 import type {
   GitHubSettings,
-  GithubIssue,
   PRStatus,
   PRChecksResult,
   PRDetailedInfo,
-  PRHubFilters,
   RepoPRStatuses,
 } from '../types/github';
-import { DEFAULT_GITHUB_SETTINGS, DEFAULT_PR_HUB_FILTERS } from '../types/github';
+import { DEFAULT_GITHUB_SETTINGS } from '../types/github';
 import { setThemeMode as setGlobalThemeMode, getThemeMode, type ThemeMode } from '../theme';
 
 interface PersistedState {
   repositoryPaths: string[];
   defaultAIAgent?: AIAgent;
   repoAvatarCache?: Record<string, string>;
-  prHubFilters?: PRHubFilters;
   worktreeOrdersByRepo?: Record<string, string[]>;
 }
 
@@ -57,9 +55,9 @@ interface AppStore {
   prDataCache: Record<string, PRDataCache>;
   worktreeOrdersByRepo: Record<string, string[]>;
   collapsedRepos: Set<string>;
+  deletingWorktreePaths: Set<string>;
   settingsOpen: boolean;
   codeReviewOpen: boolean;
-  prHubOpen: boolean;
   diffOverlayOpen: boolean;
   diffViewMode: DiffViewMode;
   gitFileDiffPreview: { filePath: string; worktreePath: string; isStaged: boolean } | null;
@@ -68,10 +66,6 @@ interface AppStore {
   agentSidebarLifecycleEnabled: boolean;
   defaultAIAgent: AIAgent;
   addressedComments: AddressedCommentsMap;
-  prHubData: Record<string, PRStatus[]>;
-  assignedIssues: GithubIssue[];
-
-  prHubFilters: PRHubFilters;
 
   initialize: () => Promise<void>;
   addRepository: (path: string) => Promise<void>;
@@ -90,12 +84,6 @@ interface AppStore {
   toggleSettings: () => void;
   setCodeReviewOpen: (open: boolean) => void;
   toggleCodeReview: () => void;
-  setPRHubOpen: (open: boolean) => void;
-  togglePRHub: () => void;
-  setPRHubData: (data: Record<string, PRStatus[]>) => void;
-  setAssignedIssues: (issues: GithubIssue[]) => void;
-
-  setPRHubFilters: (filters: Partial<PRHubFilters>) => Promise<void>;
   setDiffOverlayOpen: (open: boolean) => void;
   toggleDiffOverlay: () => void;
   setDiffViewMode: (mode: DiffViewMode) => void;
@@ -240,7 +228,6 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
     const themeMode = await store.get<ThemeMode>('themeMode');
     const defaultAIAgent = await store.get<AIAgent>('defaultAIAgent');
     const repoAvatarCache = await store.get<Record<string, string>>('repoAvatarCache');
-    const prHubFilters = await store.get<PRHubFilters>('prHubFilters');
     const worktreeOrdersByRepo = await store.get<Record<string, string[]>>('worktreeOrdersByRepo');
     const rawAddressed = await store.get<Record<string, string[]>>('addressedComments');
     let addressedComments: AddressedCommentsMap | undefined;
@@ -256,7 +243,6 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
       defaultAIAgent,
       addressedComments,
       repoAvatarCache: repoAvatarCache || {},
-      prHubFilters,
       worktreeOrdersByRepo: worktreeOrdersByRepo || {},
     };
   } catch {
@@ -294,16 +280,6 @@ async function saveAddressedComments(addressedComments: AddressedCommentsMap): P
     await store.save();
   } catch (e) {
     console.error('Failed to save addressed comments:', e);
-  }
-}
-
-async function savePRHubFilters(prHubFilters: PRHubFilters): Promise<void> {
-  try {
-    const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
-    await store.set('prHubFilters', prHubFilters);
-    await store.save();
-  } catch (e) {
-    console.error('Failed to save PR Hub filters:', e);
   }
 }
 
@@ -355,9 +331,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   prDataCache: {},
   worktreeOrdersByRepo: {},
   collapsedRepos: new Set<string>(),
+  deletingWorktreePaths: new Set<string>(),
   settingsOpen: false,
   codeReviewOpen: false,
-  prHubOpen: false,
   diffOverlayOpen: false,
   diffViewMode: 'overlay',
   gitFileDiffPreview: null,
@@ -366,10 +342,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
   agentSidebarLifecycleEnabled: true,
   defaultAIAgent: 'opencode',
   addressedComments: {},
-  prHubData: {},
-  assignedIssues: [],
-
-  prHubFilters: DEFAULT_PR_HUB_FILTERS,
 
   initialize: async () => {
     if (get().isInitialized) return;
@@ -386,10 +358,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     if (persisted.addressedComments) {
       set({ addressedComments: persisted.addressedComments });
-    }
-
-    if (persisted.prHubFilters) {
-      set({ prHubFilters: { ...DEFAULT_PR_HUB_FILTERS, ...persisted.prHubFilters } });
     }
 
     if (persisted.worktreeOrdersByRepo) {
@@ -516,14 +484,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   refreshWorktrees: async (repoPath: string) => {
     const rawWorktrees = await invoke<WorktreeInfo[]>('list_worktrees', { repoPath });
+    const pendingPaths = get().deletingWorktreePaths;
+    const filteredWorktrees = pendingPaths.size > 0
+      ? rawWorktrees.filter((wt) => !pendingPaths.has(wt.path))
+      : rawWorktrees;
     const previousWorktrees = get().repositories.find((repo) => repo.info.path === repoPath)?.worktrees ?? [];
     const stableOrder = previousWorktrees.map((worktree) => worktree.path);
     let nextWorktreeOrders: Record<string, string[]> | null = null;
 
     set((state) => {
       const currentOrder = state.worktreeOrdersByRepo[repoPath];
-      const normalizedOrder = normalizeWorktreeOrder(rawWorktrees, currentOrder);
-      const worktrees = orderWorktrees(rawWorktrees, normalizedOrder, stableOrder);
+      const normalizedOrder = normalizeWorktreeOrder(filteredWorktrees, currentOrder);
+      const worktrees = orderWorktrees(filteredWorktrees, normalizedOrder, stableOrder);
       const orderChanged =
         (currentOrder?.length ?? 0) !== normalizedOrder.length ||
         (currentOrder?.some((path, index) => path !== normalizedOrder[index]) ?? false);
@@ -775,30 +747,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => ({ codeReviewOpen: !state.codeReviewOpen }));
   },
 
-  setPRHubOpen: (open: boolean) => {
-    set({ prHubOpen: open });
-  },
-
-  togglePRHub: () => {
-    set((state) => ({ prHubOpen: !state.prHubOpen }));
-  },
-
-  setPRHubData: (data: Record<string, PRStatus[]>) => {
-    set({ prHubData: data });
-  },
-
-  setAssignedIssues: (issues: GithubIssue[]) => {
-    set({ assignedIssues: issues });
-  },
-
-
-
-  setPRHubFilters: async (filters: Partial<PRHubFilters>) => {
-    const next = { ...get().prHubFilters, ...filters };
-    set({ prHubFilters: next });
-    await savePRHubFilters(next);
-  },
-
   setDiffOverlayOpen: (open: boolean) => {
     set({ diffOverlayOpen: open });
   },
@@ -831,23 +779,67 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   deleteWorktree: async (repoPath: string, worktreeName: string) => {
-    try {
-      const worktreePath = get()
-        .repositories
-        .find((repo) => repo.info.path === repoPath)
-        ?.worktrees.find((wt) => wt.name === worktreeName)?.path;
+    const state = get();
+    const repo = state.repositories.find((r) => r.info.path === repoPath);
+    const worktree = repo?.worktrees.find((wt) => wt.name === worktreeName);
+    if (!worktree) return;
 
-      if (worktreePath) {
-        try {
-          await invoke<number>('close_terminals_for_worktree', { worktreePath });
-        } catch (e) {
-          console.error('Failed to close terminals for worktree:', e);
-        }
+    const previousSelected = state.selectedWorktree;
+
+    set((s) => {
+      const nextDeleting = new Set(s.deletingWorktreePaths);
+      nextDeleting.add(worktree.path);
+      return {
+        deletingWorktreePaths: nextDeleting,
+        repositories: s.repositories.map((r) =>
+          r.info.path === repoPath
+            ? { ...r, worktrees: r.worktrees.filter((wt) => wt.name !== worktreeName) }
+            : r
+        ),
+        selectedWorktree:
+          s.selectedWorktree?.path === worktree.path ? null : s.selectedWorktree,
+      };
+    });
+
+    try {
+      try {
+        await invoke<number>('close_terminals_for_worktree', { worktreePath: worktree.path });
+      } catch (e) {
+        console.error('Failed to close terminals for worktree:', e);
       }
 
       await invoke('delete_worktree', { repoPath, worktreeName, force: true });
-      await get().refreshWorktrees(repoPath);
+
+      set((s) => {
+        const nextDeleting = new Set(s.deletingWorktreePaths);
+        nextDeleting.delete(worktree.path);
+        return { deletingWorktreePaths: nextDeleting };
+      });
+
+      toast.success(`Worktree "${worktreeName}" deleted`);
+
+      get().refreshWorktrees(repoPath);
     } catch (e) {
+      set((s) => {
+        const nextDeleting = new Set(s.deletingWorktreePaths);
+        nextDeleting.delete(worktree.path);
+        return {
+          deletingWorktreePaths: nextDeleting,
+          repositories: s.repositories.map((r) =>
+            r.info.path === repoPath
+              ? {
+                  ...r,
+                  worktrees: r.worktrees.some((wt) => wt.path === worktree.path)
+                    ? r.worktrees
+                    : [...r.worktrees, worktree],
+                }
+              : r
+          ),
+          selectedWorktree: s.selectedWorktree ?? previousSelected,
+        };
+      });
+
+      toast.error(`Failed to delete worktree: ${e}`);
       console.error('Failed to delete worktree:', e);
       throw e;
     }
