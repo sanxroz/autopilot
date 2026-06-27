@@ -1,0 +1,21 @@
+src/components/RightPanel/index.tsx
+  s_59253c8c4bf1df::t_f7c06f4ac97df7 204
+src/components/RightPanel/NotesTab.tsx
+  s_59253c8c4bf1df::t_162e213be5ca42 78-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "96db62be51b5d6e75f8d38e409b1c54359ab9abd",
+  "prompts": {},
+  "sessions": {
+    "s_59253c8c4bf1df": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0a3d-b4c5-74e1-af13-7defd0bcbdf4",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
