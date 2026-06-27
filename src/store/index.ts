@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { load } from '@tauri-apps/plugin-store';
+import { toast } from 'sonner';
 import type {
   Repository,
   RepoInfo,
@@ -54,6 +55,7 @@ interface AppStore {
   prDataCache: Record<string, PRDataCache>;
   worktreeOrdersByRepo: Record<string, string[]>;
   collapsedRepos: Set<string>;
+  deletingWorktreePaths: Set<string>;
   settingsOpen: boolean;
   codeReviewOpen: boolean;
   diffOverlayOpen: boolean;
@@ -329,6 +331,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   prDataCache: {},
   worktreeOrdersByRepo: {},
   collapsedRepos: new Set<string>(),
+  deletingWorktreePaths: new Set<string>(),
   settingsOpen: false,
   codeReviewOpen: false,
   diffOverlayOpen: false,
@@ -481,14 +484,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   refreshWorktrees: async (repoPath: string) => {
     const rawWorktrees = await invoke<WorktreeInfo[]>('list_worktrees', { repoPath });
+    const pendingPaths = get().deletingWorktreePaths;
+    const filteredWorktrees = pendingPaths.size > 0
+      ? rawWorktrees.filter((wt) => !pendingPaths.has(wt.path))
+      : rawWorktrees;
     const previousWorktrees = get().repositories.find((repo) => repo.info.path === repoPath)?.worktrees ?? [];
     const stableOrder = previousWorktrees.map((worktree) => worktree.path);
     let nextWorktreeOrders: Record<string, string[]> | null = null;
 
     set((state) => {
       const currentOrder = state.worktreeOrdersByRepo[repoPath];
-      const normalizedOrder = normalizeWorktreeOrder(rawWorktrees, currentOrder);
-      const worktrees = orderWorktrees(rawWorktrees, normalizedOrder, stableOrder);
+      const normalizedOrder = normalizeWorktreeOrder(filteredWorktrees, currentOrder);
+      const worktrees = orderWorktrees(filteredWorktrees, normalizedOrder, stableOrder);
       const orderChanged =
         (currentOrder?.length ?? 0) !== normalizedOrder.length ||
         (currentOrder?.some((path, index) => path !== normalizedOrder[index]) ?? false);
@@ -772,23 +779,67 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   deleteWorktree: async (repoPath: string, worktreeName: string) => {
-    try {
-      const worktreePath = get()
-        .repositories
-        .find((repo) => repo.info.path === repoPath)
-        ?.worktrees.find((wt) => wt.name === worktreeName)?.path;
+    const state = get();
+    const repo = state.repositories.find((r) => r.info.path === repoPath);
+    const worktree = repo?.worktrees.find((wt) => wt.name === worktreeName);
+    if (!worktree) return;
 
-      if (worktreePath) {
-        try {
-          await invoke<number>('close_terminals_for_worktree', { worktreePath });
-        } catch (e) {
-          console.error('Failed to close terminals for worktree:', e);
-        }
+    const previousSelected = state.selectedWorktree;
+
+    set((s) => {
+      const nextDeleting = new Set(s.deletingWorktreePaths);
+      nextDeleting.add(worktree.path);
+      return {
+        deletingWorktreePaths: nextDeleting,
+        repositories: s.repositories.map((r) =>
+          r.info.path === repoPath
+            ? { ...r, worktrees: r.worktrees.filter((wt) => wt.name !== worktreeName) }
+            : r
+        ),
+        selectedWorktree:
+          s.selectedWorktree?.path === worktree.path ? null : s.selectedWorktree,
+      };
+    });
+
+    try {
+      try {
+        await invoke<number>('close_terminals_for_worktree', { worktreePath: worktree.path });
+      } catch (e) {
+        console.error('Failed to close terminals for worktree:', e);
       }
 
       await invoke('delete_worktree', { repoPath, worktreeName, force: true });
-      await get().refreshWorktrees(repoPath);
+
+      set((s) => {
+        const nextDeleting = new Set(s.deletingWorktreePaths);
+        nextDeleting.delete(worktree.path);
+        return { deletingWorktreePaths: nextDeleting };
+      });
+
+      toast.success(`Worktree "${worktreeName}" deleted`);
+
+      get().refreshWorktrees(repoPath);
     } catch (e) {
+      set((s) => {
+        const nextDeleting = new Set(s.deletingWorktreePaths);
+        nextDeleting.delete(worktree.path);
+        return {
+          deletingWorktreePaths: nextDeleting,
+          repositories: s.repositories.map((r) =>
+            r.info.path === repoPath
+              ? {
+                  ...r,
+                  worktrees: r.worktrees.some((wt) => wt.path === worktree.path)
+                    ? r.worktrees
+                    : [...r.worktrees, worktree],
+                }
+              : r
+          ),
+          selectedWorktree: s.selectedWorktree ?? previousSelected,
+        };
+      });
+
+      toast.error(`Failed to delete worktree: ${e}`);
       console.error('Failed to delete worktree:', e);
       throw e;
     }
