@@ -1,0 +1,19 @@
+src-tauri/src/commands/process.rs
+  s_9c62a198537296::t_4fa8a7ec83be0d 179-191
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "fe7ab07062a8bbdf1931c6816164f794817c0fd7",
+  "prompts": {},
+  "sessions": {
+    "s_9c62a198537296": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0732-81ba-7343-a920-b64382329eb5",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
