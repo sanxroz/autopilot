@@ -14,21 +14,18 @@ import type {
 } from '../types';
 import type {
   GitHubSettings,
-  GithubIssue,
   PRStatus,
   PRChecksResult,
   PRDetailedInfo,
-  PRHubFilters,
   RepoPRStatuses,
 } from '../types/github';
-import { DEFAULT_GITHUB_SETTINGS, DEFAULT_PR_HUB_FILTERS } from '../types/github';
+import { DEFAULT_GITHUB_SETTINGS } from '../types/github';
 import { setThemeMode as setGlobalThemeMode, getThemeMode, type ThemeMode } from '../theme';
 
 interface PersistedState {
   repositoryPaths: string[];
   defaultAIAgent?: AIAgent;
   repoAvatarCache?: Record<string, string>;
-  prHubFilters?: PRHubFilters;
   worktreeOrdersByRepo?: Record<string, string[]>;
 }
 
@@ -59,7 +56,6 @@ interface AppStore {
   collapsedRepos: Set<string>;
   settingsOpen: boolean;
   codeReviewOpen: boolean;
-  prHubOpen: boolean;
   diffOverlayOpen: boolean;
   diffViewMode: DiffViewMode;
   gitFileDiffPreview: { filePath: string; worktreePath: string; isStaged: boolean } | null;
@@ -68,10 +64,6 @@ interface AppStore {
   agentSidebarLifecycleEnabled: boolean;
   defaultAIAgent: AIAgent;
   addressedComments: AddressedCommentsMap;
-  prHubData: Record<string, PRStatus[]>;
-  assignedIssues: GithubIssue[];
-
-  prHubFilters: PRHubFilters;
 
   initialize: () => Promise<void>;
   addRepository: (path: string) => Promise<void>;
@@ -90,12 +82,6 @@ interface AppStore {
   toggleSettings: () => void;
   setCodeReviewOpen: (open: boolean) => void;
   toggleCodeReview: () => void;
-  setPRHubOpen: (open: boolean) => void;
-  togglePRHub: () => void;
-  setPRHubData: (data: Record<string, PRStatus[]>) => void;
-  setAssignedIssues: (issues: GithubIssue[]) => void;
-
-  setPRHubFilters: (filters: Partial<PRHubFilters>) => Promise<void>;
   setDiffOverlayOpen: (open: boolean) => void;
   toggleDiffOverlay: () => void;
   setDiffViewMode: (mode: DiffViewMode) => void;
@@ -240,7 +226,6 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
     const themeMode = await store.get<ThemeMode>('themeMode');
     const defaultAIAgent = await store.get<AIAgent>('defaultAIAgent');
     const repoAvatarCache = await store.get<Record<string, string>>('repoAvatarCache');
-    const prHubFilters = await store.get<PRHubFilters>('prHubFilters');
     const worktreeOrdersByRepo = await store.get<Record<string, string[]>>('worktreeOrdersByRepo');
     const rawAddressed = await store.get<Record<string, string[]>>('addressedComments');
     let addressedComments: AddressedCommentsMap | undefined;
@@ -256,7 +241,6 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
       defaultAIAgent,
       addressedComments,
       repoAvatarCache: repoAvatarCache || {},
-      prHubFilters,
       worktreeOrdersByRepo: worktreeOrdersByRepo || {},
     };
   } catch {
@@ -294,16 +278,6 @@ async function saveAddressedComments(addressedComments: AddressedCommentsMap): P
     await store.save();
   } catch (e) {
     console.error('Failed to save addressed comments:', e);
-  }
-}
-
-async function savePRHubFilters(prHubFilters: PRHubFilters): Promise<void> {
-  try {
-    const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
-    await store.set('prHubFilters', prHubFilters);
-    await store.save();
-  } catch (e) {
-    console.error('Failed to save PR Hub filters:', e);
   }
 }
 
@@ -357,7 +331,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
   collapsedRepos: new Set<string>(),
   settingsOpen: false,
   codeReviewOpen: false,
-  prHubOpen: false,
   diffOverlayOpen: false,
   diffViewMode: 'overlay',
   gitFileDiffPreview: null,
@@ -366,10 +339,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
   agentSidebarLifecycleEnabled: true,
   defaultAIAgent: 'opencode',
   addressedComments: {},
-  prHubData: {},
-  assignedIssues: [],
-
-  prHubFilters: DEFAULT_PR_HUB_FILTERS,
 
   initialize: async () => {
     if (get().isInitialized) return;
@@ -386,10 +355,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     if (persisted.addressedComments) {
       set({ addressedComments: persisted.addressedComments });
-    }
-
-    if (persisted.prHubFilters) {
-      set({ prHubFilters: { ...DEFAULT_PR_HUB_FILTERS, ...persisted.prHubFilters } });
     }
 
     if (persisted.worktreeOrdersByRepo) {
@@ -773,30 +738,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   toggleCodeReview: () => {
     set((state) => ({ codeReviewOpen: !state.codeReviewOpen }));
-  },
-
-  setPRHubOpen: (open: boolean) => {
-    set({ prHubOpen: open });
-  },
-
-  togglePRHub: () => {
-    set((state) => ({ prHubOpen: !state.prHubOpen }));
-  },
-
-  setPRHubData: (data: Record<string, PRStatus[]>) => {
-    set({ prHubData: data });
-  },
-
-  setAssignedIssues: (issues: GithubIssue[]) => {
-    set({ assignedIssues: issues });
-  },
-
-
-
-  setPRHubFilters: async (filters: Partial<PRHubFilters>) => {
-    const next = { ...get().prHubFilters, ...filters };
-    set({ prHubFilters: next });
-    await savePRHubFilters(next);
   },
 
   setDiffOverlayOpen: (open: boolean) => {
