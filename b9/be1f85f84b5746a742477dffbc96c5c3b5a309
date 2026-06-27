@@ -1,0 +1,29 @@
+autopilot
+  s_69e58ba6bbb1cd::t_e19d8991e6cd86 1-22
+autopilot-note
+  s_69e58ba6bbb1cd::t_5345d91f8bb977 1-4
+package.json
+  s_69e58ba6bbb1cd::t_b2e1286e2613d7 11-12
+scripts/autopilot-note.mjs
+  s_69e58ba6bbb1cd::t_c6d5608c30cd36 1-172
+src/components/RightPanel/NotesTab.tsx
+  s_69e58ba6bbb1cd::t_ffba27c08d7e2f 1,4-6,13-14,16-67,79-84,88,90-93
+src/store/index.ts
+  s_69e58ba6bbb1cd::t_b41dade6eaef39 120-121,344-355,1284-1296
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "b9be1f85f84b5746a742477dffbc96c5c3b5a309",
+  "prompts": {},
+  "sessions": {
+    "s_69e58ba6bbb1cd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f09a5-fbc8-7ad0-b0e8-5207e7a3cb9d",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
