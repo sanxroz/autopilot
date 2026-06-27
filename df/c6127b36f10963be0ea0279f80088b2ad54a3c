@@ -1,0 +1,28 @@
+src/store/index.ts
+  s_d780cc1ee15024::t_3de94cf8427f12 22
+src/components/CommandMenu.tsx
+  s_d780cc1ee15024::t_b85360525d0841 2
+src/components/Navbar.tsx
+  s_d780cc1ee15024::t_b85360525d0841 59
+src/App.tsx
+  s_d780cc1ee15024::t_b85360525d0841 49,111
+src/components/RightPanel/index.tsx
+  s_d780cc1ee15024::t_685c6978d4a518 48-56
+  s_d780cc1ee15024::t_8cb6bac239afde 57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "dfc6127b36f10963be0ea0279f80088b2ad54a3c",
+  "prompts": {},
+  "sessions": {
+    "s_d780cc1ee15024": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0745-b198-7500-bdba-8150003fc779",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
