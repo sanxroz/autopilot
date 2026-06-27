@@ -1,14 +1,16 @@
-import {
-  Check,
-  X,
-  ExternalLink,
-  Loader,
-  Circle,
-} from "lucide-react";
-import { useMergePR } from "../../hooks/useMergePR";
+import { useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { Circle, Loader } from "lucide-react";
 import { useCachedPRData } from "../../hooks/useCachedPRData";
+import type { PRCheck, PRCheckDetail, PRStatus } from "../../types/github";
 import { cn } from "../../utils/cn";
-import type { PRStatus } from "../../types/github";
+import { CheckRow } from "./CheckRow";
+import {
+  getCheckKey,
+  getMergeStatusColorClass,
+  getMergeStatusText,
+  isDeploymentCheck,
+} from "./checks-tab-domain";
 
 interface ChecksTabProps {
   repoPath: string | null;
@@ -16,252 +18,175 @@ interface ChecksTabProps {
   prStatus: PRStatus | null;
 }
 
-function getCheckIcon(status: string, conclusion: string | null) {
-  if (status !== "completed") {
-    return Loader;
-  }
-  if (conclusion === "success") {
-    return Check;
-  }
-  if (conclusion === "failure" || conclusion === "cancelled") {
-    return X;
-  }
-  return Circle;
-}
+type DetailState = Record<string, PRCheckDetail | null>;
+type LoadingState = Record<string, boolean>;
+type ErrorState = Record<string, string | null>;
 
-function getCheckColorClass(status: string, conclusion: string | null): string {
-  if (status !== "completed") {
-    return "text-semantic-warning";
-  }
-  if (conclusion === "success") {
-    return "text-semantic-success";
-  }
-  if (conclusion === "failure" || conclusion === "cancelled") {
-    return "text-semantic-error";
-  }
-  return "text-tertiary";
-}
+function CheckSection({
+  title,
+  checks,
+  details,
+  detailErrors,
+  loadingDetails,
+  expandedKeys,
+  onToggle,
+}: {
+  title: string;
+  checks: PRCheck[];
+  details: DetailState;
+  detailErrors: ErrorState;
+  loadingDetails: LoadingState;
+  expandedKeys: Set<string>;
+  onToggle: (check: PRCheck) => void;
+}) {
+  if (checks.length === 0) return null;
 
-function formatDuration(
-  startedAt: string | null,
-  completedAt: string | null,
-): string {
-  if (!startedAt || !completedAt) return "";
-
-  const start = new Date(startedAt).getTime();
-  const end = new Date(completedAt).getTime();
-  const durationMs = end - start;
-
-  if (durationMs < 1000) return "0s";
-  if (durationMs < 60000) return `${Math.round(durationMs / 1000)}s`;
-  return `${Math.round(durationMs / 60000)}m`;
-}
-
-function getMergeStatusText(status: string): string {
-  switch (status) {
-    case "CLEAN":
-      return "Ready to merge";
-    case "UNSTABLE":
-      return "Unstable";
-    case "DIRTY":
-      return "Merge conflicts";
-    case "BLOCKED":
-      return "Blocked";
-    case "BEHIND":
-      return "Behind base branch";
-    case "HAS_HOOKS":
-      return "Has hooks";
-    default:
-      return status;
-  }
-}
-
-function getMergeStatusColorClass(status: string): string {
-  switch (status) {
-    case "CLEAN":
-      return "text-semantic-success";
-    case "UNSTABLE":
-    case "BEHIND":
-      return "text-semantic-warning";
-    case "DIRTY":
-    case "BLOCKED":
-      return "text-semantic-error";
-    default:
-      return "text-tertiary";
-  }
-}
-
-export function ChecksTab({
-  repoPath,
-  prNumber,
-  prStatus,
-}: ChecksTabProps) {
-  const { isMerging, hasMerged, handleMerge } = useMergePR({ repoPath, prNumber });
-  const { checksResult, prDetails, isLoading, error, fetchData } = useCachedPRData({
-    repoPath,
-    prNumber,
-    prStatus,
-    includeChecks: true,
-  });
-
-
-  if (!prNumber) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-sm text-secondary">
-        No PR found for this branch
+  return (
+    <section className="px-4 pb-3">
+      <div className="flex items-center justify-between pb-2 text-[11px] text-tertiary">
+        <span className="uppercase tracking-[0.08em]">{title}</span>
+        <span className="font-mono tabular-nums">{checks.length}</span>
       </div>
-    );
-  }
+      <div className="space-y-1">
+        {checks.map((check) => {
+          const key = getCheckKey(check);
+          return (
+            <CheckRow
+              key={key}
+              check={check}
+              detail={details[key] ?? null}
+              detailError={detailErrors[key] ?? null}
+              isExpanded={expandedKeys.has(key)}
+              isLoadingDetail={loadingDetails[key] ?? false}
+              onToggle={onToggle}
+            />
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+export function ChecksTab({ repoPath, prNumber, prStatus }: ChecksTabProps) {
+  const { checksResult, prDetails, isLoading, error, fetchData } = useCachedPRData({ repoPath, prNumber, prStatus, includeChecks: true });
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
+  const [details, setDetails] = useState<DetailState>({});
+  const [loadingDetails, setLoadingDetails] = useState<LoadingState>({});
+  const [detailErrors, setDetailErrors] = useState<ErrorState>({});
+
+  const { deploymentChecks, regularChecks } = useMemo(() => {
+    const allChecks = checksResult?.checks ?? [];
+    return { deploymentChecks: allChecks.filter(isDeploymentCheck), regularChecks: allChecks.filter((check) => !isDeploymentCheck(check)) };
+  }, [checksResult]);
+
+  const loadCheckDetail = async (check: PRCheck) => {
+    if (!repoPath) return;
+
+    const key = getCheckKey(check);
+    setLoadingDetails((state) => ({ ...state, [key]: true }));
+    setDetailErrors((state) => ({ ...state, [key]: null }));
+
+    try {
+      const detail = await invoke<PRCheckDetail>("get_pr_check_detail", { repoPath, checkUrl: check.url });
+      setDetails((state) => ({ ...state, [key]: detail }));
+    } catch (detailError) {
+      setDetailErrors((state) => ({ ...state, [key]: String(detailError) }));
+    } finally {
+      setLoadingDetails((state) => ({ ...state, [key]: false }));
+    }
+  };
+
+  const handleToggleCheck = (check: PRCheck) => {
+    const key = getCheckKey(check);
+    const isExpanded = expandedKeys.has(key);
+
+    setExpandedKeys((state) => {
+      const next = new Set(state);
+      if (isExpanded) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+
+    if (!isExpanded && check.is_actions_job && !details[key] && !loadingDetails[key]) {
+      void loadCheckDetail(check);
+    }
+  };
+
+  if (!prNumber) return <div className="flex flex-1 items-center justify-center text-sm text-secondary">No PR found for this branch</div>;
 
   if (isLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center text-sm text-secondary">
-        <Loader className="w-3.5 h-3.5 animate-spin mr-2" />
-        Loading...
+      <div className="flex flex-1 items-center justify-center text-sm text-secondary">
+        <Loader className="mr-2 h-3.5 w-3.5 animate-spin" />
+        Loading checks...
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-sm gap-2 p-4 text-semantic-error">
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-sm text-semantic-error">
         <span className="text-center">{error}</span>
         <button
           onClick={() => fetchData()}
-          className="px-3 py-1 rounded text-xs bg-tertiary text-primary"
+          className="rounded bg-tertiary px-3 py-1 text-xs text-primary"
+          type="button"
         >
           Retry
         </button>
       </div>
     );
   }
-
-  const deployments =
-    checksResult?.checks.filter(
-      (c) =>
-        c.name.toLowerCase().includes("vercel") ||
-        c.name.toLowerCase().includes("deploy") ||
-        c.name.toLowerCase().includes("preview"),
-    ) || [];
-
-  const regularChecks =
-    checksResult?.checks.filter(
-      (c) =>
-        !c.name.toLowerCase().includes("vercel") &&
-        !c.name.toLowerCase().includes("deploy") &&
-        !c.name.toLowerCase().includes("preview"),
-    ) || [];
-
   return (
-    <div className="flex flex-col h-full overflow-auto">
+    <div className="flex h-full flex-col overflow-auto bg-primary">
       {prDetails && (
-        <div className="px-3 py-3 border-border">
-          <div className="text-xs font-medium mb-2 text-tertiary">
-            Git status
-          </div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Circle
-                className={cn("w-3.5 h-3.5", getMergeStatusColorClass(prDetails.merge_state_status))}
-              />
-              <span className="text-sm text-primary">
-                {getMergeStatusText(prDetails.merge_state_status)}
-              </span>
+        <section className="px-4 py-4">
+          <div className="rounded-xl border border-border-subtle bg-secondary/20 px-4 py-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <Circle
+                  className={cn(
+                    "h-3.5 w-3.5 flex-shrink-0",
+                    getMergeStatusColorClass(prDetails.merge_state_status),
+                  )}
+                />
+                <div className="text-sm font-medium text-primary">
+                  {getMergeStatusText(prDetails.merge_state_status)}
+                </div>
+              </div>
+              <div className="mt-1 truncate text-[12px] text-tertiary">
+                {prStatus ? `#${prStatus.number} ${prStatus.title}` : `#${prNumber}`}
+              </div>
             </div>
-            {prDetails.merge_state_status === "CLEAN" && prNumber && !hasMerged && (
-              <button
-                onClick={handleMerge}
-                disabled={isMerging}
-                className="text-xs px-2 py-1 rounded transition-colors flex items-center gap-1 disabled:opacity-70 text-secondary hover:bg-hover"
-              >
-                {isMerging && <Loader className="w-3 h-3 animate-spin" />}
-                {isMerging ? "Merging..." : "Merge"}
-              </button>
-            )}
           </div>
-        </div>
+        </section>
       )}
 
-      {deployments.length > 0 && (
-        <div className="px-3 py-3 border-border">
-          <div className="text-xs font-medium mb-2 text-tertiary">
-            Deployments
-          </div>
-          {deployments.map((check, index) => {
-            const Icon = getCheckIcon(check.status, check.conclusion);
-            const colorClass = getCheckColorClass(check.status, check.conclusion);
-
-            return (
-              <div key={index} className="flex items-center gap-2 py-1.5">
-                <Icon
-                  className={cn("w-3.5 h-3.5 flex-shrink-0", colorClass, check.status !== "completed" && "animate-spin")}
-                />
-                <span className="flex-1 text-sm truncate text-primary">
-                  {check.name}
-                </span>
-                {check.url && (
-                  <a
-                    href={check.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-1 rounded transition-colors flex-shrink-0 text-tertiary"
-                    aria-label={`Open ${check.name} in new tab`}
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {regularChecks.length > 0 && (
-        <div className="px-3 py-3 border-border">
-          <div className="text-xs font-medium mb-2 text-tertiary">
-            Checks
-          </div>
-          {regularChecks.map((check, index) => {
-            const Icon = getCheckIcon(check.status, check.conclusion);
-            const colorClass = getCheckColorClass(check.status, check.conclusion);
-            const duration = formatDuration(
-              check.started_at,
-              check.completed_at,
-            );
-
-            return (
-              <div key={index} className="flex items-center gap-2 py-1.5">
-                <Icon
-                  className={cn("w-3.5 h-3.5 flex-shrink-0", colorClass, check.status !== "completed" && "animate-spin")}
-                />
-                <span className="flex-1 text-sm truncate text-primary">
-                  {check.name}
-                </span>
-                {duration && (
-                  <span className="text-xs flex-shrink-0 text-tertiary">
-                    {duration}
-                  </span>
-                )}
-                {check.url && (
-                  <a
-                    href={check.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-1 rounded transition-colors flex-shrink-0 text-tertiary"
-                    aria-label={`Open ${check.name} in new tab`}
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <CheckSection
+        title="Deployments"
+        checks={deploymentChecks}
+        details={details}
+        detailErrors={detailErrors}
+        loadingDetails={loadingDetails}
+        expandedKeys={expandedKeys}
+        onToggle={handleToggleCheck}
+      />
+      <CheckSection
+        title="Checks"
+        checks={regularChecks}
+        details={details}
+        detailErrors={detailErrors}
+        loadingDetails={loadingDetails}
+        expandedKeys={expandedKeys}
+        onToggle={handleToggleCheck}
+      />
 
       {(!checksResult || checksResult.checks.length === 0) && (
-        <div className="flex-1 flex items-center justify-center text-sm text-secondary">
-          No checks
+        <div className="flex flex-1 items-center justify-center text-sm text-secondary">
+          No checks reported by GitHub
         </div>
       )}
     </div>
