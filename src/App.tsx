@@ -70,11 +70,12 @@ function App() {
 
       try {
         await flushSidebarNotesPersistence();
-        isClosing = true;
-        await appWindow.destroy();
       } catch (error) {
         console.error("Failed to flush sidebar notes before close:", error);
       }
+
+      isClosing = true;
+      await appWindow.destroy();
     })
       .then((fn) => {
         if (isMounted) {
