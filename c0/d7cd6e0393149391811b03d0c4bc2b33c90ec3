@@ -1,0 +1,40 @@
+src-tauri/src/commands/mod.rs
+  s_4058c3426c6396::t_0ffa89f3415a7a 2
+src/components/Sidebar.tsx
+  s_4058c3426c6396::t_0ffa89f3415a7a 565-572,575
+src/types/index.ts
+  s_4058c3426c6396::t_0ffa89f3415a7a 15-22
+src/store/index.ts
+  s_4058c3426c6396::t_0ffa89f3415a7a 15,53-54,74,332-333,355-356,427-442
+  s_4058c3426c6396::t_5efe6787fd04e2 443-444
+src/lib/open-with.ts
+  s_4058c3426c6396::t_0ffa89f3415a7a 1-59
+src/components/RightPanel/index.tsx
+  s_4058c3426c6396::t_0ffa89f3415a7a 1-2,14,18-20,36,47-78,97,101-102,155-158,161-168,170,174-175,289-314,316-321,323-326,328-333
+src/App.tsx
+  s_4058c3426c6396::t_0ffa89f3415a7a 19,24-25,42-48
+  s_4058c3426c6396::t_b74690719cff10 49
+public/open-with-icons/.gitkeep
+  s_4058c3426c6396::t_0ffa89f3415a7a 1
+src-tauri/src/commands/editor.rs
+  s_4058c3426c6396::t_0ffa89f3415a7a 1-511
+src-tauri/src/lib.rs
+  s_4058c3426c6396::t_5f2d19baba7927 5
+  s_4058c3426c6396::t_0ffa89f3415a7a 171-172
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "c0d7cd6e0393149391811b03d0c4bc2b33c90ec3",
+  "prompts": {},
+  "sessions": {
+    "s_4058c3426c6396": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f094a-6b8f-7b60-94b2-0a50bf6d00b6",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
