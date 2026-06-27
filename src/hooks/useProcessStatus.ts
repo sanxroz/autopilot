@@ -17,6 +17,9 @@ export function useProcessStatusPolling() {
   const refreshStartedAtRef = useRef<number | null>(null);
   const staleRefreshRetryInFlightRef = useRef(false);
   const needsRerunRef = useRef(false);
+  const reportRefreshError = (error: unknown) => {
+    console.error('Process status refresh failed:', error);
+  };
 
   const refreshIfIdle = useCallback(async () => {
     const now = Date.now();
@@ -63,11 +66,11 @@ export function useProcessStatusPolling() {
   useEffect(() => {
     if (!isInitialized || repositories.length === 0) return;
 
-    refreshIfIdle();
+    void refreshIfIdle().catch(reportRefreshError);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
-        refreshIfIdle();
+        void refreshIfIdle().catch(reportRefreshError);
       }
     };
 
@@ -83,7 +86,7 @@ export function useProcessStatusPolling() {
 
     intervalRef.current = window.setInterval(() => {
       if (document.visibilityState === 'visible') {
-        refreshIfIdle();
+        void refreshIfIdle().catch(reportRefreshError);
       }
     }, hasActiveProcesses ? ACTIVE_POLLING_INTERVAL : IDLE_POLLING_INTERVAL);
 
