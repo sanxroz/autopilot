@@ -99,6 +99,13 @@ pub fn run() {
                 terminal_worktrees.clone(),
             );
 
+            #[cfg(not(debug_assertions))]
+            {
+                if let Err(error) = commands::cli_launcher::install_cli_launcher(app.handle()) {
+                    eprintln!("[autopilot] warning: failed to install CLI launcher ({error})");
+                }
+            }
+
             app.manage(AppState {
                 terminals: terminals.clone(),
                 agent_terminals: agent_terminals.clone(),

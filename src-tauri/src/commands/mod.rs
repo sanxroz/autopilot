@@ -1,3 +1,5 @@
+#[cfg(not(debug_assertions))]
+pub mod cli_launcher;
 pub mod cli_tools;
 pub mod editor;
 pub mod git;
