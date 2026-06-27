@@ -52,6 +52,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
     toggleSettings,
     githubSettings,
     prStatusByBranch,
+    prStatusByWorktreePath,
     processStatusByPath,
     agentRunByWorktreePath,
     agentSidebarLifecycleEnabled,
@@ -516,7 +517,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
                        }
 
                        const renderItem = (wt: WorktreeInfo) => {
-                         const prStatus = wt.branch ? prStatusByBranch[group.repoPath]?.[wt.branch] ?? null : null;
+                         const prStatus = prStatusByWorktreePath[wt.path] ?? null;
                          const processStatus = processStatusByPath[wt.path] || 'none';
                          const agentRunState = agentSidebarLifecycleEnabled ? agentRunByWorktreePath[wt.path] : undefined;
                          const isDragSource = draggedWorktree?.worktreePath === wt.path;

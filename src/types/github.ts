@@ -24,9 +24,21 @@ export interface PRStatus {
   is_bot: boolean;
 }
 
-export interface RepoWithBranches {
+export interface WorktreePRLookup {
+  worktree_path: string;
+  branch: string;
+  head_oid: string | null;
+}
+
+export interface RepoWithWorktrees {
   repo_path: string;
-  branches: string[];
+  worktrees: WorktreePRLookup[];
+}
+
+export interface WorktreePRStatus {
+  worktree_path: string;
+  branch: string;
+  status: PRStatus | null;
 }
 
 export interface RepoPathInput {
@@ -36,8 +48,9 @@ export interface RepoPathInput {
 export interface RepoPRStatuses {
   repo_path: string;
   statuses: PRStatus[];
-  checked_branches: string[];
-  failed_branches: string[];
+  worktree_statuses: WorktreePRStatus[];
+  checked_worktrees: string[];
+  failed_worktrees: string[];
 }
 
 export interface GitHubSettings {
