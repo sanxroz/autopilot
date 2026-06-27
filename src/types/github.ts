@@ -11,6 +11,7 @@ export interface PRStatus {
   draft: boolean;
   review_decision: PRReviewDecision;
   checks_status: ChecksStatus;
+  mergeable: string | null;
   additions: number;
   deletions: number;
   head_branch: string;
