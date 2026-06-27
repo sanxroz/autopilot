@@ -1,0 +1,19 @@
+src/hooks/useProcessStatus.ts
+  s_2934d9adbdec31::t_d41a73210be4a6 20-22,69,73,89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "4ece5a7be20dfd3fa854117081b0372fadeb2b47",
+  "prompts": {},
+  "sessions": {
+    "s_2934d9adbdec31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0743-cd94-7cc2-a317-508460d1d81a",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
