@@ -2,7 +2,14 @@
 
 ## 1. Atmosphere & Identity
 
-Autopilot should feel like a focused operator console: quiet, dense, and deliberate. The signature is warm monochrome contrast, where dark and light tonal layers carry most of the hierarchy and the sand-toned accent appears only when the UI needs to guide attention or confirm agency.
+Autopilot should feel like a focused operator console: quiet, dense, and deliberate. The right sidebar should read as precise, calm, and inspection-friendly rather than playful or glossy. The signature is warm monochrome contrast, where dark and light tonal layers carry most of the hierarchy and the sand-toned accent appears only when the UI needs to guide attention or confirm agency.
+
+### Keywords
+
+- quiet confidence
+- forensic clarity
+- restrained emphasis
+- tactile, not decorative
 
 ## 2. Color
 
@@ -36,6 +43,7 @@ Autopilot should feel like a focused operator console: quiet, dense, and deliber
 - Use accent color for active state, focus, or action only. Never for decorative fills.
 - Surface separation should come from tonal shifts first and borders second.
 - New colors must be added here before they appear in code.
+- Status color appears as a controlled accent, never as a full saturated background.
 
 ## 3. Typography
 
@@ -62,6 +70,7 @@ Autopilot should feel like a focused operator console: quiet, dense, and deliber
 - Body copy never drops below 13px inside dense panels.
 - Mono is reserved for terminal content, code, and user-authored markdown input.
 - Uppercase labels use micro size with added tracking rather than heavier weight.
+- Machine-like values such as durations or step counts should use mono for quick scanning.
 
 ## 4. Spacing & Layout
 
@@ -90,6 +99,7 @@ All spacing derives from a base of 4px.
 - Dense controls should align to 35px header rows and 32px segmented rails where already established.
 - New layout values should stay on the 4px grid.
 - Vertical rhythm inside panels should be compact by default and open up only for content-heavy sections.
+- Compact surfaces use 8px and 12px padding, while grouped panels use 16px padding.
 
 ## 5. Components
 
@@ -125,6 +135,17 @@ All spacing derives from a base of 4px.
 - Accessibility: textarea labels are explicit and the editor preserves text selection
 - Motion: none beyond standard tab transitions
 
+### Checks Surfaces
+
+- Shell: panel background
+- Module: grouped areas like overview, deployments, checks
+- Inset: expanded internals like logs and job steps
+
+Rules:
+- Module surfaces use subtle tonal separation, not heavy borders everywhere.
+- Insets can use stronger borders and denser backgrounds.
+- Large rounded rectangles are preferred over many tiny pills.
+
 ## 6. Motion & Interaction
 
 ### Timing
@@ -140,6 +161,8 @@ All spacing derives from a base of 4px.
 - Animate `transform` and `opacity` only.
 - Respect reduced-motion settings by removing non-essential translation.
 - State changes should feel immediate; motion is for continuity, not decoration.
+- Expansion affordances should rotate or fade in under 200ms.
+- Avoid bouncing, springy, or decorative motion in the right sidebar.
 
 ## 7. Depth & Surface
 
@@ -159,3 +182,11 @@ Primary depth comes from tonal shifts plus hairline borders. Shadows stay minima
 
 - Avoid heavy shadow stacks in the main workspace.
 - Prefer tonal surfaces plus borders for hierarchy inside sidebars and panels.
+
+## 8. Content & Accessibility
+
+- Prefer direct language such as `failed`, `running`, and `ready to merge`.
+- Keep status labels short and avoid decorative filler copy.
+- Every actionable control needs visible hover and focus treatment.
+- Color is never the only state indicator.
+- Dense metadata must keep sufficient contrast against the surface.

@@ -16,10 +16,13 @@ import { useGitWatcher } from "./hooks/useGitWatcher";
 import { useUpdater } from "./hooks/useUpdater";
 import { useDiffStatsLoader } from "./hooks/useDiffStats";
 import { useProcessStatusPolling } from "./hooks/useProcessStatus";
+import { preloadOpenWithIcons } from "./lib/open-with";
 import type { AgentStatusEvent } from "./types";
 
 function App() {
   const initialize = useAppStore((state) => state.initialize);
+  const preloadInstalledIdes = useAppStore((state) => state.preloadInstalledIdes);
+  const installedIdes = useAppStore((state) => state.installedIdes);
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
   const codeReviewOpen = useAppStore((state) => state.codeReviewOpen);
   const diffOverlayOpen = useAppStore((state) => state.diffOverlayOpen);
@@ -35,6 +38,14 @@ function App() {
   useEffect(() => {
     initialize();
   }, [initialize]);
+
+  useEffect(() => {
+    void preloadInstalledIdes();
+  }, [preloadInstalledIdes]);
+
+  useEffect(() => {
+    preloadOpenWithIcons(installedIdes);
+  }, [installedIdes]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

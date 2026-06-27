@@ -2,7 +2,7 @@
 
 mod commands;
 
-use commands::{git, github, process, terminal, watcher};
+use commands::{editor, git, github, github_checks, process, terminal, watcher};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -150,7 +150,8 @@ pub fn run() {
             github::get_all_open_prs_for_repos,
             github::get_pr_status,
             github::get_repo_from_remote,
-            github::get_pr_checks,
+            github_checks::get_pr_checks,
+            github_checks::get_pr_check_detail,
             github::get_pr_details,
             github::get_pr_files,
             github::get_pr_commits,
@@ -167,6 +168,8 @@ pub fn run() {
             github::merge_pr,
             github::get_assigned_issues,
             github::get_notifications,
+            editor::list_installed_ide_apps,
+            editor::open_worktree_in_ide,
             process::get_worktree_process_status,
             process::get_all_worktrees_process_status,
             terminal::spawn_terminal,
