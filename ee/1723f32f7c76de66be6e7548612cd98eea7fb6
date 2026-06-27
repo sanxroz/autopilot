@@ -1,0 +1,23 @@
+scripts/tauri.mjs
+  s_4a0b8e10a31ecc::t_4df79c6e060aac 14-45
+scripts/dev-port.mjs
+  s_4a0b8e10a31ecc::t_4df79c6e060aac 68
+vite.config.ts
+  s_4a0b8e10a31ecc::t_4df79c6e060aac 17,43,45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "ee1723f32f7c76de66be6e7548612cd98eea7fb6",
+  "prompts": {},
+  "sessions": {
+    "s_4a0b8e10a31ecc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f090a-94e6-7f73-a078-7bb78cdb7938",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
