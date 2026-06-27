@@ -201,7 +201,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         color: getChecksColor(),
       },
       { id: "comments", label: "Comments", icon: ClipboardList },
-      { id: "notes", label: "Worktree Notes", icon: FileText },
+      { id: "notes", label: "Notes", icon: FileText },
       ...(showChangesTab
         ? [{ id: "changes" as TabId, label: "Changes", icon: Diff }]
         : []),
