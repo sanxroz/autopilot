@@ -1,0 +1,24 @@
+src/store/index.ts
+  s_dbea9ee740eb7f::t_28a6ca6d4770fb 199,205-226
+src-tauri/src/commands/process.rs
+  s_dbea9ee740eb7f::t_d48596c6fee8c6 43-51,59,64-68
+  s_dbea9ee740eb7f::t_a9b5b5cbf7e6a1 191-217
+src/components/WorktreeItem.tsx
+  s_dbea9ee740eb7f::t_cb72ebc0f99a6b 162-166,251
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "5e47b76a848d3343abe7adb50d6c29a52ecf73a7",
+  "prompts": {},
+  "sessions": {
+    "s_dbea9ee740eb7f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0736-2923-79f3-978f-80491160f2a3",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
