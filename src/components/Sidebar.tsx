@@ -569,12 +569,6 @@ export function Sidebar({ isOpen }: SidebarProps) {
                          );
                        }
 
-                       if (stackGroups.size > 0 && soloWts.length > 0) {
-                          elements.push(
-                            <div key="stack-divider" className="h-px bg-border-subtle mx-2" />
-                          );
-                        }
-
                         for (const wt of soloWts) {
                           elements.push(renderItem(wt));
                         }
