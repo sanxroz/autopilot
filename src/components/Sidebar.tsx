@@ -562,9 +562,22 @@ export function Sidebar({ isOpen }: SidebarProps) {
 
                        for (const [stackIndex, wts] of stackGroups) {
                          const stack = stacks[stackIndex];
+                         const prOrder = new Map(
+                           stack.allPrs.map((pr, index) => [pr.head_branch, index] as const)
+                         );
+                         const orderedWts = [...wts].sort((a, b) => {
+                           const aIndex = a.branch ? prOrder.get(a.branch) : undefined;
+                           const bIndex = b.branch ? prOrder.get(b.branch) : undefined;
+
+                           if (aIndex === undefined || bIndex === undefined) {
+                             return 0;
+                           }
+
+                           return aIndex - bIndex;
+                         });
                          elements.push(
                             <StackGroup key={`stack-${stackIndex}`} label={getStackLabel(stack)} count={stack.allPrs.length}>
-                             {wts.map(renderItem)}
+                             {orderedWts.map(renderItem)}
                            </StackGroup>
                          );
                        }
