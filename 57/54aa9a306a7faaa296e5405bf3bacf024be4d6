@@ -1,0 +1,21 @@
+.github/workflows/pr-tests.yml
+  s_9c62a198537296::t_32a318a351b1ec 10,22-23
+scripts/intentionally-failing.test.js
+  s_9c62a198537296::t_7d3f6c9530936c 1-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "5754aa9a306a7faaa296e5405bf3bacf024be4d6",
+  "prompts": {},
+  "sessions": {
+    "s_9c62a198537296": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0732-81ba-7343-a920-b64382329eb5",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
