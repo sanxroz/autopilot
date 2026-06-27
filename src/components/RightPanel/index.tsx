@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import {
-  GitPullRequest,
   GitMerge,
   ChevronDown,
   ExternalLink,
@@ -9,13 +9,15 @@ import {
   ClipboardList,
   type LucideIcon,
   Diff,
-  ScanSearch,
   GitBranch,
-  MessageSquare,
   Loader,
+  AppWindow,
 } from "lucide-react";
 import { usePRStatusForBranch } from "../../hooks/usePRStatus";
 import { useMergePR } from "../../hooks/useMergePR";
+import {
+  getOpenWithIconSources,
+} from "../../lib/open-with";
 import { useAppStore } from "../../store";
 import { cn } from "../../utils/cn";
 
@@ -31,8 +33,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
-import { AI_AGENTS } from "../../types";
-
+import type { InstalledIde } from "../../types";
 interface RightPanelProps {
   worktreePath: string | null;
 }
@@ -43,7 +44,38 @@ const MIN_WIDTH = 300;
 const MAX_WIDTH = 800;
 const DEFAULT_WIDTH = 450;
 
-type ReviewMode = "uncommitted" | "base" | "custom";
+function OpenWithIcon({ ide }: { readonly ide: InstalledIde }) {
+  const sources = useMemo(() => getOpenWithIconSources(ide), [ide]);
+  const [sourceIndex, setSourceIndex] = useState(0);
+
+  useEffect(() => {
+    setSourceIndex(0);
+  }, [sources]);
+
+  const activeSrc = sources[sourceIndex];
+
+  if (!activeSrc) {
+    return (
+      <div className="flex h-[18px] w-[18px] shrink-0 items-center justify-center">
+        <AppWindow className="h-3.5 w-3.5 text-tertiary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-[18px] w-[18px] shrink-0 items-center justify-center overflow-hidden">
+      <img
+        src={activeSrc}
+        alt=""
+        className="h-[18px] w-[18px] object-contain"
+        loading="eager"
+        onError={() => {
+          setSourceIndex((currentIndex) => currentIndex + 1);
+        }}
+      />
+    </div>
+  );
+}
 
 function isReadyToMerge(prStatus: NonNullable<ReturnType<typeof usePRStatusForBranch>>): boolean {
   return (
@@ -62,14 +94,12 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widthRef = useRef(DEFAULT_WIDTH);
   const [activeTab, setActiveTab] = useState<TabId>("checks");
-  const [showCustomPromptInput, setShowCustomPromptInput] = useState(false);
-  const [customPrompt, setCustomPrompt] = useState("");
-  const customPromptInputRef = useRef<HTMLTextAreaElement>(null);
+  const [openingIdeId, setOpeningIdeId] = useState<string | null>(null);
 
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
   const repositories = useAppStore((state) => state.repositories);
-  const addTerminalWithCommand = useAppStore((state) => state.addTerminalWithCommand);
-  const defaultAIAgent = useAppStore((state) => state.defaultAIAgent);
+  const installedIdes = useAppStore((state) => state.installedIdes);
+  const isLoadingIdes = useAppStore((state) => state.isLoadingInstalledIdes);
 
   const repoPath =
     repositories.find((r) => r.worktrees.some((w) => w.path === worktreePath))
@@ -118,69 +148,31 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
     };
   }, [isResizing]);
 
-  const handleCreatePR = useCallback(
-    (draft: boolean) => {
-      const agent = AI_AGENTS.find((a) => a.id === defaultAIAgent) || AI_AGENTS[0];
-      if (!agent) return;
-
-      const draftFlag = draft ? " as a draft" : "";
-      const prompt = `Review all changes in this worktree. If the branch name doesn't reflect the changes, rename it to something descriptive. Stage and commit any uncommitted changes with a clear commit message. Push the branch to remote. Then create a pull request${draftFlag} with a title that reflects what the branch accomplishes and a focused description summarizing the key changes.`;
-      const escapedPrompt = prompt.replace(/'/g, "'\\''");
-
-      let command: string;
-      if (agent.promptFlag === null) {
-        command = agent.command;
-      } else if (agent.promptFlag === "") {
-        command = `${agent.command} '${escapedPrompt}'`;
-      } else {
-        command = `${agent.command} ${agent.promptFlag} '${escapedPrompt}'`;
-      }
-
-      addTerminalWithCommand(command);
-    },
-    [defaultAIAgent, addTerminalWithCommand],
-  );
-
   const getChecksColor = () => {
     return "text-secondary";
   };
 
-  const handleRunReview = useCallback(
-    (mode: ReviewMode, prompt?: string) => {
-      setShowCustomPromptInput(false);
-
-      let command = "cubic review";
-      if (mode === "base") {
-        command = "cubic review --base";
-      } else if (mode === "custom" && prompt) {
-        // Use single quotes to prevent shell expansion ($(...), backticks, variables)
-        // Escape single quotes by ending the string, adding escaped quote, starting new string
-        const escapedPrompt = prompt.replace(/'/g, "'\\''");
-        command = `cubic review --prompt '${escapedPrompt}'`;
+  const handleOpenWith = useCallback(
+    async (ideId: string) => {
+      if (!worktreePath) {
+        return;
       }
 
-      addTerminalWithCommand(command);
+      setOpeningIdeId(ideId);
+      try {
+        await invoke("open_worktree_in_ide", { worktreePath, ideId });
+      } catch (error) {
+        console.error(`Failed to open worktree in ${ideId}:`, error);
+      } finally {
+        setOpeningIdeId(null);
+      }
     },
-    [addTerminalWithCommand],
+    [worktreePath],
   );
 
-  const handleCustomPromptSubmit = useCallback(() => {
-    if (customPrompt.trim()) {
-      handleRunReview("custom", customPrompt.trim());
-      setCustomPrompt("");
-    }
-  }, [customPrompt, handleRunReview]);
-
-  const handleCustomPromptCancel = useCallback(() => {
-    setShowCustomPromptInput(false);
-    setCustomPrompt("");
-  }, []);
-
   useEffect(() => {
-    if (showCustomPromptInput && customPromptInputRef.current) {
-      customPromptInputRef.current.focus();
-    }
-  }, [showCustomPromptInput]);
+    setOpeningIdeId(null);
+  }, [worktreePath]);
 
   const canMergePR = prStatus ? isReadyToMerge(prStatus) : false;
 
@@ -294,121 +286,51 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         <div className="flex-1" />
 
         {worktreePath && (
-        <DropdownMenu
-          onOpenChange={(open) => {
-            if (!open) {
-              setShowCustomPromptInput(false);
-              setCustomPrompt("");
-            }
-          }}
-        >
-          <DropdownMenuTrigger asChild>
-            <button className="flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium transition-colors hover:bg-opacity-80 text-primary">
-              <ScanSearch className="w-3.5 h-3.5" />
-              Review
-              <ChevronDown className="w-3.5 h-3.5 opacity-50" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <motion.div
-              animate={{ width: showCustomPromptInput ? 280 : "auto" }}
-              transition={{
-                duration: reducedMotion ? 0 : 0.2,
-                ease: [0.215, 0.61, 0.355, 1], // cubic-out
-              }}
-              style={{ overflow: "hidden" }}
-            >
-              <AnimatePresence mode="wait">
-                {showCustomPromptInput ? (
-                <motion.div
-                  key="custom-prompt"
-                  initial={reducedMotion ? false : { opacity: 0, scale: 0.95, y: -8, x: 12 }}
-                  animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
-                  exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95, x: -12 }}
-                  transition={{
-                    duration: reducedMotion ? 0 : 0.2,
-                    ease: [0.215, 0.61, 0.355, 1], // cubic-out
-                  }}
-                  className="p-1"
-                >
-                  <textarea
-                    ref={customPromptInputRef}
-                    value={customPrompt}
-                    onChange={(e) => setCustomPrompt(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleCustomPromptSubmit();
-                      }
-                      if (e.key === "Escape") {
-                        handleCustomPromptCancel();
-                      }
-                    }}
-                    placeholder="Enter review prompt..."
-                    className="w-full px-2 py-1.5 text-sm rounded outline-none resize-none"
-                    style={{
-                      background: "transparent",
-                      minHeight: "56px",
-                    }}
-                    autoFocus
-                    aria-label="Review prompt"
-                  />
-                  <div className="flex items-center justify-end gap-1 px-1 pb-0.5">
-                    <button
-                      onClick={handleCustomPromptCancel}
-                      className="px-2 py-1 text-xs rounded transition-colors text-tertiary hover:text-primary"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleCustomPromptSubmit}
-                      disabled={!customPrompt.trim()}
-                      className={cn(
-                        "px-2 py-1 text-xs rounded transition-colors flex items-center gap-1",
-                        customPrompt.trim()
-                          ? "bg-accent-primary text-white"
-                          : "bg-transparent text-muted"
-                      )}
-                    >
-                      <ScanSearch className="w-3 h-3" />
-                      Run
-                    </button>
-                  </div>
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="menu-items"
-                  initial={reducedMotion ? false : { opacity: 0, scale: 0.95, y: -8 }}
-                  animate={{ opacity: 1, scale: 1, y: 0, x: 0 }}
-                  exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.95, x: -12 }}
-                  transition={{
-                    duration: reducedMotion ? 0 : 0.2,
-                    ease: [0.215, 0.61, 0.355, 1], // cubic-out
-                  }}
-                >
-                  <DropdownMenuItem onClick={() => handleRunReview("uncommitted")}>
-                    <ScanSearch className="w-3 h-3" />
-                    <span>Uncommitted changes</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => handleRunReview("base")}>
-                    <GitPullRequest className="w-3 h-3" />
-                    <span>Against base branch</span>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onSelect={(e) => {
-                      e.preventDefault();
-                      setShowCustomPromptInput(true);
-                    }}
-                  >
-                    <MessageSquare className="w-3 h-3" />
-                    <span>With custom prompt...</span>
-                  </DropdownMenuItem>
-                </motion.div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors hover:bg-opacity-80 text-primary">
+                Open With
+                {isLoadingIdes && installedIdes.length === 0 && (
+                  <Loader className="w-3 h-3 animate-spin opacity-70" />
                 )}
-              </AnimatePresence>
-            </motion.div>
-          </DropdownMenuContent>
-        </DropdownMenu>
+                <ChevronDown className="w-3.5 h-3.5 opacity-50" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {isLoadingIdes ? (
+                <DropdownMenuItem disabled>
+                  <Loader className="w-3 h-3 animate-spin" />
+                  <span>Detecting editors...</span>
+                </DropdownMenuItem>
+              ) : installedIdes.length > 0 ? (
+                installedIdes.map((ide) => {
+                  return (
+                    <DropdownMenuItem
+                      key={ide.id}
+                      className="gap-2 px-2 py-1.5 text-[11px]"
+                      disabled={openingIdeId !== null}
+                      onClick={() => {
+                        void handleOpenWith(ide.id);
+                      }}
+                    >
+                      {openingIdeId === ide.id ? (
+                        <div className="flex h-[18px] w-[18px] shrink-0 items-center justify-center">
+                          <Loader className="h-3.5 w-3.5 animate-spin" />
+                        </div>
+                      ) : (
+                        <OpenWithIcon ide={ide} />
+                      )}
+                      <span className="font-medium leading-none">{ide.name}</span>
+                    </DropdownMenuItem>
+                  );
+                })
+              ) : (
+                <DropdownMenuItem disabled>
+                  <span>No supported editors found</span>
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
 
         {canMergePR && !hasMerged && (
@@ -430,27 +352,6 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
           </button>
         )}
 
-        {!prStatus && repoPath && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-2 px-2.5 py-1 rounded-md text-xs font-medium transition-colors hover:bg-opacity-80 text-primary">
-                <GitPullRequest className="w-3.5 h-3.5" />
-                Create PR
-                <ChevronDown className="w-3.5 h-3.5 opacity-50" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => handleCreatePR(false)}>
-                <GitPullRequest className="w-3 h-3" />
-                <span>Create PR</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => handleCreatePR(true)}>
-                <GitPullRequest className="w-3 h-3" />
-                <span>Create draft PR</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
       </div>
 
       <div className="flex-1 overflow-hidden flex flex-col">
