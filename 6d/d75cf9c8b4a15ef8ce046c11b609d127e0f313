@@ -1,0 +1,47 @@
+src/components/RightPanel/NotesTab.tsx
+  s_8ba8a609d8cfa9::t_bc7d1a28b835b6 3-8,11-18,25-26,29
+src/components/RightPanel/index.tsx
+  s_8ba8a609d8cfa9::t_6a25b8e604ac84 273
+  s_8ba8a609d8cfa9::t_568fc89e781e4f 641
+  s_8ba8a609d8cfa9::t_379d5257d558cb 20,85,117
+src/hooks/usePRStatus.ts
+  s_8ba8a609d8cfa9::t_50371d78cb1bad 4,32,34-42,48,53,111-116
+src/store/index.ts
+  s_8ba8a609d8cfa9::t_8ddc6c8b9d0423 32,75,119-121,127,246,263,267-273,328,330-332,337-339,386,411-417,628-636,1262-1276,1278,1285-1286
+  s_8ba8a609d8cfa9::t_1d0460b5197dc1 60,371,932,945-953,962
+  s_8ba8a609d8cfa9::t_fa814e4a95ae98 340-341
+  s_8ba8a609d8cfa9::t_3402c672e12ea1 637
+src-tauri/src/commands/git.rs
+  s_8ba8a609d8cfa9::t_894d45dde8daaf 485,492,538,545
+  s_8ba8a609d8cfa9::t_5b99d029c7dfbd 27,90-95,189,196,206,213,227,241
+src/types/github.ts
+  s_8ba8a609d8cfa9::t_02f11835f8e142 27-33,35-41,51-53
+src/components/Sidebar.tsx
+  s_8ba8a609d8cfa9::t_00de5f9dd5aa27 520
+  s_8ba8a609d8cfa9::t_15146f244ee44c 55
+src-tauri/src/commands/github.rs
+  s_8ba8a609d8cfa9::t_236f08ce28d487 48-53,158-159
+  s_8ba8a609d8cfa9::t_2e414d1ee810d6 3,342-349,351,363-365,368-378,413,460,494-516,520-595,597-598,602-604,608-609,611-614,618,626,628-630,641,643,721-732,734-735,741,746-749,751,757,759-761,773,775,785-795,798,806,815,824,833-836,838,843
+  s_8ba8a609d8cfa9::t_47e6a92c37da47 930-932
+src/types/index.ts
+  s_8ba8a609d8cfa9::t_bccbee99c7ae6f 11
+src/App.tsx
+  s_8ba8a609d8cfa9::t_0fe8722e23a821 13,35,52-98
+  s_8ba8a609d8cfa9::t_681e9fccc176ab 99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "6dd75cf9c8b4a15ef8ce046c11b609d127e0f313",
+  "prompts": {},
+  "sessions": {
+    "s_8ba8a609d8cfa9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0973-4409-7b43-811b-39610d1ededa",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
