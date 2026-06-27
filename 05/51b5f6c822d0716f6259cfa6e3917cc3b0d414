@@ -1,0 +1,23 @@
+scripts/autopilot-note.mjs
+  s_a4d73afe48604b::t_6e383c75f52b5a 2,49-52,73-114,181,189,191-206,208-213,217-218
+autopilot-note
+  s_a4d73afe48604b::t_0432b81b880f3a 4-16
+autopilot
+  s_a4d73afe48604b::t_d8e4e8d84e96bb 4-15,19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "0551b5f6c822d0716f6259cfa6e3917cc3b0d414",
+  "prompts": {},
+  "sessions": {
+    "s_a4d73afe48604b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f09dd-9a63-75d2-af48-710880f4eb28",
+        "model": "gpt-5.4-mini"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
