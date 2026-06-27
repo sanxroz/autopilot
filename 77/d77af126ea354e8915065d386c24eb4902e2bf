@@ -1,0 +1,20 @@
+src/store/index.ts
+  s_f530c10430f287::t_8872c22f334876 312,1197-1198
+  s_f530c10430f287::t_7708381f5e9cf3 3,117-118,313-315,1194-1196,1199-1200
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "77d77af126ea354e8915065d386c24eb4902e2bf",
+  "prompts": {},
+  "sessions": {
+    "s_f530c10430f287": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f094f-ec57-7d00-8896-11b04ee294f2",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
