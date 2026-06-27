@@ -12,6 +12,14 @@ export interface WorktreeInfo {
   diff_stats?: DiffStats;
 }
 
+export interface InstalledIde {
+  readonly id: string;
+  readonly name: string;
+  readonly appPath?: string | null;
+  readonly cliPath?: string | null;
+  readonly iconPath?: string | null;
+}
+
 export interface BranchInfo {
   name: string;
   is_remote: boolean;

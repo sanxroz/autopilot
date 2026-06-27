@@ -12,6 +12,7 @@ import type {
   AIAgent,
   AgentRunState,
   AgentStatusEvent,
+  InstalledIde,
 } from '../types';
 import type {
   GitHubSettings,
@@ -49,6 +50,8 @@ interface AppStore {
   terminalsByWorktree: Record<string, WorktreeTerminals>;
   currentTerminals: TerminalInstance[];
   currentActiveTerminalId: string | null;
+  installedIdes: readonly InstalledIde[];
+  isLoadingInstalledIdes: boolean;
   isInitialized: boolean;
   githubSettings: GitHubSettings;
   prStatusByBranch: Record<string, Record<string, PRStatus>>;
@@ -68,6 +71,7 @@ interface AppStore {
   addressedComments: AddressedCommentsMap;
 
   initialize: () => Promise<void>;
+  preloadInstalledIdes: () => Promise<void>;
   addRepository: (path: string) => Promise<void>;
   removeRepository: (path: string) => void;
   toggleRepoExpanded: (path: string) => void;
@@ -325,6 +329,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   terminalsByWorktree: {},
   currentTerminals: [],
   currentActiveTerminalId: null,
+  installedIdes: [],
+  isLoadingInstalledIdes: false,
   isInitialized: false,
   githubSettings: DEFAULT_GITHUB_SETTINGS,
   prStatusByBranch: {},
@@ -345,6 +351,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   initialize: async () => {
     if (get().isInitialized) return;
+
+    void get().preloadInstalledIdes();
 
     const persisted = await loadPersistedState();
     
@@ -414,6 +422,24 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
     
     get().checkGitHubCli();
+  },
+
+  preloadInstalledIdes: async () => {
+    const state = get();
+    if (state.isLoadingInstalledIdes || state.installedIdes.length > 0) {
+      return;
+    }
+
+    set({ isLoadingInstalledIdes: true });
+    try {
+      const discoveredIdes = await invoke<InstalledIde[]>('list_installed_ide_apps');
+      set({ installedIdes: discoveredIdes });
+    } catch (error) {
+      console.error('Failed to discover installed IDEs:', error);
+      set({ installedIdes: [] });
+    } finally {
+      set({ isLoadingInstalledIdes: false });
+    }
   },
 
   addRepository: async (path: string) => {
