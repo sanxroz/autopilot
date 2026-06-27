@@ -170,9 +170,9 @@ fn discover_cli_path(candidate: IdeCandidate) -> Option<String> {
 }
 
 fn collect_installed_ides() -> Vec<InstalledIde> {
-    let cache = INSTALLED_IDE_CACHE.get_or_init(|| Mutex::new(None));
-    if let Some(cached) = cache.lock().clone() {
-        return cached;
+    let mut cache = INSTALLED_IDE_CACHE.get_or_init(|| Mutex::new(None)).lock();
+    if let Some(cached) = cache.as_ref() {
+        return cached.clone();
     }
 
     let discovered = IDE_CANDIDATES
@@ -196,7 +196,7 @@ fn collect_installed_ides() -> Vec<InstalledIde> {
             })
         })
         .collect::<Vec<_>>();
-    *cache.lock() = Some(discovered.clone());
+    *cache = Some(discovered.clone());
     discovered
 }
 
@@ -294,7 +294,7 @@ fn find_generated_icon(directory: &Path) -> Option<String> {
 
 #[cfg(target_os = "macos")]
 fn resolve_app_icon_source(app_path: &Path) -> Option<PathBuf> {
-    let info_plist_path = app_path.join("Contents/Info");
+    let info_plist_path = app_path.join("Contents/Info.plist");
     let resources_directory = app_path.join("Contents/Resources");
 
     let icon_name = Command::new("defaults")
@@ -363,11 +363,30 @@ fn open_with_app(app_path: &str, worktree_path: &Path) -> Result<(), String> {
 }
 
 fn open_with_cli(cli_path: &str, worktree_path: &Path) -> Result<(), String> {
-    Command::new(cli_path)
+    let mut child = Command::new(cli_path)
         .arg(worktree_path)
         .spawn()
-        .map(|_| ())
-        .map_err(|error| format!("Failed to launch {}: {}", cli_path, error))
+        .map_err(|error| format!("Failed to launch {}: {}", cli_path, error))?;
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
+fn resolve_worktree_path(worktree_path: &str) -> Result<PathBuf, String> {
+    let resolved_worktree_path = PathBuf::from(worktree_path);
+    if !resolved_worktree_path.exists() {
+        return Err(format!("Worktree path does not exist: {}", worktree_path));
+    }
+
+    if !resolved_worktree_path.is_dir() {
+        return Err(format!(
+            "Worktree path is not a directory: {}",
+            worktree_path
+        ));
+    }
+
+    Ok(resolved_worktree_path)
 }
 
 #[tauri::command]
@@ -377,10 +396,7 @@ pub fn list_installed_ide_apps() -> Vec<InstalledIde> {
 
 #[tauri::command]
 pub fn open_worktree_in_ide(worktree_path: String, ide_id: String) -> Result<(), String> {
-    let resolved_worktree_path = PathBuf::from(&worktree_path);
-    if !resolved_worktree_path.exists() {
-        return Err(format!("Worktree path does not exist: {}", worktree_path));
-    }
+    let resolved_worktree_path = resolve_worktree_path(&worktree_path)?;
 
     let installed_ide = collect_installed_ides()
         .into_iter()
@@ -388,8 +404,16 @@ pub fn open_worktree_in_ide(worktree_path: String, ide_id: String) -> Result<(),
         .ok_or_else(|| format!("Editor is not available: {}", ide_id))?;
 
     if let Some(app_path) = installed_ide.app_path.as_deref() {
-        if open_with_app(app_path, &resolved_worktree_path).is_ok() {
-            return Ok(());
+        match open_with_app(app_path, &resolved_worktree_path) {
+            Ok(()) => return Ok(()),
+            Err(app_error) => {
+                if let Some(cli_path) = installed_ide.cli_path.as_deref() {
+                    return open_with_cli(cli_path, &resolved_worktree_path)
+                        .map_err(|cli_error| format!("{app_error}; {cli_error}"));
+                }
+
+                return Err(app_error);
+            }
         }
     }
 
@@ -401,4 +425,87 @@ pub fn open_worktree_in_ide(worktree_path: String, ide_id: String) -> Result<(),
         "No launch strategy is available for {}",
         installed_ide.name
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::sync::LazyLock;
+
+    static TEST_MUTEX: LazyLock<parking_lot::Mutex<()>> =
+        LazyLock::new(|| parking_lot::Mutex::new(()));
+
+    fn cache_for_tests() -> &'static parking_lot::Mutex<Option<Vec<InstalledIde>>> {
+        INSTALLED_IDE_CACHE.get_or_init(|| parking_lot::Mutex::new(None))
+    }
+
+    fn with_test_ide(ide: InstalledIde) {
+        *cache_for_tests().lock() = Some(vec![ide]);
+    }
+
+    fn reset_test_cache() {
+        *cache_for_tests().lock() = None;
+    }
+
+    fn temp_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "autopilot-editor-test-{}-{}",
+            std::process::id(),
+            name
+        ))
+    }
+
+    #[test]
+    fn open_worktree_in_ide_rejects_non_directory_paths() {
+        let _guard = TEST_MUTEX.lock();
+        let file_path = temp_path("file");
+        fs::write(&file_path, b"not a directory").expect("create temp file");
+        with_test_ide(InstalledIde {
+            id: "test-cli".to_string(),
+            name: "Test CLI".to_string(),
+            app_path: None,
+            cli_path: Some("/usr/bin/true".to_string()),
+            icon_path: None,
+        });
+
+        let result =
+            open_worktree_in_ide(file_path.to_string_lossy().into_owned(), "test-cli".into());
+
+        reset_test_cache();
+        fs::remove_file(&file_path).expect("remove temp file");
+        assert_eq!(
+            result,
+            Err(format!(
+                "Worktree path is not a directory: {}",
+                file_path.display()
+            ))
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn open_worktree_in_ide_preserves_app_launch_error_without_cli_fallback() {
+        let _guard = TEST_MUTEX.lock();
+        let directory_path = temp_path("directory");
+        fs::create_dir_all(&directory_path).expect("create temp directory");
+        with_test_ide(InstalledIde {
+            id: "missing-app".to_string(),
+            name: "Missing App".to_string(),
+            app_path: Some("/Applications/DefinitelyMissing.app".to_string()),
+            cli_path: None,
+            icon_path: None,
+        });
+
+        let result = open_worktree_in_ide(
+            directory_path.to_string_lossy().into_owned(),
+            "missing-app".into(),
+        );
+
+        reset_test_cache();
+        fs::remove_dir_all(&directory_path).expect("remove temp directory");
+        assert!(
+            matches!(result, Err(message) if message.contains("Opening /Applications/DefinitelyMissing.app exited with status"))
+        );
+    }
 }
