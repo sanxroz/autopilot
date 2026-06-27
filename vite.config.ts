@@ -14,6 +14,7 @@ const env = processRef?.env ?? {};
 const host = env.TAURI_DEV_HOST;
 const explicitDevPort = env.AUTOPILOT_DEV_PORT;
 const explicitHmrPort = env.AUTOPILOT_HMR_PORT;
+const hasAssignedPorts = explicitDevPort !== undefined;
 
 function getPortConfig() {
   if (explicitDevPort) {
@@ -39,9 +40,9 @@ export default defineConfig(async () => ({
   clearScreen: false,
   server: {
     port: devPort,
-    strictPort: true,
+    strictPort: hasAssignedPorts,
     host: host || false,
-    hmr: host
+    hmr: host && hasAssignedPorts
       ? {
           protocol: "ws",
           host,

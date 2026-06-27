@@ -65,7 +65,7 @@ function canListen(port, host) {
   });
 }
 
-export async function getAvailablePortConfig(cwd, host = "127.0.0.1") {
+export async function getAvailablePortConfig(cwd, host = "localhost") {
   const preferred = getPreferredPortConfig(cwd);
 
   for (let offset = 0; offset < WORKTREE_PORT_SLOTS; offset += 1) {

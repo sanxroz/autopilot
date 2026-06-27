@@ -11,21 +11,38 @@ const childEnv = { ...process.env };
 let tauriArgs = [command, ...restArgs];
 
 if (command === "dev") {
-  const { devPort, hmrPort } = await getAvailablePortConfig(process.cwd());
+  const devHost = childEnv.TAURI_DEV_HOST || "localhost";
 
-  childEnv.AUTOPILOT_DEV_PORT = String(devPort);
-  childEnv.AUTOPILOT_HMR_PORT = String(hmrPort);
+  try {
+    const { devPort, hmrPort } = await getAvailablePortConfig(
+      process.cwd(),
+      devHost,
+    );
 
-  tauriArgs = [
-    "dev",
-    "--config",
-    JSON.stringify({
-      build: {
-        devUrl: `http://localhost:${devPort}`,
-      },
-    }),
-    ...restArgs,
-  ];
+    childEnv.AUTOPILOT_DEV_PORT = String(devPort);
+    childEnv.AUTOPILOT_HMR_PORT = String(hmrPort);
+
+    tauriArgs = [
+      "dev",
+      "--config",
+      JSON.stringify({
+        build: {
+          devUrl: `http://localhost:${devPort}`,
+        },
+      }),
+      ...restArgs,
+    ];
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error(
+        `Unable to find an available port pair for Tauri dev on ${devHost}. Try closing other dev servers or set AUTOPILOT_DEV_PORT manually.`,
+      );
+      console.error(error.message);
+      process.exit(1);
+    }
+
+    throw error;
+  }
 }
 
 const child = spawn("bunx", ["tauri", ...tauriArgs], {
