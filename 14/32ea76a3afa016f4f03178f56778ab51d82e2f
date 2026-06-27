@@ -1,0 +1,19 @@
+src-tauri/src/commands/watcher.rs
+  s_f497492ffc799d::t_73908ed1fe17eb 316
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "1432ea76a3afa016f4f03178f56778ab51d82e2f",
+  "prompts": {},
+  "sessions": {
+    "s_f497492ffc799d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0744-5281-7fa2-aadc-022b97bb85fc",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
