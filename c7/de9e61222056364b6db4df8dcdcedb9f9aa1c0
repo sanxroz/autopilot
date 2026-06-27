@@ -1,0 +1,33 @@
+src/lib/pr-stacks.ts
+  s_d780cc1ee15024::t_711940a6e2dd36 1-113
+src/types/github.ts
+  s_d780cc1ee15024::t_711940a6e2dd36 18
+src-tauri/src/commands/github.rs
+  s_d780cc1ee15024::t_711940a6e2dd36 20,140-141,239,293,407,482,552
+src/components/StackGroup.tsx
+  s_d780cc1ee15024::t_711940a6e2dd36 1-70
+src/hooks/useProcessStatus.ts
+  s_d780cc1ee15024::t_711940a6e2dd36 20-22,69,73,89
+vite.config.ts
+  s_d780cc1ee15024::t_711940a6e2dd36 28,31
+src/hooks/usePRStatus.ts
+  s_d780cc1ee15024::t_711940a6e2dd36 70-72
+src/components/Sidebar.tsx
+  s_d780cc1ee15024::t_711940a6e2dd36 19-20,422-436,491-578
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "c7de9e61222056364b6db4df8dcdcedb9f9aa1c0",
+  "prompts": {},
+  "sessions": {
+    "s_d780cc1ee15024": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0745-b198-7500-bdba-8150003fc779",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
