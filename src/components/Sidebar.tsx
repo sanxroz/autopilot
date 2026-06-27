@@ -566,13 +566,8 @@ export function Sidebar({ isOpen }: SidebarProps) {
                            stack.allPrs.map((pr, index) => [pr.head_branch, index] as const)
                          );
                          const orderedWts = [...wts].sort((a, b) => {
-                           const aIndex = a.branch ? prOrder.get(a.branch) : undefined;
-                           const bIndex = b.branch ? prOrder.get(b.branch) : undefined;
-
-                           if (aIndex === undefined || bIndex === undefined) {
-                             return 0;
-                           }
-
+                           const aIndex = a.branch ? prOrder.get(a.branch) ?? Number.POSITIVE_INFINITY : Number.POSITIVE_INFINITY;
+                           const bIndex = b.branch ? prOrder.get(b.branch) ?? Number.POSITIVE_INFINITY : Number.POSITIVE_INFINITY;
                            return aIndex - bIndex;
                          });
                          elements.push(
