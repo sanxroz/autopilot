@@ -8,6 +8,7 @@ export interface WorktreeInfo {
   name: string;
   path: string;
   branch: string | null;
+  head_oid?: string | null;
   last_modified: string | null;
   diff_stats?: DiffStats;
 }

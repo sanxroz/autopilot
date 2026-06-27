@@ -29,6 +29,7 @@ interface PersistedState {
   defaultAIAgent?: AIAgent;
   repoAvatarCache?: Record<string, string>;
   worktreeOrdersByRepo?: Record<string, string[]>;
+  sidebarNotesByWorktreePath?: Record<string, string>;
   sidebarNotesMarkdown?: string;
 }
 
@@ -56,6 +57,7 @@ interface AppStore {
   isInitialized: boolean;
   githubSettings: GitHubSettings;
   prStatusByBranch: Record<string, Record<string, PRStatus>>;
+  prStatusByWorktreePath: Record<string, PRStatus>;
   prDataCache: Record<string, PRDataCache>;
   worktreeOrdersByRepo: Record<string, string[]>;
   collapsedRepos: Set<string>;
@@ -70,7 +72,7 @@ interface AppStore {
   agentSidebarLifecycleEnabled: boolean;
   defaultAIAgent: AIAgent;
   addressedComments: AddressedCommentsMap;
-  sidebarNotesMarkdown: string;
+  sidebarNotesByWorktreePath: Record<string, string>;
 
   initialize: () => Promise<void>;
   preloadInstalledIdes: () => Promise<void>;
@@ -114,12 +116,15 @@ interface AppStore {
   isCommentAddressed: (repoPath: string, prNumber: number, commentId: string) => boolean;
   getAddressedCount: (repoPath: string, prNumber: number) => number;
   clearAddressedComments: (repoPath: string, prNumber: number) => void;
-  setSidebarNotesMarkdown: (markdown: string) => Promise<void>;
+  getSidebarNotesMarkdown: (worktreePath: string | null) => string;
+  setSidebarNotesMarkdown: (worktreePath: string, markdown: string) => Promise<void>;
+  flushSidebarNotesPersistence: () => Promise<void>;
 }
 
 const STORE_PATH = 'autopilot-settings.json';
 const persistedStore = new LazyStore(STORE_PATH, { autoSave: true, defaults: {} });
 let sidebarNotesSaveQueue = Promise.resolve();
+let pendingLegacySidebarNotesMarkdown: string | null = null;
 const AGENT_COMPLETED_TTL_MS = 5000;
 
 const KNOWN_AGENTS: AIAgent[] = ['opencode', 'claude', 'droid', 'amp', 'codex'];
@@ -238,6 +243,7 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
     const defaultAIAgent = await store.get<AIAgent>('defaultAIAgent');
     const repoAvatarCache = await store.get<Record<string, string>>('repoAvatarCache');
     const worktreeOrdersByRepo = await store.get<Record<string, string[]>>('worktreeOrdersByRepo');
+    const sidebarNotesByWorktreePath = await store.get<Record<string, string>>('sidebarNotesByWorktreePath');
     const sidebarNotesMarkdown = await store.get<string>('sidebarNotesMarkdown');
     const rawAddressed = await store.get<Record<string, string[]>>('addressedComments');
     let addressedComments: AddressedCommentsMap | undefined;
@@ -254,10 +260,17 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
       addressedComments,
       repoAvatarCache: repoAvatarCache || {},
       worktreeOrdersByRepo: worktreeOrdersByRepo || {},
+      sidebarNotesByWorktreePath: sidebarNotesByWorktreePath || {},
       sidebarNotesMarkdown: sidebarNotesMarkdown || "",
     };
   } catch {
-    return { repositoryPaths: [], repoAvatarCache: {}, worktreeOrdersByRepo: {}, sidebarNotesMarkdown: "" };
+    return {
+      repositoryPaths: [],
+      repoAvatarCache: {},
+      worktreeOrdersByRepo: {},
+      sidebarNotesByWorktreePath: {},
+      sidebarNotesMarkdown: "",
+    };
   }
 }
 
@@ -312,11 +325,18 @@ async function saveRepoAvatarCacheEntry(repoPath: string, avatarUrl: string | nu
   }
 }
 
-async function saveSidebarNotesMarkdown(markdown: string): Promise<void> {
+async function saveSidebarNotesByWorktreePath(sidebarNotesByWorktreePath: Record<string, string>): Promise<void> {
   sidebarNotesSaveQueue = sidebarNotesSaveQueue.catch(() => undefined).then(async () => {
-    await persistedStore.set('sidebarNotesMarkdown', markdown);
+    await persistedStore.set('sidebarNotesByWorktreePath', sidebarNotesByWorktreePath);
+    await persistedStore.delete('sidebarNotesMarkdown');
+    await persistedStore.save();
   });
   await sidebarNotesSaveQueue;
+}
+
+async function flushSidebarNotesPersistence(): Promise<void> {
+  await sidebarNotesSaveQueue.catch(() => undefined);
+  await persistedStore.save();
 }
 
 async function fetchRepoAvatarUrl(repoPath: string): Promise<string | null> {
@@ -348,6 +368,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   isInitialized: false,
   githubSettings: DEFAULT_GITHUB_SETTINGS,
   prStatusByBranch: {},
+  prStatusByWorktreePath: {},
   prDataCache: {},
   worktreeOrdersByRepo: {},
   collapsedRepos: new Set<string>(),
@@ -362,7 +383,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   agentSidebarLifecycleEnabled: true,
   defaultAIAgent: 'opencode',
   addressedComments: {},
-  sidebarNotesMarkdown: "",
+  sidebarNotesByWorktreePath: {},
 
   initialize: async () => {
     if (get().isInitialized) return;
@@ -387,8 +408,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set({ worktreeOrdersByRepo: persisted.worktreeOrdersByRepo });
     }
 
-    if (persisted.sidebarNotesMarkdown !== undefined) {
-      set({ sidebarNotesMarkdown: persisted.sidebarNotesMarkdown });
+    pendingLegacySidebarNotesMarkdown =
+      Object.keys(persisted.sidebarNotesByWorktreePath ?? {}).length === 0 && persisted.sidebarNotesMarkdown
+        ? persisted.sidebarNotesMarkdown
+        : null;
+
+    if (persisted.sidebarNotesByWorktreePath) {
+      set({ sidebarNotesByWorktreePath: persisted.sidebarNotesByWorktreePath });
     }
     
     const repoAvatarCache = persisted.repoAvatarCache || {};
@@ -598,6 +624,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const state = get();
     
     if (state.selectedWorktree?.path === worktree.path) return;
+
+    if (pendingLegacySidebarNotesMarkdown && !state.sidebarNotesByWorktreePath[worktree.path]) {
+      const nextSidebarNotesByWorktreePath = {
+        ...state.sidebarNotesByWorktreePath,
+        [worktree.path]: pendingLegacySidebarNotesMarkdown,
+      };
+      pendingLegacySidebarNotesMarkdown = null;
+      set({ sidebarNotesByWorktreePath: nextSidebarNotesByWorktreePath });
+      void saveSidebarNotesByWorktreePath(nextSidebarNotesByWorktreePath);
+    }
 
     const existing = state.terminalsByWorktree[worktree.path];
     
@@ -893,6 +929,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setPRStatusBatch: (results) => {
     set((state) => {
       const nextByRepo = { ...state.prStatusByBranch };
+      const nextByWorktreePath = { ...state.prStatusByWorktreePath };
 
       for (const result of results) {
         const existingRepoStatuses = nextByRepo[result.repo_path] ?? {};
@@ -905,9 +942,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
           nextRepoStatuses[branch] = prStatus;
         }
 
-        for (const branch of result.checked_branches) {
-          if (!refreshedStatuses.has(branch)) {
-            delete nextRepoStatuses[branch];
+        for (const worktreeStatus of result.worktree_statuses) {
+          if (worktreeStatus.status) {
+            nextByWorktreePath[worktreeStatus.worktree_path] = worktreeStatus.status;
+            continue;
+          }
+
+          delete nextByWorktreePath[worktreeStatus.worktree_path];
+          if (!refreshedStatuses.has(worktreeStatus.branch)) {
+            delete nextRepoStatuses[worktreeStatus.branch];
           }
         }
 
@@ -916,6 +959,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       return {
         prStatusByBranch: nextByRepo,
+        prStatusByWorktreePath: nextByWorktreePath,
       };
     });
   },
@@ -1215,14 +1259,29 @@ export const useAppStore = create<AppStore>((set, get) => ({
     });
   },
 
-  setSidebarNotesMarkdown: async (markdown: string) => {
-    set({ sidebarNotesMarkdown: markdown });
+  getSidebarNotesMarkdown: (worktreePath: string | null) => {
+    if (!worktreePath) {
+      return '';
+    }
+
+    return get().sidebarNotesByWorktreePath[worktreePath] ?? '';
+  },
+
+  setSidebarNotesMarkdown: async (worktreePath: string, markdown: string) => {
+    const nextSidebarNotesByWorktreePath = {
+      ...get().sidebarNotesByWorktreePath,
+      [worktreePath]: markdown,
+    };
+    pendingLegacySidebarNotesMarkdown = null;
+    set({ sidebarNotesByWorktreePath: nextSidebarNotesByWorktreePath });
     try {
-      await saveSidebarNotesMarkdown(markdown);
+      await saveSidebarNotesByWorktreePath(nextSidebarNotesByWorktreePath);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       console.error('Failed to save sidebar notes:', message);
       toast.error('Failed to save sidebar notes');
     }
   },
+
+  flushSidebarNotesPersistence,
 }));

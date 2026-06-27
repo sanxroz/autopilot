@@ -17,7 +17,7 @@ import {
   FileText,
   AppWindow,
 } from "lucide-react";
-import { usePRStatusForBranch } from "../../hooks/usePRStatus";
+import { usePRStatusForWorktree } from "../../hooks/usePRStatus";
 import { useMergePR } from "../../hooks/useMergePR";
 import {
   getOpenWithIconSources,
@@ -82,7 +82,7 @@ function OpenWithIcon({ ide }: { readonly ide: InstalledIde }) {
   );
 }
 
-function isReadyToMerge(prStatus: NonNullable<ReturnType<typeof usePRStatusForBranch>>): boolean {
+function isReadyToMerge(prStatus: NonNullable<ReturnType<typeof usePRStatusForWorktree>>): boolean {
   return (
     !prStatus.merged &&
     !prStatus.draft &&
@@ -104,7 +104,6 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const customPromptInputRef = useRef<HTMLTextAreaElement>(null);
   const [openingIdeId, setOpeningIdeId] = useState<string | null>(null);
 
-  const selectedWorktree = useAppStore((state) => state.selectedWorktree);
   const repositories = useAppStore((state) => state.repositories);
   const addTerminalWithCommand = useAppStore((state) => state.addTerminalWithCommand);
   const defaultAIAgent = useAppStore((state) => state.defaultAIAgent);
@@ -115,8 +114,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
     repositories.find((r) => r.worktrees.some((w) => w.path === worktreePath))
       ?.info.path ?? null;
 
-  const branch = selectedWorktree?.branch ?? null;
-  const prStatus = usePRStatusForBranch(repoPath ?? "", branch);
+  const prStatus = usePRStatusForWorktree(worktreePath);
 
   const { isMerging, hasMerged, handleMerge } = useMergePR({
     repoPath,
@@ -272,7 +270,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
         color: getChecksColor(),
       },
       { id: "comments", label: "Comments", icon: ClipboardList },
-      { id: "notes", label: "Notes", icon: FileText },
+      { id: "notes", label: "Worktree Notes", icon: FileText },
       ...(showChangesTab
         ? [{ id: "changes" as TabId, label: "Changes", icon: Diff }]
         : []),
@@ -640,7 +638,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
               }}
               className="h-full overflow-hidden flex flex-col"
             >
-              <NotesTab />
+              <NotesTab worktreePath={worktreePath} />
             </motion.div>
           )}
 

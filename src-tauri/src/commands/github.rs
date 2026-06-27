@@ -1,5 +1,6 @@
 use super::cli_tools::find_cli_tool;
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::process::Command;
 
@@ -43,6 +44,12 @@ struct GhUser {
 #[derive(Debug, Deserialize)]
 struct GhLabel {
     name: String,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct GhCommitSummary {
+    oid: String,
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct GithubIssue {
@@ -148,6 +155,8 @@ struct GhPRResponse {
     labels: Vec<GhLabel>,
     #[serde(default)]
     review_requests: Vec<serde_json::Value>,
+    #[serde(default)]
+    commits: Vec<GhCommitSummary>,
 }
 
 fn compute_checks_status(checks: &[GhStatusCheck]) -> Option<String> {
@@ -330,9 +339,16 @@ pub async fn get_pr_for_branch(
 }
 
 #[derive(Debug, Deserialize)]
-pub struct RepoWithBranches {
+pub struct WorktreePRLookup {
+    pub worktree_path: String,
+    pub branch: String,
+    pub head_oid: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RepoWithWorktrees {
     pub repo_path: String,
-    pub branches: Vec<String>,
+    pub worktrees: Vec<WorktreePRLookup>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -344,14 +360,22 @@ pub struct RepoPathInput {
 pub struct RepoPRStatuses {
     pub repo_path: String,
     pub statuses: Vec<PRStatus>,
-    pub checked_branches: Vec<String>,
-    pub failed_branches: Vec<String>,
+    pub worktree_statuses: Vec<WorktreePRStatus>,
+    pub checked_worktrees: Vec<String>,
+    pub failed_worktrees: Vec<String>,
 }
 
-struct BranchFetchResult {
-    statuses: Vec<PRStatus>,
-    checked_branches: Vec<String>,
-    failed_branches: Vec<String>,
+#[derive(Debug, Serialize)]
+pub struct WorktreePRStatus {
+    pub worktree_path: String,
+    pub branch: String,
+    pub status: Option<PRStatus>,
+}
+
+#[derive(Clone)]
+struct PRStatusCandidate {
+    status: PRStatus,
+    head_oid: Option<String>,
 }
 
 fn parse_github_owner_repo(repo_path: &str) -> Option<(String, String)> {
@@ -386,7 +410,7 @@ fn parse_github_owner_repo(repo_path: &str) -> Option<(String, String)> {
     }
 }
 
-fn parse_graphql_pr_node(node: &serde_json::Value) -> Option<PRStatus> {
+fn parse_graphql_pr_node(node: &serde_json::Value) -> Option<PRStatusCandidate> {
     let number = node["number"].as_u64()?;
     let title = node["title"].as_str()?.to_string();
     let url = node["url"].as_str()?.to_string();
@@ -433,6 +457,7 @@ fn parse_graphql_pr_node(node: &serde_json::Value) -> Option<PRStatus> {
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let head_oid = node["headRefOid"].as_str().map(ToString::to_string);
 
     // Parse checks from commits -> nodes[0] -> commit -> statusCheckRollup -> contexts -> nodes
     let checks: Vec<GhStatusCheck> = node["commits"]["nodes"]
@@ -466,63 +491,131 @@ fn parse_graphql_pr_node(node: &serde_json::Value) -> Option<PRStatus> {
         })
         .unwrap_or_default();
 
-    Some(PRStatus {
-        number,
-        title,
-        url,
-        state,
-        merged: merged_at.is_some(),
-        draft: is_draft,
-        review_decision,
-        checks_status: compute_checks_status(&checks),
-        mergeable,
-        additions,
-        deletions,
-        head_branch: head_ref_name.clone(),
-        base_branch: base_ref_name.clone(),
-        author: author.clone(),
-        created_at,
-        updated_at,
-        labels,
-        requested_reviewers,
-        is_bot: is_bot_author(&author, &head_ref_name),
+    Some(PRStatusCandidate {
+        status: PRStatus {
+            number,
+            title,
+            url,
+            state,
+            merged: merged_at.is_some(),
+            draft: is_draft,
+            review_decision,
+            checks_status: compute_checks_status(&checks),
+            mergeable,
+            additions,
+            deletions,
+            head_branch: head_ref_name.clone(),
+            base_branch: base_ref_name.clone(),
+            author: author.clone(),
+            created_at,
+            updated_at,
+            labels,
+            requested_reviewers,
+            is_bot: is_bot_author(&author, &head_ref_name),
+        },
+        head_oid,
     })
 }
 
-/// Fetches PR statuses for all branches in a repo using a single GraphQL API call.
-/// Falls back to per-branch REST calls if GraphQL fails (e.g. non-GitHub repos).
-fn fetch_all_prs_for_repo(gh_path: &str, repo: RepoWithBranches) -> RepoPRStatuses {
-    let branches = &repo.branches;
+fn unique_branches(worktrees: &[WorktreePRLookup]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut branches = Vec::new();
 
-    if branches.is_empty() {
-        return RepoPRStatuses {
-            repo_path: repo.repo_path,
-            statuses: Vec::new(),
-            checked_branches: Vec::new(),
-            failed_branches: Vec::new(),
-        };
-    }
-
-    // Try GraphQL first (single API call for all branches)
-    if let Some((owner, name)) = parse_github_owner_repo(&repo.repo_path) {
-        if let Some(result) = fetch_prs_graphql(gh_path, &repo.repo_path, &owner, &name, branches) {
-            return RepoPRStatuses {
-                repo_path: repo.repo_path,
-                statuses: result.statuses,
-                checked_branches: result.checked_branches,
-                failed_branches: result.failed_branches,
-            };
+    for worktree in worktrees {
+        if seen.insert(worktree.branch.clone()) {
+            branches.push(worktree.branch.clone());
         }
     }
 
-    // Fallback: per-branch REST calls (original slow path)
-    let result = fetch_prs_rest_fallback(gh_path, &repo.repo_path, branches);
-    RepoPRStatuses {
-        repo_path: repo.repo_path,
-        statuses: result.statuses,
-        checked_branches: result.checked_branches,
-        failed_branches: result.failed_branches,
+    branches
+}
+
+fn resolve_candidate_for_worktree(
+    worktree: &WorktreePRLookup,
+    candidates: &[PRStatusCandidate],
+) -> Option<PRStatus> {
+    if let Some(head_oid) = worktree.head_oid.as_deref() {
+        if let Some(candidate) = candidates
+            .iter()
+            .find(|candidate| candidate.head_oid.as_deref() == Some(head_oid))
+        {
+            return Some(candidate.status.clone());
+        }
     }
+
+    candidates
+        .iter()
+        .find(|candidate| candidate.status.state == "open")
+        .map(|candidate| candidate.status.clone())
+}
+
+fn build_branch_fetch_result(
+    repo_path: String,
+    worktrees: &[WorktreePRLookup],
+    branch_candidates: HashMap<String, Vec<PRStatusCandidate>>,
+    failed_branches: HashSet<String>,
+) -> RepoPRStatuses {
+    let mut statuses = Vec::new();
+    let mut seen_pr_numbers = HashSet::new();
+    let mut worktree_statuses = Vec::with_capacity(worktrees.len());
+    let mut checked_worktrees = Vec::new();
+    let mut failed_worktrees = Vec::new();
+
+    for worktree in worktrees {
+        if failed_branches.contains(&worktree.branch) {
+            failed_worktrees.push(worktree.worktree_path.clone());
+            continue;
+        }
+
+        checked_worktrees.push(worktree.worktree_path.clone());
+        let resolved = branch_candidates
+            .get(&worktree.branch)
+            .and_then(|candidates| resolve_candidate_for_worktree(worktree, candidates));
+
+        if let Some(status) = resolved.as_ref() {
+            if seen_pr_numbers.insert(status.number) {
+                statuses.push(status.clone());
+            }
+        }
+
+        worktree_statuses.push(WorktreePRStatus {
+            worktree_path: worktree.worktree_path.clone(),
+            branch: worktree.branch.clone(),
+            status: resolved,
+        });
+    }
+
+    RepoPRStatuses {
+        repo_path,
+        statuses,
+        worktree_statuses,
+        checked_worktrees,
+        failed_worktrees,
+    }
+}
+
+fn fetch_all_prs_for_repo(gh_path: &str, repo: RepoWithWorktrees) -> RepoPRStatuses {
+    if repo.worktrees.is_empty() {
+        return RepoPRStatuses {
+            repo_path: repo.repo_path,
+            statuses: Vec::new(),
+            worktree_statuses: Vec::new(),
+            checked_worktrees: Vec::new(),
+            failed_worktrees: Vec::new(),
+        };
+    }
+
+    let branches = unique_branches(&repo.worktrees);
+
+    if let Some((owner, name)) = parse_github_owner_repo(&repo.repo_path) {
+        if let Some(result) =
+            fetch_prs_graphql(gh_path, &repo.repo_path, &owner, &name, &repo.worktrees, &branches)
+        {
+            return result;
+        }
+    }
+
+    fetch_prs_rest_fallback(gh_path, &repo.repo_path, &repo.worktrees, &branches)
 }
 
 fn fetch_prs_graphql(
@@ -530,13 +623,11 @@ fn fetch_prs_graphql(
     repo_path: &str,
     owner: &str,
     name: &str,
+    worktrees: &[WorktreePRLookup],
     branches: &[String],
-) -> Option<BranchFetchResult> {
-    // Build one GraphQL query with an alias per branch.
-    // Chunk into batches of 25 to stay well within GraphQL complexity limits.
-    let mut all_statuses = Vec::new();
-    let mut checked_branches = Vec::new();
-    let mut failed_branches = Vec::new();
+) -> Option<RepoPRStatuses> {
+    let mut branch_candidates: HashMap<String, Vec<PRStatusCandidate>> = HashMap::new();
+    let mut failed_branches = HashSet::new();
 
     for chunk in branches.chunks(25) {
         let branch_fragments: Vec<String> = chunk
@@ -547,9 +638,9 @@ fn fetch_prs_graphql(
                     .unwrap_or_else(|_| format!("\"{}\"", branch));
                 let escaped = &json_escaped[1..json_escaped.len() - 1];
                 format!(
-                    r#"b{i}: pullRequests(headRefName: "{escaped}", first: 1, states: [OPEN, CLOSED, MERGED], orderBy: {{field: CREATED_AT, direction: DESC}}) {{
+                    r#"b{i}: pullRequests(headRefName: "{escaped}", first: 20, states: [OPEN, CLOSED, MERGED], orderBy: {{field: UPDATED_AT, direction: DESC}}) {{
                         nodes {{
-                            number title url state isDraft mergedAt mergeable reviewDecision additions deletions headRefName baseRefName
+                            number title url state isDraft mergedAt mergeable reviewDecision additions deletions headRefName headRefOid baseRefName
                             author {{ login }}
                             createdAt
                             updatedAt
@@ -627,45 +718,47 @@ fn fetch_prs_graphql(
             let branch = chunk[i].clone();
 
             if let Some(nodes) = repo_data[&alias]["nodes"].as_array() {
-                if let Some(node) = nodes.first() {
-                    if let Some(status) = parse_graphql_pr_node(node) {
-                        checked_branches.push(branch);
-                        all_statuses.push(status);
-                    } else {
-                        eprintln!(
-                            "Failed to parse GraphQL PR node for branch {} in {}",
-                            branch, repo_path
-                        );
-                        failed_branches.push(branch);
-                    }
-                } else {
-                    checked_branches.push(branch);
+                let parsed = nodes
+                    .iter()
+                    .filter_map(parse_graphql_pr_node)
+                    .collect::<Vec<_>>();
+
+                if parsed.is_empty() && !nodes.is_empty() {
+                    eprintln!(
+                        "Failed to parse GraphQL PR nodes for branch {} in {}",
+                        branch, repo_path
+                    );
+                    failed_branches.insert(branch);
+                    continue;
                 }
+
+                branch_candidates.insert(branch, parsed);
             } else {
                 eprintln!(
                     "GraphQL response missing nodes for branch {} in {}",
                     branch, repo_path
                 );
-                failed_branches.push(branch);
+                failed_branches.insert(branch);
             }
         }
     }
 
-    Some(BranchFetchResult {
-        statuses: all_statuses,
-        checked_branches,
+    Some(build_branch_fetch_result(
+        repo_path.to_string(),
+        worktrees,
+        branch_candidates,
         failed_branches,
-    })
+    ))
 }
 
 fn fetch_prs_rest_fallback(
     gh_path: &str,
     repo_path: &str,
+    worktrees: &[WorktreePRLookup],
     branches: &[String],
-) -> BranchFetchResult {
-    let mut statuses = Vec::new();
-    let mut checked_branches = Vec::new();
-    let mut failed_branches = Vec::new();
+) -> RepoPRStatuses {
+    let mut branch_candidates: HashMap<String, Vec<PRStatusCandidate>> = HashMap::new();
+    let mut failed_branches = HashSet::new();
 
     for branch in branches {
         let output = Command::new(gh_path)
@@ -677,27 +770,32 @@ fn fetch_prs_rest_fallback(
                 "--state",
                 "all",
                 "--limit",
-                "1",
+                "20",
                 "--json",
-                PR_JSON_FIELDS,
+                &format!("{},commits", PR_JSON_FIELDS),
             ])
             .current_dir(repo_path)
             .output();
 
         match output {
             Ok(out) if out.status.success() => {
-                checked_branches.push(branch.clone());
-
                 match String::from_utf8(out.stdout) {
                     Ok(stdout) => match serde_json::from_str::<Vec<GhPRResponse>>(&stdout) {
                         Ok(prs) => {
-                            if let Some(pr) = prs.into_iter().next() {
-                                statuses.push(map_gh_pr_to_status(pr));
-                            }
+                            let candidates = prs
+                                .into_iter()
+                                .map(|pr| {
+                                    let head_oid = pr.commits.last().map(|commit| commit.oid.clone());
+                                    PRStatusCandidate {
+                                        status: map_gh_pr_to_status(pr),
+                                        head_oid,
+                                    }
+                                })
+                                .collect::<Vec<_>>();
+                            branch_candidates.insert(branch.clone(), candidates);
                         }
                         Err(error) => {
-                            checked_branches.pop();
-                            failed_branches.push(branch.clone());
+                            failed_branches.insert(branch.clone());
                             eprintln!(
                                 "Failed to parse PR list JSON for branch {} in {}: {}",
                                 branch, repo_path, error
@@ -705,8 +803,7 @@ fn fetch_prs_rest_fallback(
                         }
                     },
                     Err(error) => {
-                        checked_branches.pop();
-                        failed_branches.push(branch.clone());
+                        failed_branches.insert(branch.clone());
                         eprintln!(
                             "Invalid UTF-8 from gh pr list for branch {} in {}: {}",
                             branch, repo_path, error
@@ -715,7 +812,7 @@ fn fetch_prs_rest_fallback(
                 }
             }
             Ok(out) => {
-                failed_branches.push(branch.clone());
+                failed_branches.insert(branch.clone());
                 eprintln!(
                     "gh pr list failed for branch {} in {}: {}",
                     branch,
@@ -724,7 +821,7 @@ fn fetch_prs_rest_fallback(
                 );
             }
             Err(error) => {
-                failed_branches.push(branch.clone());
+                failed_branches.insert(branch.clone());
                 eprintln!(
                     "Failed to execute gh pr list for branch {} in {}: {}",
                     branch, repo_path, error
@@ -733,16 +830,17 @@ fn fetch_prs_rest_fallback(
         }
     }
 
-    BranchFetchResult {
-        statuses,
-        checked_branches,
+    build_branch_fetch_result(
+        repo_path.to_string(),
+        worktrees,
+        branch_candidates,
         failed_branches,
-    }
+    )
 }
 
 #[tauri::command]
 pub async fn get_all_prs_for_repos(
-    repos: Vec<RepoWithBranches>,
+    repos: Vec<RepoWithWorktrees>,
 ) -> Result<Vec<RepoPRStatuses>, String> {
     let gh_path = find_cli_tool("gh")?;
 
@@ -829,8 +927,9 @@ pub async fn get_all_open_prs_for_repos(
         results.push(RepoPRStatuses {
             repo_path: repo.repo_path,
             statuses,
-            checked_branches: Vec::new(),
-            failed_branches: Vec::new(),
+            worktree_statuses: Vec::new(),
+            checked_worktrees: Vec::new(),
+            failed_worktrees: Vec::new(),
         });
     }
 
