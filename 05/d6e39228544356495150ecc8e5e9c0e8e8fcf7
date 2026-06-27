@@ -1,0 +1,35 @@
+src/components/RightPanel/ChecksTab.tsx
+  s_900d8714836c0d::t_4217e72a447e7a 1,10,23,76,89,96,99,119-125,130-147
+  s_5b08a8ce141237::t_4cd9f692786a97 148
+src/components/RightPanel/checks-tab-domain.ts
+  s_900d8714836c0d::t_b80e435107fe3d 159-167
+src-tauri/src/commands/github_checks.rs
+  s_900d8714836c0d::t_ea9f3768d99b14 420-421
+  s_900d8714836c0d::t_719fa97ff88967 34-36,51-52,105-109,116-120,126-131,137-151,240-241,283-284,288-295,301-303,311-312,317-319,321-324,340-342,395-396
+  s_900d8714836c0d::t_38a1fb76bada21 5-6,155-180,316,320,325-328,330-336,338,354,367-394,397-419,422-424
+  s_900d8714836c0d::t_1def75867b1128 181
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "05d6e39228544356495150ecc8e5e9c0e8e8fcf7",
+  "prompts": {},
+  "sessions": {
+    "s_5b08a8ce141237": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0930-c4a0-7760-b9ca-6b83f278a48d",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    },
+    "s_900d8714836c0d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0934-eb0a-71d2-96e9-1dcc3d6485bf",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
