@@ -1,0 +1,62 @@
+src-tauri/src/lib.rs
+  s_f497492ffc799d::t_8b2c1a6667324e 5,170-171
+src-tauri/src/commands/editor.rs
+  s_f497492ffc799d::t_e795749d9f75c3 1-4,6,11-17,19-107,150-172,179-190,194-197,203-220,229-244,335-404
+  s_f497492ffc799d::t_0b172f26484a5a 108-149
+  s_f497492ffc799d::t_9eabb007464313 5,7-10,18,173-177,191-193,201-202,245-257,266-272,274-289
+  s_f497492ffc799d::t_360453981c100e 221-228
+  s_f497492ffc799d::t_75dab438eec4d9 290-292
+  s_f497492ffc799d::t_7827ae624250f1 178,198-200
+  s_f497492ffc799d::t_67c5027af3de47 258-265,273,293-334
+src/components/RightPanel/index.tsx
+  s_f497492ffc799d::t_be66dd9d1caf4d 1,18,20,36,47,49-78,321
+  s_f497492ffc799d::t_5ad1251a3ee43f 310,318,323
+  s_f497492ffc799d::t_02ead34fdcca1b 306-309,311-314,316,319-320,324-326
+  s_f497492ffc799d::t_dc064e6aec8b67 14,289,291,293-295
+  s_f497492ffc799d::t_caf73412799c3f 317
+  s_f497492ffc799d::t_0ffec399800fac 2,101-102
+  s_f497492ffc799d::t_9f9d16cbeed43e 19,48
+  s_f497492ffc799d::t_aa2dc36cc89ea8 97,155-158,161-168,170,174-175,290,292,296-305,328-333
+src/store/index.ts
+  s_f497492ffc799d::t_69ad4bbe778065 15,53-54,74,332-333,355-356,427-442
+  s_13d6627b76a632::t_ae8cb6c523c986 443-444
+src/types/index.ts
+  s_f497492ffc799d::t_b9a4a43c3c9b2c 20
+  s_f497492ffc799d::t_017620d747ee06 15-19,21-22
+src/App.tsx
+  s_f497492ffc799d::t_67b1f8b7e1cead 19,24-25,42-48
+  s_f497492ffc799d::t_f0655c64efc6a3 49
+src/lib/open-with.ts
+  s_f497492ffc799d::t_183afb8ace5576 4,6,16,19,29
+  s_f497492ffc799d::t_43de12ac00b87a 1-3,7-15,20,30-39,49-52,54-59
+  s_f497492ffc799d::t_ac8d3821aa9d60 5,17,21-28,40-48,53
+  s_f497492ffc799d::t_6c48db2e6e2db6 18
+public/open-with-icons/.gitkeep
+  s_f497492ffc799d::t_12ac0ab9fda06c 1
+src-tauri/src/commands/mod.rs
+  s_f497492ffc799d::t_4fe01be40bf310 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "f6a35b4be4758cc5c29339a7331e97bccd24ae4c",
+  "prompts": {},
+  "sessions": {
+    "s_13d6627b76a632": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f077e-12ad-7382-8376-db817c47cff0",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    },
+    "s_f497492ffc799d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0744-5281-7fa2-aadc-022b97bb85fc",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
