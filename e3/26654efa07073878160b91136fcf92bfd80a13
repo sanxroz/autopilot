@@ -1,0 +1,20 @@
+src/components/StackGroup.tsx
+  s_5ded6dbf0897e1::t_7cec9bd706dbc5 3,37
+  s_5ded6dbf0897e1::t_65f7102b798520 49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "e326654efa07073878160b91136fcf92bfd80a13",
+  "prompts": {},
+  "sessions": {
+    "s_5ded6dbf0897e1": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f072a-5c4d-76a1-9a28-e8c2f09cdfd3",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
