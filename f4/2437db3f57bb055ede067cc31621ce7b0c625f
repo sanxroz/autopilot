@@ -1,0 +1,25 @@
+DESIGN.md
+  s_5b08a8ce141237::t_8a4afd59646ba4 1-161
+src/components/RightPanel/NotesTab.tsx
+  s_5b08a8ce141237::t_7e581a7a592460 1-24
+src/components/RightPanel/index.tsx
+  s_5b08a8ce141237::t_758082391a80f3 16,27,42,214,516-531
+src/store/index.ts
+  s_5b08a8ce141237::t_6258fc0b057e86 31,70,113,235,251,254,309-318,360,382-385,1192-1196
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "f42437db3f57bb055ede067cc31621ce7b0c625f",
+  "prompts": {},
+  "sessions": {
+    "s_5b08a8ce141237": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0930-c4a0-7760-b9ca-6b83f278a48d",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
