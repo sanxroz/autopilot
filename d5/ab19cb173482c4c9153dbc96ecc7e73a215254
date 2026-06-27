@@ -1,0 +1,19 @@
+src/App.tsx
+  s_794ca7a2239a34::t_89965adb94a7c4 76-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "d5ab19cb173482c4c9153dbc96ecc7e73a215254",
+  "prompts": {},
+  "sessions": {
+    "s_794ca7a2239a34": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0996-677e-74a3-ab71-f5d77cec3ab3",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
