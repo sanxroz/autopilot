@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Circle, Loader } from "lucide-react";
 import { useCachedPRData } from "../../hooks/useCachedPRData";
@@ -7,6 +7,7 @@ import { cn } from "../../utils/cn";
 import { CheckRow } from "./CheckRow";
 import {
   getCheckKey,
+  getCheckDetailVersion,
   getMergeStatusColorClass,
   getMergeStatusText,
   isDeploymentCheck,
@@ -19,6 +20,7 @@ interface ChecksTabProps {
 }
 
 type DetailState = Record<string, PRCheckDetail | null>;
+type DetailVersionState = Record<string, string>;
 type LoadingState = Record<string, boolean>;
 type ErrorState = Record<string, string | null>;
 
@@ -71,6 +73,7 @@ export function ChecksTab({ repoPath, prNumber, prStatus }: ChecksTabProps) {
   const { checksResult, prDetails, isLoading, error, fetchData } = useCachedPRData({ repoPath, prNumber, prStatus, includeChecks: true });
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [details, setDetails] = useState<DetailState>({});
+  const [detailVersions, setDetailVersions] = useState<DetailVersionState>({});
   const [loadingDetails, setLoadingDetails] = useState<LoadingState>({});
   const [detailErrors, setDetailErrors] = useState<ErrorState>({});
 
@@ -83,14 +86,17 @@ export function ChecksTab({ repoPath, prNumber, prStatus }: ChecksTabProps) {
     if (!repoPath) return;
 
     const key = getCheckKey(check);
+    const version = getCheckDetailVersion(check);
     setLoadingDetails((state) => ({ ...state, [key]: true }));
     setDetailErrors((state) => ({ ...state, [key]: null }));
 
     try {
       const detail = await invoke<PRCheckDetail>("get_pr_check_detail", { repoPath, checkUrl: check.url });
       setDetails((state) => ({ ...state, [key]: detail }));
+      setDetailVersions((state) => ({ ...state, [key]: version }));
     } catch (detailError) {
       setDetailErrors((state) => ({ ...state, [key]: String(detailError) }));
+      setDetailVersions((state) => ({ ...state, [key]: version }));
     } finally {
       setLoadingDetails((state) => ({ ...state, [key]: false }));
     }
@@ -110,10 +116,35 @@ export function ChecksTab({ repoPath, prNumber, prStatus }: ChecksTabProps) {
       return next;
     });
 
-    if (!isExpanded && check.is_actions_job && !details[key] && !loadingDetails[key]) {
+    const detailVersion = getCheckDetailVersion(check);
+    if (
+      !isExpanded &&
+      check.is_actions_job &&
+      detailVersions[key] !== detailVersion &&
+      !loadingDetails[key]
+    ) {
       void loadCheckDetail(check);
     }
   };
+
+  useEffect(() => {
+    const allChecks = checksResult?.checks ?? [];
+
+    for (const check of allChecks) {
+      if (!check.is_actions_job) {
+        continue;
+      }
+
+      const key = getCheckKey(check);
+      if (!expandedKeys.has(key) || loadingDetails[key]) {
+        continue;
+      }
+
+      if (detailVersions[key] !== getCheckDetailVersion(check)) {
+        void loadCheckDetail(check);
+      }
+    }
+  }, [checksResult, detailVersions, expandedKeys, loadingDetails]);
 
   if (!prNumber) return <div className="flex flex-1 items-center justify-center text-sm text-secondary">No PR found for this branch</div>;
 

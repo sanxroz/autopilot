@@ -156,3 +156,12 @@ export function getCheckKey(check: PRCheck): string {
     ? `job:${check.job_id}`
     : `${check.name}:${check.url ?? "local"}:${check.started_at ?? "unknown"}`;
 }
+
+export function getCheckDetailVersion(check: PRCheck): string {
+  return [
+    check.bucket,
+    check.state,
+    check.started_at ?? "unknown",
+    check.completed_at ?? "unknown",
+  ].join(":");
+}
