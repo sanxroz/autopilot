@@ -2,7 +2,7 @@
 
 mod commands;
 
-use commands::{editor, git, github, process, terminal, watcher};
+use commands::{editor, git, github, github_checks, process, terminal, watcher};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -150,7 +150,8 @@ pub fn run() {
             github::get_all_open_prs_for_repos,
             github::get_pr_status,
             github::get_repo_from_remote,
-            github::get_pr_checks,
+            github_checks::get_pr_checks,
+            github_checks::get_pr_check_detail,
             github::get_pr_details,
             github::get_pr_files,
             github::get_pr_commits,
