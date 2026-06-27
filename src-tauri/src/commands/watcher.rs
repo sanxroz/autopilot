@@ -313,10 +313,7 @@ impl GitWatcher {
             move |res: Result<Event, notify::Error>| {
                 if let Ok(event) = res {
                     if !event.paths.is_empty()
-                        && event
-                        .paths
-                        .iter()
-                        .all(|p| {
+                        && event.paths.iter().all(|p| {
                             is_ignored_worktree_event_path(
                                 ignored_repo.as_ref(),
                                 &ignored_path_root,
