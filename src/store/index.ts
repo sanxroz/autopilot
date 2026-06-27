@@ -13,6 +13,8 @@ import type {
   AgentRunState,
   AgentStatusEvent,
   InstalledIde,
+  AutoFetchSettings,
+  WorktreeSetupResult,
 } from '../types';
 import type {
   GitHubSettings,
@@ -23,12 +25,15 @@ import type {
 } from '../types/github';
 import { DEFAULT_GITHUB_SETTINGS } from '../types/github';
 import { setThemeMode as setGlobalThemeMode, getThemeMode, type ThemeMode } from '../theme';
+import { addWorktreeSetupName, removeWorktreeSetupName } from './worktreeSetup';
 
 interface PersistedState {
   repositoryPaths: string[];
   defaultAIAgent?: AIAgent;
   repoAvatarCache?: Record<string, string>;
   worktreeOrdersByRepo?: Record<string, string[]>;
+  autoFetchSettings?: AutoFetchSettings;
+  repoPostCreateCommandsByPath?: Record<string, string>;
 }
 
 interface WorktreeTerminals {
@@ -69,6 +74,9 @@ interface AppStore {
   agentSidebarLifecycleEnabled: boolean;
   defaultAIAgent: AIAgent;
   addressedComments: AddressedCommentsMap;
+  autoFetchSettings: AutoFetchSettings;
+  repoPostCreateCommandsByPath: Record<string, string>;
+  worktreeSetupByRepoPath: Record<string, string[]>;
 
   initialize: () => Promise<void>;
   preloadInstalledIdes: () => Promise<void>;
@@ -107,6 +115,11 @@ interface AppStore {
   markAgentRunError: (worktreePath: string, error: string) => void;
   reconcileAgentRunWithProcessPolling: (worktreePath: string, processStatus: ProcessStatus) => void;
   setDefaultAIAgent: (agent: AIAgent) => Promise<void>;
+  setAutoFetchEnabled: (enabled: boolean) => Promise<void>;
+  setAutoFetchIntervalMinutes: (intervalMinutes: number) => Promise<void>;
+  setRepoPostCreateCommands: (repoPath: string, commands: string) => Promise<void>;
+  runPostCreateSetup: (repoPath: string, worktree: WorktreeInfo) => Promise<WorktreeSetupResult | null>;
+  startPostCreateSetup: (repoPath: string, worktree: WorktreeInfo) => void;
   updateWorktreeDiffStats: (stats: Array<{ path: string; diff_stats: { additions: number; deletions: number } | null }>) => void;
   toggleAddressedComment: (repoPath: string, prNumber: number, commentId: string) => void;
   isCommentAddressed: (repoPath: string, prNumber: number, commentId: string) => boolean;
@@ -116,6 +129,10 @@ interface AppStore {
 
 const STORE_PATH = 'autopilot-settings.json';
 const AGENT_COMPLETED_TTL_MS = 5000;
+const DEFAULT_AUTO_FETCH_SETTINGS: AutoFetchSettings = {
+  enabled: false,
+  intervalMinutes: 5,
+};
 
 const KNOWN_AGENTS: AIAgent[] = ['opencode', 'claude', 'droid', 'amp', 'codex'];
 
@@ -135,7 +152,7 @@ function hasWorktreeChanges(worktree: WorktreeInfo): boolean {
   return (worktree.diff_stats?.additions ?? 0) + (worktree.diff_stats?.deletions ?? 0) > 0;
 }
 
-function normalizeWorktreeOrder(worktrees: WorktreeInfo[], orderedWorktreePaths: string[] | undefined): string[] {
+function normalizeWorktreeOrder(worktrees: readonly WorktreeInfo[], orderedWorktreePaths: string[] | undefined): string[] {
   if (!orderedWorktreePaths?.length) return [];
 
   const existingPaths = new Set(
@@ -146,7 +163,7 @@ function normalizeWorktreeOrder(worktrees: WorktreeInfo[], orderedWorktreePaths:
 }
 
 function orderWorktrees(
-  worktrees: WorktreeInfo[],
+  worktrees: readonly WorktreeInfo[],
   orderedWorktreePaths: string[] | undefined,
   stableWorktreePaths?: string[]
 ): WorktreeInfo[] {
@@ -233,6 +250,8 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
     const defaultAIAgent = await store.get<AIAgent>('defaultAIAgent');
     const repoAvatarCache = await store.get<Record<string, string>>('repoAvatarCache');
     const worktreeOrdersByRepo = await store.get<Record<string, string[]>>('worktreeOrdersByRepo');
+    const autoFetchSettings = await store.get<AutoFetchSettings>('autoFetchSettings');
+    const repoPostCreateCommandsByPath = await store.get<Record<string, string>>('repoPostCreateCommandsByPath');
     const rawAddressed = await store.get<Record<string, string[]>>('addressedComments');
     let addressedComments: AddressedCommentsMap | undefined;
     if (rawAddressed) {
@@ -248,9 +267,17 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
       addressedComments,
       repoAvatarCache: repoAvatarCache || {},
       worktreeOrdersByRepo: worktreeOrdersByRepo || {},
+      autoFetchSettings: autoFetchSettings || DEFAULT_AUTO_FETCH_SETTINGS,
+      repoPostCreateCommandsByPath: repoPostCreateCommandsByPath || {},
     };
   } catch {
-    return { repositoryPaths: [], repoAvatarCache: {}, worktreeOrdersByRepo: {} };
+    return {
+      repositoryPaths: [],
+      repoAvatarCache: {},
+      worktreeOrdersByRepo: {},
+      autoFetchSettings: DEFAULT_AUTO_FETCH_SETTINGS,
+      repoPostCreateCommandsByPath: {},
+    };
   }
 }
 
@@ -305,6 +332,16 @@ async function saveRepoAvatarCacheEntry(repoPath: string, avatarUrl: string | nu
   }
 }
 
+async function saveStoreValue<T>(key: string, value: T): Promise<void> {
+  try {
+    const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
+    await store.set(key, value);
+    await store.save();
+  } catch (e) {
+    console.error(`Failed to save ${key}:`, e);
+  }
+}
+
 async function fetchRepoAvatarUrl(repoPath: string): Promise<string | null> {
   try {
     const nameWithOwner = await invoke<string | null>('get_repo_from_remote', { repoPath });
@@ -348,6 +385,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   agentSidebarLifecycleEnabled: true,
   defaultAIAgent: 'opencode',
   addressedComments: {},
+  autoFetchSettings: DEFAULT_AUTO_FETCH_SETTINGS,
+  repoPostCreateCommandsByPath: {},
+  worktreeSetupByRepoPath: {},
 
   initialize: async () => {
     if (get().isInitialized) return;
@@ -370,6 +410,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     if (persisted.worktreeOrdersByRepo) {
       set({ worktreeOrdersByRepo: persisted.worktreeOrdersByRepo });
+    }
+
+    if (persisted.autoFetchSettings) {
+      set({ autoFetchSettings: persisted.autoFetchSettings });
+    }
+
+    if (persisted.repoPostCreateCommandsByPath) {
+      set({ repoPostCreateCommandsByPath: persisted.repoPostCreateCommandsByPath });
     }
     
     const repoAvatarCache = persisted.repoAvatarCache || {};
@@ -796,7 +844,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
   createWorktreeAuto: async (repoPath: string) => {
     try {
       const worktree = await invoke<WorktreeInfo>('create_worktree_auto', { repoPath });
-      await get().refreshWorktrees(repoPath);
+      set((state) => ({
+        repositories: state.repositories.map((repo) =>
+          repo.info.path === repoPath && !repo.worktrees.some((wt) => wt.path === worktree.path)
+            ? { ...repo, worktrees: [...repo.worktrees, worktree] }
+            : repo
+        ),
+      }));
+      const setupCommand = get().repoPostCreateCommandsByPath[repoPath]?.trim();
+
+      if (setupCommand) {
+        get().startPostCreateSetup(repoPath, worktree);
+      }
+
+      void get().refreshWorktrees(repoPath);
       return worktree;
     } catch (e) {
       console.error('Failed to create worktree:', e);
@@ -1127,13 +1188,90 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setDefaultAIAgent: async (agent: AIAgent) => {
     set({ defaultAIAgent: agent });
-    try {
-      const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
-      await store.set('defaultAIAgent', agent);
-      await store.save();
-    } catch (e) {
-      console.error('Failed to save default AI agent:', e);
+    await saveStoreValue('defaultAIAgent', agent);
+  },
+
+  setAutoFetchEnabled: async (enabled: boolean) => {
+    const autoFetchSettings = {
+      ...get().autoFetchSettings,
+      enabled,
+    };
+    set({ autoFetchSettings });
+    await saveStoreValue('autoFetchSettings', autoFetchSettings);
+  },
+
+  setAutoFetchIntervalMinutes: async (intervalMinutes: number) => {
+    const autoFetchSettings = {
+      ...get().autoFetchSettings,
+      intervalMinutes,
+    };
+    set({ autoFetchSettings });
+    await saveStoreValue('autoFetchSettings', autoFetchSettings);
+  },
+
+  setRepoPostCreateCommands: async (repoPath: string, commands: string) => {
+    const repoPostCreateCommandsByPath = {
+      ...get().repoPostCreateCommandsByPath,
+      [repoPath]: commands,
+    };
+    set({ repoPostCreateCommandsByPath });
+    await saveStoreValue('repoPostCreateCommandsByPath', repoPostCreateCommandsByPath);
+  },
+
+  runPostCreateSetup: async (repoPath: string, worktree: WorktreeInfo) => {
+    const command = get().repoPostCreateCommandsByPath[repoPath]?.trim();
+    if (!command) {
+      return null;
     }
+
+    try {
+      const result = await invoke<WorktreeSetupResult>('run_worktree_setup_script', {
+        repoPath,
+        worktreePath: worktree.path,
+        worktreeName: worktree.name,
+        script: command,
+      });
+
+      if (result.success) {
+        toast.success(`Workspace "${worktree.name}" setup finished`);
+      } else {
+        toast.error(`Workspace "${worktree.name}" setup failed`);
+      }
+
+      return result;
+    } catch (e) {
+      console.error('Failed to run worktree setup:', e);
+      toast.error(`Workspace "${worktree.name}" setup could not start`);
+      throw e;
+    }
+  },
+
+  startPostCreateSetup: (repoPath: string, worktree: WorktreeInfo) => {
+    if (!get().repoPostCreateCommandsByPath[repoPath]?.trim()) {
+      return;
+    }
+
+    set((state) => ({
+      worktreeSetupByRepoPath: addWorktreeSetupName(
+        state.worktreeSetupByRepoPath,
+        repoPath,
+        worktree.name
+      ),
+    }));
+
+    void get()
+      .runPostCreateSetup(repoPath, worktree)
+      .catch(() => null)
+      .finally(() => {
+        set((state) => ({
+          worktreeSetupByRepoPath: removeWorktreeSetupName(
+            state.worktreeSetupByRepoPath,
+            repoPath,
+            worktree.name
+          ),
+        }));
+        void get().refreshWorktrees(repoPath);
+      });
   },
 
   updateWorktreeDiffStats: (stats) => {

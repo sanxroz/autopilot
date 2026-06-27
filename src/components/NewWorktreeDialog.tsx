@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../store';
-import type { BranchInfo } from '../types';
+import type { BranchInfo, WorktreeInfo } from '../types';
 
 interface Props {
   repoPath: string;
@@ -14,7 +14,7 @@ export function NewWorktreeDialog({ repoPath, onClose }: Props) {
   const [worktreeName, setWorktreeName] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { refreshWorktrees } = useAppStore();
+  const { refreshWorktrees, startPostCreateSetup } = useAppStore();
 
   useEffect(() => {
     invoke<BranchInfo[]>('list_branches', { repoPath })
@@ -29,14 +29,15 @@ export function NewWorktreeDialog({ repoPath, onClose }: Props) {
     setError(null);
 
     try {
-      await invoke('create_worktree', {
+      const worktree = await invoke<WorktreeInfo>('create_worktree', {
         repoPath,
         worktreeName,
-        branchName: selectedBranch,
+        baseBranch: selectedBranch,
         targetPath: null,
       });
-      await refreshWorktrees(repoPath);
       onClose();
+      startPostCreateSetup(repoPath, worktree);
+      void refreshWorktrees(repoPath);
     } catch (e) {
       setError(String(e));
     } finally {

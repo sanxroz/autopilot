@@ -73,6 +73,7 @@ interface WorktreeItemProps {
   prStatus: PRStatus | null;
   processStatus: ProcessStatus;
   agentRunState?: AgentRunState;
+  isSettingUp?: boolean;
   isActive: boolean;
   onSelect: () => void;
   onDelete: (e: React.MouseEvent) => void;
@@ -147,6 +148,7 @@ export const WorktreeItem = memo(function WorktreeItem({
   prStatus,
   processStatus,
   agentRunState,
+  isSettingUp = false,
   isActive,
   onSelect,
   onDelete,
@@ -161,10 +163,8 @@ export const WorktreeItem = memo(function WorktreeItem({
   const processStatusColorClass = getProcessStatusColor(processStatus);
   const processStatusLabel = PROCESS_STATUS_LABELS[processStatus];
   const agentStatus = getAgentStatusDisplay(agentRunState);
-
-  const fallbackProcessLabel = processStatusLabel || null;
-  const secondaryStatusLabel = fallbackProcessLabel;
-  const secondaryStatusClass = processStatus === 'agent_running' ? 'text-semantic-warning' : 'text-secondary';
+  const secondaryStatusClass =
+    processStatus === "agent_running" ? "text-semantic-warning" : "text-secondary";
 
   return (
     <div
@@ -247,10 +247,22 @@ export const WorktreeItem = memo(function WorktreeItem({
               <span className="font-mono text-xs font-bold">·</span>
             </>
           )}
-          {secondaryStatusLabel && (
+          {processStatusLabel && (
             <>
-              <span className={cn('truncate', secondaryStatusClass)} title={agentStatus?.title || secondaryStatusLabel}>
-                {secondaryStatusLabel}
+              <span
+                className={cn("truncate", secondaryStatusClass)}
+                title={agentStatus?.title || processStatusLabel}
+              >
+                {processStatusLabel}
+              </span>
+              <span className="font-mono text-xs font-bold">·</span>
+            </>
+          )}
+          {isSettingUp && (
+            <>
+              <span className="flex items-center gap-1 text-tertiary" title={`Setting up ${name}`}>
+                <Loader className="h-3 w-3 animate-spin" />
+                <span className="truncate">Setting up workspace</span>
               </span>
               <span className="font-mono text-xs font-bold">·</span>
             </>

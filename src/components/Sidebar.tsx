@@ -20,6 +20,7 @@ import { StackGroup } from "./StackGroup";
 import { detectStacks, getStackLabel } from "../lib/pr-stacks";
 import { useThemeMode } from "../hooks/useTheme";
 import { cn } from "../utils/cn";
+import { isWorktreeSettingUp } from "../store/worktreeSetup";
 
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 480;
@@ -55,6 +56,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
     processStatusByPath,
     agentRunByWorktreePath,
     agentSidebarLifecycleEnabled,
+    worktreeSetupByRepoPath,
   } = useAppStore();
   const themeMode = useThemeMode();
   const reducedMotion = useReducedMotion();
@@ -183,7 +185,9 @@ export function Sidebar({ isOpen }: SidebarProps) {
     try {
       const created = await createWorktreeAuto(repoPath);
       if (created) {
-        await selectWorktree(created);
+        window.setTimeout(() => {
+          void selectWorktree(created);
+        }, 0);
       }
     } catch (e) {
       console.error("Failed to create worktree:", e);
@@ -543,6 +547,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
                                prStatus={prStatus}
                                processStatus={processStatus}
                                agentRunState={agentRunState}
+                               isSettingUp={isWorktreeSettingUp(worktreeSetupByRepoPath, group.repoPath, wt.name)}
                                isActive={selectedWorktree?.path === wt.path}
                                onSelect={() => handleWorktreeClick(wt)}
                                onDelete={(e) => handleDeleteWorktree(e, group.repoPath, wt.name)}

@@ -10,6 +10,7 @@ import { CommandMenu } from "./components/CommandMenu";
 import { UpdateNotification } from "./components/UpdateNotification";
 import { Toaster } from "sonner";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { useAppStore } from "./store";
 import { usePRStatusPolling } from "./hooks/usePRStatus";
 import { useGitWatcher } from "./hooks/useGitWatcher";
@@ -32,6 +33,9 @@ function App() {
   const toggleSettings = useAppStore((state) => state.toggleSettings);
   const setAgentRunState = useAppStore((state) => state.setAgentRunState);
   const agentSidebarLifecycleEnabled = useAppStore((state) => state.agentSidebarLifecycleEnabled);
+  const repositories = useAppStore((state) => state.repositories);
+  const autoFetchSettings = useAppStore((state) => state.autoFetchSettings);
+  const refreshWorktrees = useAppStore((state) => state.refreshWorktrees);
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -93,6 +97,28 @@ function App() {
       }
     };
   }, [agentSidebarLifecycleEnabled, setAgentRunState]);
+
+  useEffect(() => {
+    if (!autoFetchSettings.enabled || repositories.length === 0) {
+      return;
+    }
+
+    const intervalMs = Math.max(autoFetchSettings.intervalMinutes, 1) * 60 * 1000;
+    const fetchAllRepositories = async () => {
+      await Promise.allSettled(
+        repositories.map(async (repo) => {
+          await invoke("git_fetch", { repoPath: repo.info.path });
+          await refreshWorktrees(repo.info.path);
+        })
+      );
+    };
+
+    const intervalId = window.setInterval(() => {
+      void fetchAllRepositories();
+    }, intervalMs);
+
+    return () => window.clearInterval(intervalId);
+  }, [autoFetchSettings, refreshWorktrees, repositories]);
 
   const {
     status: updateStatus,

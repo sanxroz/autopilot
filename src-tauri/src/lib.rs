@@ -64,6 +64,7 @@ pub struct AppState {
     pub terminals: Arc<Mutex<HashMap<String, terminal::TerminalSession>>>,
     pub agent_terminals: Arc<Mutex<HashMap<String, Arc<terminal::AgentTerminalInfo>>>>,
     pub terminal_worktrees: Arc<Mutex<HashMap<String, String>>>,
+    pub worktree_setup_processes: Arc<Mutex<HashMap<String, u32>>>,
     pub agent_hook_runtime: Option<terminal::AgentHookRuntime>,
 }
 
@@ -73,6 +74,7 @@ impl Default for AppState {
             terminals: Arc::new(Mutex::new(HashMap::new())),
             agent_terminals: Arc::new(Mutex::new(HashMap::new())),
             terminal_worktrees: Arc::new(Mutex::new(HashMap::new())),
+            worktree_setup_processes: Arc::new(Mutex::new(HashMap::new())),
             agent_hook_runtime: None,
         }
     }
@@ -83,6 +85,8 @@ pub fn run() {
     let terminals = Arc::new(Mutex::new(HashMap::new()));
     let agent_terminals = Arc::new(Mutex::new(HashMap::new()));
     let terminal_worktrees: Arc<Mutex<HashMap<String, String>>> =
+        Arc::new(Mutex::new(HashMap::new()));
+    let worktree_setup_processes: Arc<Mutex<HashMap<String, u32>>> =
         Arc::new(Mutex::new(HashMap::new()));
 
     tauri::Builder::default()
@@ -103,6 +107,7 @@ pub fn run() {
                 terminals: terminals.clone(),
                 agent_terminals: agent_terminals.clone(),
                 terminal_worktrees: terminal_worktrees.clone(),
+                worktree_setup_processes: worktree_setup_processes.clone(),
                 agent_hook_runtime: hook_runtime,
             });
 
@@ -125,6 +130,7 @@ pub fn run() {
             git::create_worktree,
             git::create_worktree_auto,
             git::delete_worktree,
+            git::git_fetch,
             git::list_branches,
             git::get_worktree_info,
             git::get_worktree_branch_name,
@@ -143,6 +149,7 @@ pub fn run() {
             git::git_unstage_all,
             git::git_revert_file,
             git::generate_commit_message,
+            git::run_worktree_setup_script,
             github::check_gh_cli,
             github::check_gh_auth,
             github::get_pr_for_branch,
