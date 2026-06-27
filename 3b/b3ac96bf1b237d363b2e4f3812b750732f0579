@@ -1,0 +1,19 @@
+src/store/index.ts
+  s_e305b79c89dece::t_21c76df21675c3 218-221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "3bb3ac96bf1b237d363b2e4f3812b750732f0579",
+  "prompts": {},
+  "sessions": {
+    "s_e305b79c89dece": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f074a-b97e-7e13-9306-4bf39ba428e2",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
