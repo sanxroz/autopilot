@@ -2,7 +2,7 @@
 
 mod commands;
 
-use commands::{git, github, process, terminal, watcher};
+use commands::{editor, git, github, process, terminal, watcher};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -167,6 +167,8 @@ pub fn run() {
             github::merge_pr,
             github::get_assigned_issues,
             github::get_notifications,
+            editor::list_installed_ide_apps,
+            editor::open_worktree_in_ide,
             process::get_worktree_process_status,
             process::get_all_worktrees_process_status,
             terminal::spawn_terminal,
