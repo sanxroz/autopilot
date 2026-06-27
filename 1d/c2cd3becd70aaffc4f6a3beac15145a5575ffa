@@ -1,0 +1,19 @@
+.github/workflows/pr-tests.yml
+  s_9c62a198537296::t_ee7086b6907151 1-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "1dc2cd3becd70aaffc4f6a3beac15145a5575ffa",
+  "prompts": {},
+  "sessions": {
+    "s_9c62a198537296": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f0732-81ba-7343-a920-b64382329eb5",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
