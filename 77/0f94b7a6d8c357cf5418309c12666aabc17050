@@ -1,0 +1,30 @@
+vite.config.ts
+  s_13d6627b76a632::t_0e290309e50e27 5-16,26
+  s_13d6627b76a632::t_c57dd4fe063c7f 3,28
+  s_13d6627b76a632::t_4cf6170baee209 18-25,27,29-31,41,48
+  s_13d6627b76a632::t_e6e090a9cc609b 17
+package.json
+  s_13d6627b76a632::t_4cf6170baee209 11
+scripts/tauri.mjs
+  s_13d6627b76a632::t_4cf6170baee209 1,3-13,15-30,32-44
+  s_13d6627b76a632::t_c57dd4fe063c7f 2,14
+  s_13d6627b76a632::t_0892b08273fe51 31
+scripts/dev-port.mjs
+  s_13d6627b76a632::t_c57dd4fe063c7f 1-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.3",
+  "base_commit_sha": "770f94b7a6d8c357cf5418309c12666aabc17050",
+  "prompts": {},
+  "sessions": {
+    "s_13d6627b76a632": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019f077e-12ad-7382-8376-db817c47cff0",
+        "model": "gpt-5.4"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
