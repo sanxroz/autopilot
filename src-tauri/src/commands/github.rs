@@ -608,9 +608,14 @@ fn fetch_all_prs_for_repo(gh_path: &str, repo: RepoWithWorktrees) -> RepoPRStatu
     let branches = unique_branches(&repo.worktrees);
 
     if let Some((owner, name)) = parse_github_owner_repo(&repo.repo_path) {
-        if let Some(result) =
-            fetch_prs_graphql(gh_path, &repo.repo_path, &owner, &name, &repo.worktrees, &branches)
-        {
+        if let Some(result) = fetch_prs_graphql(
+            gh_path,
+            &repo.repo_path,
+            &owner,
+            &name,
+            &repo.worktrees,
+            &branches,
+        ) {
             return result;
         }
     }
@@ -713,9 +718,9 @@ fn fetch_prs_graphql(
             return None;
         }
 
-        for i in 0..chunk.len() {
+        for (i, branch) in chunk.iter().enumerate() {
             let alias = format!("b{}", i);
-            let branch = chunk[i].clone();
+            let branch = branch.clone();
 
             if let Some(nodes) = repo_data[&alias]["nodes"].as_array() {
                 let parsed = nodes
@@ -778,39 +783,37 @@ fn fetch_prs_rest_fallback(
             .output();
 
         match output {
-            Ok(out) if out.status.success() => {
-                match String::from_utf8(out.stdout) {
-                    Ok(stdout) => match serde_json::from_str::<Vec<GhPRResponse>>(&stdout) {
-                        Ok(prs) => {
-                            let candidates = prs
-                                .into_iter()
-                                .map(|pr| {
-                                    let head_oid = pr.commits.last().map(|commit| commit.oid.clone());
-                                    PRStatusCandidate {
-                                        status: map_gh_pr_to_status(pr),
-                                        head_oid,
-                                    }
-                                })
-                                .collect::<Vec<_>>();
-                            branch_candidates.insert(branch.clone(), candidates);
-                        }
-                        Err(error) => {
-                            failed_branches.insert(branch.clone());
-                            eprintln!(
-                                "Failed to parse PR list JSON for branch {} in {}: {}",
-                                branch, repo_path, error
-                            );
-                        }
-                    },
+            Ok(out) if out.status.success() => match String::from_utf8(out.stdout) {
+                Ok(stdout) => match serde_json::from_str::<Vec<GhPRResponse>>(&stdout) {
+                    Ok(prs) => {
+                        let candidates = prs
+                            .into_iter()
+                            .map(|pr| {
+                                let head_oid = pr.commits.last().map(|commit| commit.oid.clone());
+                                PRStatusCandidate {
+                                    status: map_gh_pr_to_status(pr),
+                                    head_oid,
+                                }
+                            })
+                            .collect::<Vec<_>>();
+                        branch_candidates.insert(branch.clone(), candidates);
+                    }
                     Err(error) => {
                         failed_branches.insert(branch.clone());
                         eprintln!(
-                            "Invalid UTF-8 from gh pr list for branch {} in {}: {}",
+                            "Failed to parse PR list JSON for branch {} in {}: {}",
                             branch, repo_path, error
                         );
                     }
+                },
+                Err(error) => {
+                    failed_branches.insert(branch.clone());
+                    eprintln!(
+                        "Invalid UTF-8 from gh pr list for branch {} in {}: {}",
+                        branch, repo_path, error
+                    );
                 }
-            }
+            },
             Ok(out) => {
                 failed_branches.insert(branch.clone());
                 eprintln!(
@@ -1943,7 +1946,7 @@ pub async fn create_pr(
 
     let number = url
         .split('/')
-        .last()
+        .next_back()
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(0);
 
