@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, writeFile, unlink } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -46,6 +46,10 @@ function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function readSettingsFile(settingsPath) {
   try {
     const raw = await readFile(settingsPath, "utf8");
@@ -64,6 +68,48 @@ async function readSettingsFile(settingsPath) {
 
     throw error;
   }
+}
+
+async function acquireLock(lockPath) {
+  for (;;) {
+    try {
+      const lockHandle = await open(lockPath, "wx");
+      await lockHandle.writeFile(`${process.pid}\n`);
+      return lockHandle;
+    } catch (error) {
+      if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") {
+        throw error;
+      }
+
+      try {
+        const lockContents = await readFile(lockPath, "utf8");
+        const lockPid = Number(lockContents.trim());
+        if (Number.isInteger(lockPid)) {
+          try {
+            process.kill(lockPid, 0);
+          } catch {
+            await unlink(lockPath);
+            continue;
+          }
+        }
+      } catch {
+        // Keep waiting if the lock is transiently unavailable or unreadable.
+      }
+
+      await sleep(50);
+    }
+  }
+}
+
+async function releaseLock(lockHandle, lockPath) {
+  await lockHandle.close();
+  await unlink(lockPath).catch((error) => {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return;
+    }
+
+    throw error;
+  });
 }
 
 async function writeSettingsFile(settingsPath, data) {
@@ -132,6 +178,7 @@ function printUsage() {
 async function main() {
   const { command, worktreePath, text, useStdin } = parseArgs(process.argv.slice(2));
   const settingsPath = getSettingsPath();
+  const lockPath = `${settingsPath}.lock`;
 
   if (!command || command === "help") {
     printUsage();
@@ -139,31 +186,37 @@ async function main() {
   }
 
   const normalizedWorktreePath = normalizeWorktreePath(worktreePath || detectCurrentWorktreePath());
-  const settings = await readSettingsFile(settingsPath);
-  const sidebarNotesByWorktreePath = isRecord(settings[NOTES_KEY]) ? { ...settings[NOTES_KEY] } : {};
+  const lockHandle = await acquireLock(lockPath);
 
-  if (command === "get") {
-    process.stdout.write(`${sidebarNotesByWorktreePath[normalizedWorktreePath] ?? ""}`);
-    return;
-  }
+  try {
+    const settings = await readSettingsFile(settingsPath);
+    const sidebarNotesByWorktreePath = isRecord(settings[NOTES_KEY]) ? { ...settings[NOTES_KEY] } : {};
 
-  if (command === "clear") {
-    delete sidebarNotesByWorktreePath[normalizedWorktreePath];
+    if (command === "get") {
+      process.stdout.write(`${sidebarNotesByWorktreePath[normalizedWorktreePath] ?? ""}`);
+      return;
+    }
+
+    if (command === "clear") {
+      delete sidebarNotesByWorktreePath[normalizedWorktreePath];
+      settings[NOTES_KEY] = sidebarNotesByWorktreePath;
+      delete settings[LEGACY_NOTE_KEY];
+      await writeSettingsFile(settingsPath, settings);
+      return;
+    }
+
+    if (command !== "set") {
+      throw new Error(`Unknown command: ${command}`);
+    }
+
+    const noteText = useStdin ? readFileSync(0, "utf8") : text;
+    sidebarNotesByWorktreePath[normalizedWorktreePath] = noteText;
     settings[NOTES_KEY] = sidebarNotesByWorktreePath;
     delete settings[LEGACY_NOTE_KEY];
     await writeSettingsFile(settingsPath, settings);
-    return;
+  } finally {
+    await releaseLock(lockHandle, lockPath);
   }
-
-  if (command !== "set") {
-    throw new Error(`Unknown command: ${command}`);
-  }
-
-  const noteText = useStdin ? readFileSync(0, "utf8") : text;
-  sidebarNotesByWorktreePath[normalizedWorktreePath] = noteText;
-  settings[NOTES_KEY] = sidebarNotesByWorktreePath;
-  delete settings[LEGACY_NOTE_KEY];
-  await writeSettingsFile(settingsPath, settings);
 }
 
 main().catch((error) => {
