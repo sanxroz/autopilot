@@ -202,6 +202,12 @@ fn collect_installed_ides() -> Vec<InstalledIde> {
 
 #[cfg(target_os = "macos")]
 fn find_macos_application(app_name: &str) -> Option<String> {
+    find_macos_application_with_spotlight(app_name)
+        .or_else(|| find_macos_application_in_standard_directories(app_name))
+}
+
+#[cfg(target_os = "macos")]
+fn find_macos_application_with_spotlight(app_name: &str) -> Option<String> {
     let output = Command::new("mdfind")
         .arg(format!("kMDItemFSName == '{}'c", app_name))
         .output()
@@ -221,6 +227,82 @@ fn find_macos_application(app_name: &str) -> Option<String> {
     matches
         .into_iter()
         .find(|path| is_macos_application_bundle(Path::new(path)))
+}
+
+#[cfg(target_os = "macos")]
+fn find_macos_application_in_standard_directories(app_name: &str) -> Option<String> {
+    let search_directories = macos_application_search_directories();
+    find_macos_application_in_directories(app_name, &search_directories)
+}
+
+#[cfg(target_os = "macos")]
+fn find_macos_application_in_directories(
+    app_name: &str,
+    directories: &[PathBuf],
+) -> Option<String> {
+    let mut matches = directories
+        .iter()
+        .flat_map(|directory| find_macos_application_in_directory(directory, app_name, 3))
+        .collect::<Vec<_>>();
+
+    matches.sort_by_key(|path| application_priority(path));
+    matches.dedup();
+    matches.into_iter().next()
+}
+
+#[cfg(target_os = "macos")]
+fn find_macos_application_in_directory(
+    directory: &Path,
+    app_name: &str,
+    remaining_depth: u8,
+) -> Vec<String> {
+    if remaining_depth == 0 || !directory.is_dir() {
+        return Vec::new();
+    }
+
+    std::fs::read_dir(directory)
+        .ok()
+        .into_iter()
+        .flat_map(|entries| entries.filter_map(Result::ok))
+        .flat_map(|entry| {
+            let path = entry.path();
+            if path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("app"))
+            {
+                let matches_name = path
+                    .file_name()
+                    .and_then(|file_name| file_name.to_str())
+                    .is_some_and(|file_name| file_name.eq_ignore_ascii_case(app_name));
+
+                if matches_name && is_macos_application_bundle(&path) {
+                    return vec![path.to_string_lossy().to_string()];
+                }
+
+                return Vec::new();
+            }
+
+            find_macos_application_in_directory(&path, app_name, remaining_depth - 1)
+        })
+        .collect()
+}
+
+#[cfg(target_os = "macos")]
+fn macos_application_search_directories() -> Vec<PathBuf> {
+    let mut directories = vec![
+        PathBuf::from("/Applications"),
+        PathBuf::from("/Applications/Setapp"),
+        PathBuf::from("/System/Applications"),
+        PathBuf::from("/System/Applications/Utilities"),
+        PathBuf::from("/System/Library/CoreServices"),
+    ];
+
+    if let Some(home_dir) = std::env::var_os("HOME") {
+        directories.push(PathBuf::from(home_dir).join("Applications"));
+    }
+
+    directories
 }
 
 #[cfg(target_os = "macos")]
@@ -348,10 +430,10 @@ fn open_with_app(app_path: &str, worktree_path: &Path) -> Result<(), String> {
             return Ok(());
         }
 
-        return Err(format!(
+        Err(format!(
             "Opening {} exited with status {}",
             app_path, status
-        ));
+        ))
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -506,6 +588,39 @@ mod tests {
         fs::remove_dir_all(&directory_path).expect("remove temp directory");
         assert!(
             matches!(result, Err(message) if message.contains("Opening /Applications/DefinitelyMissing.app exited with status"))
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn find_macos_application_falls_back_to_directory_scan_when_spotlight_misses() {
+        let _guard = TEST_MUTEX.lock();
+        let root_directory = temp_path("app-scan");
+        let nested_directory = root_directory.join("Applications").join("Utilities");
+        let app_directory = nested_directory.join("Warp.app").join("Contents");
+        fs::create_dir_all(&app_directory).expect("create mock app bundle");
+        fs::write(
+            app_directory.join("Info.plist"),
+            b"<?xml version=\"1.0\"?><plist version=\"1.0\"></plist>",
+        )
+        .expect("write plist");
+
+        let result = find_macos_application_in_directories(
+            "Warp.app",
+            &[root_directory.join("Applications")],
+        );
+
+        fs::remove_dir_all(&root_directory).expect("remove mock app bundle");
+        assert_eq!(
+            result,
+            Some(
+                root_directory
+                    .join("Applications")
+                    .join("Utilities")
+                    .join("Warp.app")
+                    .to_string_lossy()
+                    .into_owned()
+            )
         );
     }
 }
