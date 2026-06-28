@@ -138,6 +138,7 @@ interface AppStore {
 
 const STORE_PATH = 'autopilot-settings.json';
 const persistedStore = new LazyStore(STORE_PATH, { autoSave: true, defaults: {} });
+let storeSaveQueue = Promise.resolve();
 let sidebarNotesSaveQueue = Promise.resolve();
 let pendingLegacySidebarNotesMarkdown: string | null = null;
 const AGENT_COMPLETED_TTL_MS = 5000;
@@ -351,13 +352,15 @@ async function saveRepoAvatarCacheEntry(repoPath: string, avatarUrl: string | nu
 }
 
 async function saveStoreValue<T>(key: string, value: T): Promise<void> {
-  try {
-    const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
-    await store.set(key, value);
-    await store.save();
-  } catch (e) {
-    console.error(`Failed to save ${key}:`, e);
-  }
+  storeSaveQueue = storeSaveQueue.catch(() => undefined).then(async () => {
+    try {
+      await persistedStore.set(key, value);
+      await persistedStore.save();
+    } catch (e) {
+      console.error(`Failed to save ${key}:`, e);
+    }
+  });
+  await storeSaveQueue;
 }
 
 async function saveSidebarNotesByWorktreePath(sidebarNotesByWorktreePath: Record<string, string>): Promise<void> {
