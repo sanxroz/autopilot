@@ -99,19 +99,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 set "SCRIPT_PATH={}"
 
-if /I "%~1"=="note" (
-  shift
-  set "ARGS="
-  :collect_args
-  if "%~1"=="" goto run_note
-  if defined ARGS (
-    set "ARGS=!ARGS! "%~1""
-  ) else (
-    set "ARGS="%~1""
-  )
-  shift
-  goto collect_args
-)
+if /I "%~1"=="note" goto note
 
 if /I "%~1"=="--help" goto help
 if /I "%~1"=="-h" goto help
@@ -120,6 +108,19 @@ if "%~1"=="" goto help
 
 echo Unknown autopilot command: %~1 1>&2
 exit /b 1
+
+:note
+shift
+set "ARGS="
+:collect_args
+if "%~1"=="" goto run_note
+if defined ARGS (
+  set "ARGS=!ARGS! "%~1""
+) else (
+  set "ARGS="%~1""
+)
+shift
+goto collect_args
 
 :run_note
 bun run "%SCRIPT_PATH%" !ARGS!
@@ -250,7 +251,11 @@ fn ensure_unix_path_contains(launcher_dir: &Path) -> Result<(), String> {
 
 #[cfg(not(target_os = "windows"))]
 fn append_block_if_missing(path: &Path, block: &str) -> Result<(), std::io::Error> {
-    let existing = fs::read_to_string(path).unwrap_or_default();
+    let existing = match fs::read_to_string(path) {
+        Ok(existing) => existing,
+        Err(error) if error.kind() == ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error),
+    };
 
     if existing.contains(PATH_BLOCK_MARKER) {
         return Ok(());
@@ -267,7 +272,34 @@ fn append_block_if_missing(path: &Path, block: &str) -> Result<(), std::io::Erro
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(target_os = "windows"))]
+    use std::fs;
+    #[cfg(not(target_os = "windows"))]
+    use std::io::ErrorKind;
+    #[cfg(target_os = "windows")]
+    use std::path::Path;
+    #[cfg(not(target_os = "windows"))]
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[cfg(not(target_os = "windows"))]
+    use super::append_block_if_missing;
+    #[cfg(target_os = "windows")]
+    use super::build_windows_launcher;
     use super::path_contains_entry;
+
+    #[cfg(not(target_os = "windows"))]
+    fn make_temp_dir() -> std::path::PathBuf {
+        let unique_suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time before unix epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "autopilot-cli-launcher-test-{}-{unique_suffix}",
+            std::process::id()
+        ));
+        fs::create_dir(&path).expect("temp dir");
+        path
+    }
 
     #[test]
     fn path_contains_entry_ignores_case_and_spacing() {
@@ -283,5 +315,43 @@ mod tests {
             r"/usr/bin:/bin",
             r"/home/me/.local/bin"
         ));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_launcher_places_labels_outside_the_note_condition() {
+        let script = build_windows_launcher(Path::new(r"C:\Users\me\AppData\Roaming\autopilot\cli\autopilot-note.mjs"));
+
+        assert!(script.contains("if /I \"%~1\"==\"note\" goto note"));
+        assert!(script.contains("\n:note\nshift\nset \"ARGS=\"\n:collect_args\n"));
+        assert!(!script.contains("if /I \"%~1\"==\"note\" (\n"));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn append_block_if_missing_creates_a_missing_profile_file() {
+        let temp_dir = make_temp_dir();
+        let profile_path = temp_dir.join(".profile");
+
+        append_block_if_missing(&profile_path, "\n# AUTOPILOT PATH\nexport PATH=\"/tmp/bin:$PATH\"\n")
+            .expect("missing profile should be created");
+
+        let contents = fs::read_to_string(profile_path).expect("profile contents");
+        assert_eq!(contents, "# AUTOPILOT PATH\nexport PATH=\"/tmp/bin:$PATH\"\n");
+        fs::remove_dir_all(temp_dir).expect("cleanup temp dir");
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn append_block_if_missing_returns_read_errors_instead_of_clobbering() {
+        let temp_dir = make_temp_dir();
+        let error = append_block_if_missing(
+            &temp_dir,
+            "\n# AUTOPILOT PATH\nexport PATH=\"/tmp/bin:$PATH\"\n",
+        )
+        .expect_err("directory reads should fail");
+
+        assert_eq!(error.kind(), ErrorKind::IsADirectory);
+        fs::remove_dir_all(temp_dir).expect("cleanup temp dir");
     }
 }

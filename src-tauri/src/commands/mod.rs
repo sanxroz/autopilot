@@ -1,4 +1,4 @@
-#[cfg(not(debug_assertions))]
+#[cfg(any(not(debug_assertions), test))]
 pub mod cli_launcher;
 pub mod cli_tools;
 pub mod editor;
