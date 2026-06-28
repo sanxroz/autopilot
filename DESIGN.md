@@ -146,6 +146,24 @@ Rules:
 - Insets can use stronger borders and denser backgrounds.
 - Large rounded rectangles are preferred over many tiny pills.
 
+### Settings cards
+
+- Structure: section heading, support copy, bordered card body
+- Variants: informational, editable form, inline alert
+- Spacing: `--space-3` inside rows, `--space-6` between sections
+- States: default, hover for interactive rows, focus ring for all inputs
+- Accessibility: labels remain visible; helper text explains side effects
+- Motion: color-only transitions around 200ms
+
+### Repository script editor
+
+- Structure: repository heading, path caption, multiline command field
+- Variants: empty, configured
+- Spacing: 16px card padding, 12px field spacing
+- States: default, focus, disabled
+- Accessibility: textarea has a visible label and helper copy naming available env vars
+- Motion: none beyond focus and hover transitions
+
 ## 6. Motion & Interaction
 
 ### Timing

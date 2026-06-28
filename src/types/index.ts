@@ -1,16 +1,16 @@
 export interface RepoInfo {
-  path: string;
-  name: string;
-  avatarUrl?: string;
+  readonly path: string;
+  readonly name: string;
+  readonly avatarUrl?: string;
 }
 
 export interface WorktreeInfo {
-  name: string;
-  path: string;
-  branch: string | null;
-  head_oid?: string | null;
-  last_modified: string | null;
-  diff_stats?: DiffStats;
+  readonly name: string;
+  readonly path: string;
+  readonly branch: string | null;
+  readonly head_oid?: string | null;
+  readonly last_modified: string | null;
+  readonly diff_stats?: DiffStats;
 }
 
 export interface InstalledIde {
@@ -22,9 +22,9 @@ export interface InstalledIde {
 }
 
 export interface BranchInfo {
-  name: string;
-  is_remote: boolean;
-  is_head: boolean;
+  readonly name: string;
+  readonly is_remote: boolean;
+  readonly is_head: boolean;
 }
 
 export interface TerminalInstance {
@@ -40,14 +40,25 @@ export interface TerminalPane {
 }
 
 export interface DiffStats {
-  additions: number;
-  deletions: number;
+  readonly additions: number;
+  readonly deletions: number;
 }
 
 export interface Repository {
-  info: RepoInfo;
-  worktrees: WorktreeInfo[];
-  isExpanded: boolean;
+  readonly info: RepoInfo;
+  readonly worktrees: readonly WorktreeInfo[];
+  readonly isExpanded: boolean;
+}
+
+export interface AutoFetchSettings {
+  readonly enabled: boolean;
+  readonly intervalMinutes: number;
+}
+
+export interface WorktreeSetupResult {
+  readonly success: boolean;
+  readonly command: string;
+  readonly output: string;
 }
 
 export type ProcessStatus = 'dev_server' | 'agent_running' | 'none';

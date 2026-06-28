@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Navbar } from "./components/Navbar";
 import { Sidebar } from "./components/Sidebar";
 import { TerminalGrid } from "./components/TerminalGrid";
@@ -10,6 +10,7 @@ import { CommandMenu } from "./components/CommandMenu";
 import { UpdateNotification } from "./components/UpdateNotification";
 import { Toaster } from "sonner";
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useAppStore } from "./store";
 import { usePRStatusPolling } from "./hooks/usePRStatus";
@@ -21,6 +22,7 @@ import { preloadOpenWithIcons } from "./lib/open-with";
 import type { AgentStatusEvent } from "./types";
 
 function App() {
+  const autoFetchInFlightRef = useRef(false);
   const initialize = useAppStore((state) => state.initialize);
   const preloadInstalledIdes = useAppStore((state) => state.preloadInstalledIdes);
   const installedIdes = useAppStore((state) => state.installedIdes);
@@ -34,6 +36,9 @@ function App() {
   const setAgentRunState = useAppStore((state) => state.setAgentRunState);
   const flushSidebarNotesPersistence = useAppStore((state) => state.flushSidebarNotesPersistence);
   const agentSidebarLifecycleEnabled = useAppStore((state) => state.agentSidebarLifecycleEnabled);
+  const repositories = useAppStore((state) => state.repositories);
+  const autoFetchSettings = useAppStore((state) => state.autoFetchSettings);
+  const refreshWorktrees = useAppStore((state) => state.refreshWorktrees);
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -144,6 +149,38 @@ function App() {
       }
     };
   }, [agentSidebarLifecycleEnabled, setAgentRunState]);
+
+  useEffect(() => {
+    if (!autoFetchSettings.enabled || repositories.length === 0) {
+      return;
+    }
+
+    const intervalMs = Math.max(autoFetchSettings.intervalMinutes, 1) * 60 * 1000;
+    const fetchAllRepositories = async () => {
+      if (autoFetchInFlightRef.current) {
+        return;
+      }
+
+      autoFetchInFlightRef.current = true;
+
+      try {
+        await Promise.allSettled(
+          repositories.map(async (repo) => {
+            await invoke("git_fetch", { repoPath: repo.info.path });
+            await refreshWorktrees(repo.info.path);
+          })
+        );
+      } finally {
+        autoFetchInFlightRef.current = false;
+      }
+    };
+
+    const intervalId = window.setInterval(() => {
+      void fetchAllRepositories();
+    }, intervalMs);
+
+    return () => window.clearInterval(intervalId);
+  }, [autoFetchSettings, refreshWorktrees, repositories]);
 
   const {
     status: updateStatus,

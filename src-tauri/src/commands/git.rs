@@ -1,9 +1,14 @@
+use crate::AppState;
 use chrono::{DateTime, Utc};
 use git2::{BranchType, Delta, DiffOptions, Repository, WorktreeAddOptions};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
+use tauri::State;
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 use super::cli_tools::find_cli_tool;
 
@@ -34,6 +39,13 @@ pub struct BranchInfo {
     pub name: String,
     pub is_remote: bool,
     pub is_head: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WorktreeSetupResult {
+    pub success: bool,
+    pub command: String,
+    pub output: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -115,6 +127,145 @@ fn get_push_remote(repo: &Repository) -> Result<String, String> {
     }
 
     Err("No suitable remote found for push. Configure 'remote.pushDefault' or add an 'origin' remote.".to_string())
+}
+
+fn combine_command_output(output: &Output) -> String {
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+    match (stdout.is_empty(), stderr.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => stdout,
+        (true, false) => stderr,
+        (false, false) => format!("{stdout}\n{stderr}"),
+    }
+}
+
+fn setup_script_output_dir() -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "autopilot-setup-script-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system clock before UNIX_EPOCH")
+            .as_nanos()
+    ))
+}
+
+fn terminate_process_tree(process_id: u32) {
+    #[cfg(unix)]
+    {
+        unsafe {
+            libc::kill(-(process_id as i32), libc::SIGTERM);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        unsafe {
+            libc::kill(-(process_id as i32), libc::SIGKILL);
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &process_id.to_string()])
+            .output();
+    }
+}
+
+fn worktree_process_key(worktree_path: &str) -> String {
+    std::fs::canonicalize(worktree_path)
+        .unwrap_or_else(|_| PathBuf::from(worktree_path))
+        .to_string_lossy()
+        .into_owned()
+}
+
+fn run_worktree_setup_script_inner(
+    setup_processes: Option<&parking_lot::Mutex<std::collections::HashMap<String, u32>>>,
+    repo_path: String,
+    worktree_path: String,
+    worktree_name: String,
+    script: String,
+) -> Result<WorktreeSetupResult, String> {
+    let trimmed_script = script.trim();
+    if trimmed_script.is_empty() {
+        return Ok(WorktreeSetupResult {
+            success: true,
+            command: script,
+            output: String::new(),
+        });
+    }
+
+    let mut command = if cfg!(target_os = "windows") {
+        let mut cmd = Command::new("cmd");
+        cmd.args(["/C", trimmed_script]);
+        cmd
+    } else {
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+        let mut cmd = Command::new(shell);
+        cmd.args(["-lc", trimmed_script]);
+        #[cfg(unix)]
+        unsafe {
+            cmd.pre_exec(|| {
+                libc::setpgid(0, 0);
+                Ok(())
+            });
+        }
+        cmd
+    };
+
+    let output_dir = setup_script_output_dir();
+    std::fs::create_dir_all(&output_dir)
+        .map_err(|e| format!("Failed to prepare setup script output dir: {e}"))?;
+    let stdout_path = output_dir.join("stdout.log");
+    let stderr_path = output_dir.join("stderr.log");
+    let stdout_file = std::fs::File::create(&stdout_path)
+        .map_err(|e| format!("Failed to prepare setup script stdout: {e}"))?;
+    let stderr_file = std::fs::File::create(&stderr_path)
+        .map_err(|e| format!("Failed to prepare setup script stderr: {e}"))?;
+
+    let worktree_key = worktree_process_key(&worktree_path);
+    let mut child = command
+        .current_dir(&worktree_path)
+        .env("AUTOPILOT_REPO_PATH", &repo_path)
+        .env("AUTOPILOT_MAIN_WORKTREE_PATH", &repo_path)
+        .env("AUTOPILOT_WORKTREE_PATH", &worktree_path)
+        .env("AUTOPILOT_WORKTREE_NAME", &worktree_name)
+        .stdout(Stdio::from(stdout_file))
+        .stderr(Stdio::from(stderr_file))
+        .spawn()
+        .map_err(|e| format!("Failed to run setup script: {e}"))?;
+    let child_pid = child.id();
+
+    if let Some(processes) = setup_processes {
+        processes.lock().insert(worktree_key.clone(), child_pid);
+    }
+
+    let status = child
+        .wait()
+        .map_err(|e| format!("Failed to run setup script: {e}"))?;
+
+    if let Some(processes) = setup_processes {
+        processes.lock().remove(&worktree_key);
+    }
+
+    terminate_process_tree(child_pid);
+
+    let stdout = std::fs::read(&stdout_path)
+        .map_err(|e| format!("Failed to read setup script stdout: {e}"))?;
+    let stderr = std::fs::read(&stderr_path)
+        .map_err(|e| format!("Failed to read setup script stderr: {e}"))?;
+    let output = Output {
+        status,
+        stdout,
+        stderr,
+    };
+    let _ = std::fs::remove_dir_all(&output_dir);
+
+    Ok(WorktreeSetupResult {
+        success: output.status.success(),
+        command: script,
+        output: combine_command_output(&output),
+    })
 }
 
 fn get_diff_stats_vs_origin_default(repo_path: &std::path::Path) -> Option<DiffStats> {
@@ -430,130 +581,347 @@ fn generate_unique_worktree_name(repo: &Repository) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn create_worktree_auto(repo_path: String) -> Result<WorktreeInfo, String> {
-    use std::process::Command;
+pub async fn create_worktree_auto(repo_path: String) -> Result<WorktreeInfo, String> {
+    tokio::task::spawn_blocking(move || {
+        Command::new("git")
+            .args(["worktree", "prune"])
+            .current_dir(&repo_path)
+            .output()
+            .ok();
 
-    Command::new("git")
-        .args(["worktree", "prune"])
-        .current_dir(&repo_path)
-        .output()
-        .ok();
+        let repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
 
-    let repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
+        let worktree_name = generate_unique_worktree_name(&repo)?;
 
-    let worktree_name = generate_unique_worktree_name(&repo)?;
+        let base_branch = if repo.find_branch("origin/main", BranchType::Remote).is_ok() {
+            "main"
+        } else if repo
+            .find_branch("origin/master", BranchType::Remote)
+            .is_ok()
+        {
+            "master"
+        } else {
+            return Err("Cannot find origin/main or origin/master".to_string());
+        };
 
-    // Find default branch (origin/main or origin/master)
-    let base_branch = if repo.find_branch("origin/main", BranchType::Remote).is_ok() {
-        "main"
-    } else if repo
-        .find_branch("origin/master", BranchType::Remote)
-        .is_ok()
-    {
-        "master"
-    } else {
-        return Err("Cannot find origin/main or origin/master".to_string());
-    };
+        let worktrees_dir = PathBuf::from(&repo_path).join(".worktrees");
+        if !worktrees_dir.exists() {
+            std::fs::create_dir_all(&worktrees_dir).map_err(|e| e.to_string())?;
+        }
 
-    let worktrees_dir = PathBuf::from(&repo_path).join(".worktrees");
-    if !worktrees_dir.exists() {
-        std::fs::create_dir_all(&worktrees_dir).map_err(|e| e.to_string())?;
-    }
+        let wt_path = worktrees_dir.join(&worktree_name);
 
-    let wt_path = worktrees_dir.join(&worktree_name);
+        let remote_name = format!("origin/{}", base_branch);
+        let base_commit = repo
+            .find_branch(&remote_name, BranchType::Remote)
+            .map_err(|e| format!("Base branch not found: {}", e.message()))?
+            .get()
+            .peel_to_commit()
+            .map_err(|e| format!("Cannot get commit: {}", e.message()))?;
 
-    let remote_name = format!("origin/{}", base_branch);
-    let base_commit = repo
-        .find_branch(&remote_name, BranchType::Remote)
-        .map_err(|e| format!("Base branch not found: {}", e.message()))?
-        .get()
-        .peel_to_commit()
-        .map_err(|e| format!("Cannot get commit: {}", e.message()))?;
+        let new_branch = repo
+            .branch(&worktree_name, &base_commit, false)
+            .map_err(|e| format!("Cannot create branch: {}", e.message()))?;
 
-    let new_branch = repo
-        .branch(&worktree_name, &base_commit, false)
-        .map_err(|e| format!("Cannot create branch: {}", e.message()))?;
+        let mut opts = WorktreeAddOptions::new();
+        let branch_ref = new_branch.into_reference();
+        opts.reference(Some(&branch_ref));
 
-    let mut opts = WorktreeAddOptions::new();
-    let branch_ref = new_branch.into_reference();
-    opts.reference(Some(&branch_ref));
+        repo.worktree(&worktree_name, &wt_path, Some(&opts))
+            .map_err(|e| e.message().to_string())?;
 
-    repo.worktree(&worktree_name, &wt_path, Some(&opts))
-        .map_err(|e| e.message().to_string())?;
+        let last_modified = get_last_modified(&wt_path);
+        let diff_stats = get_diff_stats_vs_origin_default(&wt_path);
 
-    let last_modified = get_last_modified(&wt_path);
-    let head_oid = get_worktree_head_oid(&wt_path);
-    let diff_stats = get_diff_stats_vs_origin_default(&wt_path);
-
-    Ok(WorktreeInfo {
-        name: worktree_name.clone(),
-        path: wt_path.to_string_lossy().to_string(),
-        branch: Some(worktree_name),
-        head_oid,
-        last_modified,
-        diff_stats,
+        Ok(WorktreeInfo {
+            name: worktree_name.clone(),
+            path: wt_path.to_string_lossy().to_string(),
+            branch: Some(worktree_name),
+            head_oid: get_worktree_head_oid(&wt_path),
+            last_modified,
+            diff_stats,
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-pub fn create_worktree(
+pub async fn create_worktree(
     repo_path: String,
     worktree_name: String,
     base_branch: String,
     new_branch_name: Option<String>,
     target_path: Option<String>,
 ) -> Result<WorktreeInfo, String> {
-    let repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
+    tokio::task::spawn_blocking(move || {
+        let repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
+        let normalized_base_branch = base_branch
+            .strip_prefix("origin/")
+            .unwrap_or(&base_branch)
+            .to_string();
 
-    let wt_path = match target_path {
-        Some(p) => PathBuf::from(p),
-        None => PathBuf::from(&repo_path)
-            .join(".worktrees")
-            .join(&worktree_name),
-    };
+        let wt_path = match target_path {
+            Some(p) => PathBuf::from(p),
+            None => PathBuf::from(&repo_path)
+                .join(".worktrees")
+                .join(&worktree_name),
+        };
 
-    let branch_name = new_branch_name.unwrap_or_else(|| worktree_name.clone());
+        let branch_name = new_branch_name.unwrap_or_else(|| worktree_name.clone());
 
-    let remote_name = format!("origin/{}", base_branch);
-    let base_commit = repo
-        .find_branch(&remote_name, BranchType::Remote)
-        .or_else(|_| repo.find_branch(&base_branch, BranchType::Local))
-        .map_err(|e| format!("Base branch not found: {}", e.message()))?
-        .get()
-        .peel_to_commit()
-        .map_err(|e| format!("Cannot get commit: {}", e.message()))?;
+        let remote_name = format!("origin/{}", normalized_base_branch);
+        let base_commit = repo
+            .find_branch(&remote_name, BranchType::Remote)
+            .or_else(|_| repo.find_branch(&normalized_base_branch, BranchType::Local))
+            .map_err(|e| format!("Base branch not found: {}", e.message()))?
+            .get()
+            .peel_to_commit()
+            .map_err(|e| format!("Cannot get commit: {}", e.message()))?;
 
-    let new_branch = repo
-        .branch(&branch_name, &base_commit, false)
-        .map_err(|e| format!("Cannot create branch: {}", e.message()))?;
+        let new_branch = repo
+            .branch(&branch_name, &base_commit, false)
+            .map_err(|e| format!("Cannot create branch: {}", e.message()))?;
 
-    let mut opts = WorktreeAddOptions::new();
-    let branch_ref = new_branch.into_reference();
-    opts.reference(Some(&branch_ref));
+        let mut opts = WorktreeAddOptions::new();
+        let branch_ref = new_branch.into_reference();
+        opts.reference(Some(&branch_ref));
 
-    repo.worktree(&worktree_name, &wt_path, Some(&opts))
-        .map_err(|e| e.message().to_string())?;
+        repo.worktree(&worktree_name, &wt_path, Some(&opts))
+            .map_err(|e| e.message().to_string())?;
 
-    let last_modified = get_last_modified(&wt_path);
-    let head_oid = get_worktree_head_oid(&wt_path);
-    let diff_stats = get_diff_stats_vs_origin_default(&wt_path);
+        let last_modified = get_last_modified(&wt_path);
+        let diff_stats = get_diff_stats_vs_origin_default(&wt_path);
 
-    Ok(WorktreeInfo {
-        name: worktree_name,
-        path: wt_path.to_string_lossy().to_string(),
-        branch: Some(branch_name),
-        head_oid,
-        last_modified,
-        diff_stats,
+        Ok(WorktreeInfo {
+            name: worktree_name,
+            path: wt_path.to_string_lossy().to_string(),
+            branch: Some(branch_name),
+            head_oid: get_worktree_head_oid(&wt_path),
+            last_modified,
+            diff_stats,
+        })
     })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn git_fetch(repo_path: String) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        let output = Command::new("git")
+            .args(["fetch", "--all", "--prune"])
+            .current_dir(&repo_path)
+            .output()
+            .map_err(|e| format!("Failed to run git fetch: {e}"))?;
+
+        if !output.status.success() {
+            let message = combine_command_output(&output);
+            return Err(if message.is_empty() {
+                "git fetch failed".to_string()
+            } else {
+                format!("git fetch failed: {message}")
+            });
+        }
+
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::sync::Arc;
+    use std::sync::LazyLock;
+    use std::thread;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    static TEST_MUTEX: LazyLock<parking_lot::Mutex<()>> =
+        LazyLock::new(|| parking_lot::Mutex::new(()));
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before UNIX_EPOCH")
+            .as_nanos();
+
+        std::env::temp_dir().join(format!(
+            "autopilot-git-test-{}-{}-{}",
+            std::process::id(),
+            name,
+            nanos
+        ))
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[tokio::test]
+    async fn run_worktree_setup_script_executes_in_worktree_and_exports_env() {
+        let _guard = TEST_MUTEX.lock();
+
+        let repo_path = unique_temp_dir("repo");
+        let worktree_path = unique_temp_dir("worktree");
+        fs::create_dir_all(&repo_path).expect("create repo temp dir");
+        fs::create_dir_all(&worktree_path).expect("create worktree temp dir");
+        let repo_path = fs::canonicalize(&repo_path).expect("canonicalize repo temp dir");
+        let worktree_path =
+            fs::canonicalize(&worktree_path).expect("canonicalize worktree temp dir");
+
+        let result = run_worktree_setup_script_inner(
+            None,
+            repo_path.to_string_lossy().to_string(),
+            worktree_path.to_string_lossy().to_string(),
+            "feature-123".to_string(),
+            "printf '%s|%s|%s|%s' \"$AUTOPILOT_REPO_PATH\" \"$AUTOPILOT_WORKTREE_PATH\" \"$AUTOPILOT_WORKTREE_NAME\" \"$PWD\" > setup-result.txt"
+                .to_string(),
+        )
+        .expect("run setup script");
+
+        let setup_result =
+            fs::read_to_string(worktree_path.join("setup-result.txt")).expect("read setup result");
+
+        fs::remove_dir_all(&worktree_path).expect("remove worktree temp dir");
+        fs::remove_dir_all(&repo_path).expect("remove repo temp dir");
+
+        assert!(result.success);
+        assert_eq!(
+            setup_result,
+            format!(
+                "{}|{}|{}|{}",
+                repo_path.display(),
+                worktree_path.display(),
+                "feature-123",
+                worktree_path.display()
+            )
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn run_worktree_setup_script_terminates_background_children() {
+        let _guard = TEST_MUTEX.lock();
+
+        let repo_path = unique_temp_dir("repo-bg");
+        let worktree_path = unique_temp_dir("worktree-bg");
+        fs::create_dir_all(&repo_path).expect("create repo temp dir");
+        fs::create_dir_all(&worktree_path).expect("create worktree temp dir");
+        let repo_path = fs::canonicalize(&repo_path).expect("canonicalize repo temp dir");
+        let worktree_path =
+            fs::canonicalize(&worktree_path).expect("canonicalize worktree temp dir");
+
+        let result = run_worktree_setup_script_inner(
+            None,
+            repo_path.to_string_lossy().to_string(),
+            worktree_path.to_string_lossy().to_string(),
+            "feature-123".to_string(),
+            "sleep 30 & echo $! > child.pid".to_string(),
+        )
+        .expect("run setup script");
+
+        let child_pid: i32 = fs::read_to_string(worktree_path.join("child.pid"))
+            .expect("read child pid")
+            .trim()
+            .parse()
+            .expect("parse child pid");
+
+        fs::remove_dir_all(&worktree_path).expect("remove worktree temp dir");
+        fs::remove_dir_all(&repo_path).expect("remove repo temp dir");
+
+        assert!(result.success);
+        let kill_result = unsafe { libc::kill(child_pid, 0) };
+        assert_eq!(kill_result, -1);
+        assert_eq!(
+            std::io::Error::last_os_error().raw_os_error(),
+            Some(libc::ESRCH)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_worktree_setup_script_tracks_running_process_until_completion() {
+        let _guard = TEST_MUTEX.lock();
+
+        let repo_path = unique_temp_dir("repo-track");
+        let worktree_path = unique_temp_dir("worktree-track");
+        fs::create_dir_all(&repo_path).expect("create repo temp dir");
+        fs::create_dir_all(&worktree_path).expect("create worktree temp dir");
+        let repo_path = fs::canonicalize(&repo_path).expect("canonicalize repo temp dir");
+        let worktree_path =
+            fs::canonicalize(&worktree_path).expect("canonicalize worktree temp dir");
+
+        let setup_processes = Arc::new(parking_lot::Mutex::new(std::collections::HashMap::<
+            String,
+            u32,
+        >::new()));
+        let repo_path_string = repo_path.to_string_lossy().to_string();
+        let worktree_path_string = worktree_path.to_string_lossy().to_string();
+        let worktree_key = worktree_process_key(&worktree_path_string);
+        let setup_processes_for_thread = setup_processes.clone();
+
+        let handle = thread::spawn(move || {
+            run_worktree_setup_script_inner(
+                Some(setup_processes_for_thread.as_ref()),
+                repo_path_string,
+                worktree_path_string,
+                "feature-123".to_string(),
+                "sleep 1".to_string(),
+            )
+        });
+
+        let started_with_pid = (0..20).any(|_| {
+            let has_pid = setup_processes.lock().contains_key(&worktree_key);
+            if !has_pid {
+                thread::sleep(std::time::Duration::from_millis(50));
+            }
+            has_pid
+        });
+
+        let result = handle
+            .join()
+            .expect("join setup thread")
+            .expect("run setup script");
+
+        fs::remove_dir_all(&worktree_path).expect("remove worktree temp dir");
+        fs::remove_dir_all(&repo_path).expect("remove repo temp dir");
+
+        assert!(started_with_pid);
+        assert!(result.success);
+        assert!(!setup_processes.lock().contains_key(&worktree_key));
+    }
+}
+
+#[tauri::command]
+pub async fn run_worktree_setup_script(
+    state: State<'_, AppState>,
+    repo_path: String,
+    worktree_path: String,
+    worktree_name: String,
+    script: String,
+) -> Result<WorktreeSetupResult, String> {
+    let setup_processes = state.worktree_setup_processes.clone();
+    tokio::task::spawn_blocking(move || {
+        run_worktree_setup_script_inner(
+            Some(setup_processes.as_ref()),
+            repo_path,
+            worktree_path,
+            worktree_name,
+            script,
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn delete_worktree(
+    state: State<'_, AppState>,
     repo_path: String,
     worktree_name: String,
     force: bool,
 ) -> Result<(), String> {
+    let setup_processes = state.worktree_setup_processes.clone();
     tokio::task::spawn_blocking(move || {
         let repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
         let worktree = repo
@@ -561,6 +929,10 @@ pub async fn delete_worktree(
             .map_err(|e| e.message().to_string())?;
 
         let wt_path = worktree.path().to_path_buf();
+        let worktree_key = worktree_process_key(&wt_path.to_string_lossy());
+        if let Some(process_id) = setup_processes.lock().remove(&worktree_key) {
+            terminate_process_tree(process_id);
+        }
 
         if force {
             if wt_path.exists() {
