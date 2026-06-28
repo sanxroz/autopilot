@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Navbar } from "./components/Navbar";
 import { Sidebar } from "./components/Sidebar";
 import { TerminalGrid } from "./components/TerminalGrid";
@@ -22,6 +22,7 @@ import { preloadOpenWithIcons } from "./lib/open-with";
 import type { AgentStatusEvent } from "./types";
 
 function App() {
+  const autoFetchInFlightRef = useRef(false);
   const initialize = useAppStore((state) => state.initialize);
   const preloadInstalledIdes = useAppStore((state) => state.preloadInstalledIdes);
   const installedIdes = useAppStore((state) => state.installedIdes);
@@ -156,12 +157,22 @@ function App() {
 
     const intervalMs = Math.max(autoFetchSettings.intervalMinutes, 1) * 60 * 1000;
     const fetchAllRepositories = async () => {
-      await Promise.allSettled(
-        repositories.map(async (repo) => {
-          await invoke("git_fetch", { repoPath: repo.info.path });
-          await refreshWorktrees(repo.info.path);
-        })
-      );
+      if (autoFetchInFlightRef.current) {
+        return;
+      }
+
+      autoFetchInFlightRef.current = true;
+
+      try {
+        await Promise.allSettled(
+          repositories.map(async (repo) => {
+            await invoke("git_fetch", { repoPath: repo.info.path });
+            await refreshWorktrees(repo.info.path);
+          })
+        );
+      } finally {
+        autoFetchInFlightRef.current = false;
+      }
     };
 
     const intervalId = window.setInterval(() => {
