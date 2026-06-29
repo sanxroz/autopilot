@@ -792,16 +792,20 @@ export function Sidebar({ isOpen }: SidebarProps) {
                            continue;
                          }
 
-                         const stackIndex = stackWorktreePaths.get(wt.path);
-                         if (stackIndex !== undefined) {
-                           const stack = stacks[stackIndex];
-                           const groupedWorktrees = group.worktrees.filter((worktree) =>
-                             stack.allPrs.some((pr) => pr.head_branch === worktree.branch)
-                           );
+                        const stackIndex = stackWorktreePaths.get(wt.path);
+                        if (stackIndex !== undefined) {
+                          const stack = stacks[stackIndex];
+                          const groupedWorktrees = stack.allPrs
+                            .map((pr) =>
+                              group.worktrees.find(
+                                (worktree) => worktree.branch === pr.head_branch
+                              )
+                            )
+                            .filter((worktree): worktree is WorktreeInfo => worktree !== undefined);
 
-                           for (const groupedWorktree of groupedWorktrees) {
-                             renderedWorktreePaths.add(groupedWorktree.path);
-                           }
+                          for (const groupedWorktree of groupedWorktrees) {
+                            renderedWorktreePaths.add(groupedWorktree.path);
+                          }
 
                            elements.push(
                              <StackGroup

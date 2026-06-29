@@ -31,6 +31,7 @@ export function SidebarWorktreeGroup({
   const [collapsed, setCollapsed] = useState(false);
   const shouldReduceMotion = useReducedMotion();
   const inputRef = useRef<HTMLInputElement>(null);
+  const blurCancelledRef = useRef(false);
   const toggleCollapsed = () => {
     setCollapsed((current) => !current);
   };
@@ -84,10 +85,16 @@ export function SidebarWorktreeGroup({
                 }
                 if (e.key === "Escape") {
                   e.preventDefault();
+                  blurCancelledRef.current = true;
                   onEditingCancel?.();
                 }
               }}
-              onBlur={() => onEditingSubmit?.()}
+              onBlur={() => {
+                if (!blurCancelledRef.current) {
+                  onEditingSubmit?.();
+                }
+                blurCancelledRef.current = false;
+              }}
               className="h-[20px] flex-1 min-w-0 border-0 bg-transparent p-0 text-sm font-medium text-primary outline-none"
               aria-label="Group name"
             />
