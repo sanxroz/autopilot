@@ -26,12 +26,20 @@ import type {
 import { DEFAULT_GITHUB_SETTINGS } from '../types/github';
 import { setThemeMode as setGlobalThemeMode, getThemeMode, type ThemeMode } from '../theme';
 import { addWorktreeSetupName, removeWorktreeSetupName } from './worktreeSetup';
+import {
+  createSidebarGroup as createSidebarGroupModel,
+  moveWorktreeInSidebar as moveWorktreeInSidebarModel,
+  normalizeSidebarGroups,
+  type SidebarWorktreeDrop,
+  type SidebarWorktreeGroup,
+} from '../lib/sidebar-groups';
 
 interface PersistedState {
   repositoryPaths: string[];
   defaultAIAgent?: AIAgent;
   repoAvatarCache?: Record<string, string>;
   worktreeOrdersByRepo?: Record<string, string[]>;
+  sidebarGroupsByRepo?: Record<string, SidebarWorktreeGroup[]>;
   autoFetchSettings?: AutoFetchSettings;
   repoPostCreateCommandsByPath?: Record<string, string>;
   sidebarNotesByWorktreePath?: Record<string, string>;
@@ -65,6 +73,7 @@ interface AppStore {
   prStatusByWorktreePath: Record<string, PRStatus>;
   prDataCache: Record<string, PRDataCache>;
   worktreeOrdersByRepo: Record<string, string[]>;
+  sidebarGroupsByRepo: Record<string, SidebarWorktreeGroup[]>;
   collapsedRepos: Set<string>;
   deletingWorktreePaths: Set<string>;
   settingsOpen: boolean;
@@ -89,6 +98,9 @@ interface AppStore {
   toggleRepoExpanded: (path: string) => void;
   refreshWorktrees: (repoPath: string) => Promise<void>;
   reorderWorktrees: (repoPath: string, orderedWorktreePaths: string[]) => Promise<void>;
+  createSidebarGroup: (repoPath: string, sourceWorktreePath: string, targetWorktreePath: string) => Promise<string | null>;
+  moveWorktreeInSidebar: (repoPath: string, drop: SidebarWorktreeDrop) => Promise<void>;
+  renameSidebarGroup: (repoPath: string, groupId: string, name: string) => Promise<void>;
   updateWorktreeBranch: (worktreePath: string) => Promise<void>;
   selectWorktree: (worktree: WorktreeInfo) => Promise<void>;
   addTerminal: () => Promise<string | null>;
@@ -263,6 +275,7 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
     const defaultAIAgent = await store.get<AIAgent>('defaultAIAgent');
     const repoAvatarCache = await store.get<Record<string, string>>('repoAvatarCache');
     const worktreeOrdersByRepo = await store.get<Record<string, string[]>>('worktreeOrdersByRepo');
+    const sidebarGroupsByRepo = await store.get<Record<string, SidebarWorktreeGroup[]>>('sidebarGroupsByRepo');
     const autoFetchSettings = await store.get<AutoFetchSettings>('autoFetchSettings');
     const repoPostCreateCommandsByPath = await store.get<Record<string, string>>('repoPostCreateCommandsByPath');
     const sidebarNotesByWorktreePath = await store.get<Record<string, string>>('sidebarNotesByWorktreePath');
@@ -282,6 +295,7 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
       addressedComments,
       repoAvatarCache: repoAvatarCache || {},
       worktreeOrdersByRepo: worktreeOrdersByRepo || {},
+      sidebarGroupsByRepo: sidebarGroupsByRepo || {},
       autoFetchSettings: autoFetchSettings || DEFAULT_AUTO_FETCH_SETTINGS,
       repoPostCreateCommandsByPath: repoPostCreateCommandsByPath || {},
       sidebarNotesByWorktreePath: sidebarNotesByWorktreePath || {},
@@ -292,6 +306,7 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
       repositoryPaths: [],
       repoAvatarCache: {},
       worktreeOrdersByRepo: {},
+      sidebarGroupsByRepo: {},
       autoFetchSettings: DEFAULT_AUTO_FETCH_SETTINGS,
       repoPostCreateCommandsByPath: {},
       sidebarNotesByWorktreePath: {},
@@ -317,6 +332,16 @@ async function saveWorktreeOrdersByRepo(worktreeOrdersByRepo: Record<string, str
     await store.save();
   } catch (e) {
     console.error('Failed to save worktree order state:', e);
+  }
+}
+
+async function saveSidebarGroupsByRepo(sidebarGroupsByRepo: Record<string, SidebarWorktreeGroup[]>): Promise<void> {
+  try {
+    const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
+    await store.set('sidebarGroupsByRepo', sidebarGroupsByRepo);
+    await store.save();
+  } catch (e) {
+    console.error('Failed to save sidebar groups state:', e);
   }
 }
 async function saveAddressedComments(addressedComments: AddressedCommentsMap): Promise<void> {
@@ -421,6 +446,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   prStatusByWorktreePath: {},
   prDataCache: {},
   worktreeOrdersByRepo: {},
+  sidebarGroupsByRepo: {},
   collapsedRepos: new Set<string>(),
   deletingWorktreePaths: new Set<string>(),
   settingsOpen: false,
@@ -461,6 +487,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set({ worktreeOrdersByRepo: persisted.worktreeOrdersByRepo });
     }
 
+    if (persisted.sidebarGroupsByRepo) {
+      set({ sidebarGroupsByRepo: persisted.sidebarGroupsByRepo });
+    }
+
     if (persisted.autoFetchSettings) {
       set({ autoFetchSettings: persisted.autoFetchSettings });
     }
@@ -490,6 +520,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
           await invoke<WorktreeInfo[]>('list_worktrees', { repoPath: info.path }),
           persisted.worktreeOrdersByRepo?.[info.path]
         );
+        const branchWorktreePaths = worktrees
+          .filter((worktree) => worktree.name !== 'main')
+          .map((worktree) => worktree.path);
+        const normalizedSidebarGroups = normalizeSidebarGroups(
+          persisted.sidebarGroupsByRepo?.[info.path],
+          branchWorktreePaths,
+          branchWorktreePaths
+        );
 
         if (!cachedAvatarUrl) {
           reposNeedingAvatar.push(info.path);
@@ -500,6 +538,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
             ...state.repositories.filter((r) => r.info.path !== info.path),
             { info, worktrees, isExpanded: true },
           ],
+          sidebarGroupsByRepo: {
+            ...state.sidebarGroupsByRepo,
+            [info.path]: normalizedSidebarGroups,
+          },
         }));
       } catch (e) {
         console.error(`Failed to load repository ${path}:`, e);
@@ -558,6 +600,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
         await invoke<WorktreeInfo[]>('list_worktrees', { repoPath: info.path }),
         get().worktreeOrdersByRepo[info.path] ?? persisted.worktreeOrdersByRepo?.[info.path]
       );
+      const branchWorktreePaths = worktrees
+        .filter((worktree) => worktree.name !== 'main')
+        .map((worktree) => worktree.path);
+      const normalizedSidebarGroups = normalizeSidebarGroups(
+        get().sidebarGroupsByRepo[info.path] ?? persisted.sidebarGroupsByRepo?.[info.path],
+        branchWorktreePaths,
+        branchWorktreePaths
+      );
 
       set((state) => {
         const newRepos = [
@@ -567,7 +617,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
         
         savePersistedState({ repositoryPaths: newRepos.map((r) => r.info.path) });
         
-        return { repositories: newRepos };
+        return {
+          repositories: newRepos,
+          sidebarGroupsByRepo: {
+            ...state.sidebarGroupsByRepo,
+            [info.path]: normalizedSidebarGroups,
+          },
+        };
       });
 
       if (!cachedAvatarUrl) {
@@ -596,12 +652,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => {
       const newRepos = state.repositories.filter((r) => r.info.path !== path);
       const { [path]: _removedOrder, ...remainingWorktreeOrders } = state.worktreeOrdersByRepo;
+      const { [path]: _removedGroups, ...remainingSidebarGroups } = state.sidebarGroupsByRepo;
       savePersistedState({ repositoryPaths: newRepos.map((r) => r.info.path) });
       saveWorktreeOrdersByRepo(remainingWorktreeOrders);
+      saveSidebarGroupsByRepo(remainingSidebarGroups);
       saveRepoAvatarCacheEntry(path, null);
       return {
         repositories: newRepos,
         worktreeOrdersByRepo: remainingWorktreeOrders,
+        sidebarGroupsByRepo: remainingSidebarGroups,
       };
     });
   },
@@ -623,16 +682,30 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const previousWorktrees = get().repositories.find((repo) => repo.info.path === repoPath)?.worktrees ?? [];
     const stableOrder = previousWorktrees.map((worktree) => worktree.path);
     let nextWorktreeOrders: Record<string, string[]> | null = null;
+    let nextSidebarGroupsByRepo: Record<string, SidebarWorktreeGroup[]> | null = null;
 
     set((state) => {
       const currentOrder = state.worktreeOrdersByRepo[repoPath];
       const normalizedOrder = normalizeWorktreeOrder(filteredWorktrees, currentOrder);
       const worktrees = orderWorktrees(filteredWorktrees, normalizedOrder, stableOrder);
+      const branchWorktreePaths = worktrees
+        .filter((worktree) => worktree.name !== 'main')
+        .map((worktree) => worktree.path);
+      const normalizedGroups = normalizeSidebarGroups(
+        state.sidebarGroupsByRepo[repoPath],
+        branchWorktreePaths,
+        normalizedOrder
+      );
       const orderChanged =
         (currentOrder?.length ?? 0) !== normalizedOrder.length ||
         (currentOrder?.some((path, index) => path !== normalizedOrder[index]) ?? false);
+      const groupsChanged =
+        JSON.stringify(state.sidebarGroupsByRepo[repoPath] ?? []) !== JSON.stringify(normalizedGroups);
       nextWorktreeOrders = orderChanged
         ? { ...state.worktreeOrdersByRepo, [repoPath]: normalizedOrder }
+        : null;
+      nextSidebarGroupsByRepo = groupsChanged
+        ? { ...state.sidebarGroupsByRepo, [repoPath]: normalizedGroups }
         : null;
 
       return {
@@ -640,30 +713,158 @@ export const useAppStore = create<AppStore>((set, get) => ({
           r.info.path === repoPath ? { ...r, worktrees } : r
         ),
         worktreeOrdersByRepo: nextWorktreeOrders ?? state.worktreeOrdersByRepo,
+        sidebarGroupsByRepo: nextSidebarGroupsByRepo ?? state.sidebarGroupsByRepo,
       };
     });
 
     if (nextWorktreeOrders) {
       await saveWorktreeOrdersByRepo(nextWorktreeOrders);
     }
+    if (nextSidebarGroupsByRepo) {
+      await saveSidebarGroupsByRepo(nextSidebarGroupsByRepo);
+    }
   },
 
   reorderWorktrees: async (repoPath: string, orderedWorktreePaths: string[]) => {
     const nextOrder = [...orderedWorktreePaths];
 
+    set((state) => {
+      const repo = state.repositories.find((item) => item.info.path === repoPath);
+      const nextWorktrees = repo ? orderWorktrees(repo.worktrees, nextOrder) : [];
+      const branchWorktreePaths = nextWorktrees
+        .filter((worktree) => worktree.name !== 'main')
+        .map((worktree) => worktree.path);
+      const nextGroups = normalizeSidebarGroups(
+        state.sidebarGroupsByRepo[repoPath],
+        branchWorktreePaths,
+        nextOrder
+      );
+
+      return {
+        repositories: state.repositories.map((repoItem) =>
+          repoItem.info.path === repoPath
+            ? { ...repoItem, worktrees: nextWorktrees }
+            : repoItem
+        ),
+        worktreeOrdersByRepo: {
+          ...state.worktreeOrdersByRepo,
+          [repoPath]: nextOrder,
+        },
+        sidebarGroupsByRepo: {
+          ...state.sidebarGroupsByRepo,
+          [repoPath]: nextGroups,
+        },
+      };
+    });
+
+    await saveWorktreeOrdersByRepo(get().worktreeOrdersByRepo);
+    await saveSidebarGroupsByRepo(get().sidebarGroupsByRepo);
+  },
+
+  createSidebarGroup: async (repoPath: string, sourceWorktreePath: string, targetWorktreePath: string) => {
+    let createdGroupId: string | null = null;
+
+    set((state) => {
+      const repo = state.repositories.find((item) => item.info.path === repoPath);
+      if (!repo) {
+        return state;
+      }
+
+      const orderedWorktreePaths = repo.worktrees
+        .filter((worktree) => worktree.name !== 'main')
+        .map((worktree) => worktree.path);
+      const result = createSidebarGroupModel(
+        {
+          groups: state.sidebarGroupsByRepo[repoPath] ?? [],
+          orderedWorktreePaths,
+        },
+        sourceWorktreePath,
+        targetWorktreePath,
+        () => crypto.randomUUID()
+      );
+      createdGroupId = result.groupId;
+
+      return {
+        repositories: state.repositories.map((repoItem) =>
+          repoItem.info.path === repoPath
+            ? {
+                ...repoItem,
+                worktrees: orderWorktrees(repoItem.worktrees, result.orderedWorktreePaths),
+              }
+            : repoItem
+        ),
+        worktreeOrdersByRepo: {
+          ...state.worktreeOrdersByRepo,
+          [repoPath]: result.orderedWorktreePaths,
+        },
+        sidebarGroupsByRepo: {
+          ...state.sidebarGroupsByRepo,
+          [repoPath]: result.groups,
+        },
+      };
+    });
+
+    await saveWorktreeOrdersByRepo(get().worktreeOrdersByRepo);
+    await saveSidebarGroupsByRepo(get().sidebarGroupsByRepo);
+
+    return createdGroupId;
+  },
+
+  moveWorktreeInSidebar: async (repoPath: string, drop: SidebarWorktreeDrop) => {
+    set((state) => {
+      const repo = state.repositories.find((item) => item.info.path === repoPath);
+      if (!repo) {
+        return state;
+      }
+
+      const orderedWorktreePaths = repo.worktrees
+        .filter((worktree) => worktree.name !== 'main')
+        .map((worktree) => worktree.path);
+      const result = moveWorktreeInSidebarModel(
+        {
+          groups: state.sidebarGroupsByRepo[repoPath] ?? [],
+          orderedWorktreePaths,
+        },
+        drop
+      );
+
+      return {
+        repositories: state.repositories.map((repoItem) =>
+          repoItem.info.path === repoPath
+            ? {
+                ...repoItem,
+                worktrees: orderWorktrees(repoItem.worktrees, result.orderedWorktreePaths),
+              }
+            : repoItem
+        ),
+        worktreeOrdersByRepo: {
+          ...state.worktreeOrdersByRepo,
+          [repoPath]: result.orderedWorktreePaths,
+        },
+        sidebarGroupsByRepo: {
+          ...state.sidebarGroupsByRepo,
+          [repoPath]: result.groups,
+        },
+      };
+    });
+
+    await saveWorktreeOrdersByRepo(get().worktreeOrdersByRepo);
+    await saveSidebarGroupsByRepo(get().sidebarGroupsByRepo);
+  },
+
+  renameSidebarGroup: async (repoPath: string, groupId: string, name: string) => {
+    const nextName = name.trim() || 'Untitled group';
+
     set((state) => ({
-      repositories: state.repositories.map((repo) =>
-        repo.info.path === repoPath
-          ? { ...repo, worktrees: orderWorktrees(repo.worktrees, nextOrder) }
-          : repo
-      ),
-      worktreeOrdersByRepo: {
-        ...state.worktreeOrdersByRepo,
-        [repoPath]: nextOrder,
+      sidebarGroupsByRepo: {
+        ...state.sidebarGroupsByRepo,
+        [repoPath]: (state.sidebarGroupsByRepo[repoPath] ?? []).map((group) =>
+          group.id === groupId ? { ...group, name: nextName } : group
+        ),
       },
     }));
 
-    await saveWorktreeOrdersByRepo(get().worktreeOrdersByRepo);
+    await saveSidebarGroupsByRepo(get().sidebarGroupsByRepo);
   },
 
   updateWorktreeBranch: async (worktreePath: string) => {
