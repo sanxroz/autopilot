@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::process::Command;
 
 const MAX_FAILED_LOG_EXCERPT_CHARS: usize = 24_000;
+#[cfg(test)]
+const TEST_GH_PATH_ENV_VAR: &str = "AUTOPILOT_TEST_GH_PATH";
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct PRCheck {
@@ -81,6 +83,8 @@ struct GhRunViewResponse {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GhRunViewJob {
+    #[serde(rename = "databaseId")]
+    database_id: u64,
     #[serde(default)]
     steps: Vec<GhRunViewStep>,
 }
@@ -179,6 +183,14 @@ fn truncate_failed_log_excerpt(logs: &str) -> String {
     excerpt
 }
 
+fn select_job_for_detail(jobs: Vec<GhRunViewJob>, job_id: u64) -> Result<GhRunViewJob, String> {
+    jobs.into_iter()
+        .find(|job| job.database_id == job_id)
+        .ok_or_else(|| {
+            format!("Failed to load check details: GitHub returned no metadata for job {job_id}.")
+        })
+}
+
 fn summarize_checks(checks: &[PRCheck]) -> PRChecksSummary {
     let mut summary = PRChecksSummary {
         total: checks.len(),
@@ -203,9 +215,20 @@ fn summarize_checks(checks: &[PRCheck]) -> PRChecksSummary {
     summary
 }
 
+fn find_gh_path() -> Result<String, String> {
+    #[cfg(test)]
+    if let Ok(path) = std::env::var(TEST_GH_PATH_ENV_VAR) {
+        if !path.trim().is_empty() {
+            return Ok(path);
+        }
+    }
+
+    find_cli_tool("gh")
+}
+
 #[tauri::command]
 pub async fn get_pr_checks(repo_path: String, pr_number: u64) -> Result<PRChecksResult, String> {
-    let gh_path = find_cli_tool("gh")?;
+    let gh_path = find_gh_path()?;
     let output = Command::new(&gh_path)
         .args([
             "pr",
@@ -282,7 +305,7 @@ pub async fn get_pr_check_detail(
 ) -> Result<PRCheckDetail, String> {
     let job_id = parse_actions_job_id(&check_url)
         .ok_or_else(|| "Detailed logs are only available for GitHub Actions checks.".to_string())?;
-    let gh_path = find_cli_tool("gh")?;
+    let gh_path = find_gh_path()?;
 
     let metadata_output = Command::new(&gh_path)
         .args([
@@ -313,16 +336,7 @@ pub async fn get_pr_check_detail(
     let run_view: GhRunViewResponse = serde_json::from_str(&metadata_stdout)
         .map_err(|error| format!("Failed to parse gh run view output: {error}"))?;
 
-    let mut jobs = run_view.jobs.into_iter();
-    let job = jobs.next().ok_or_else(|| {
-        "Failed to load check details: GitHub returned no job metadata.".to_string()
-    })?;
-    if jobs.next().is_some() {
-        return Err(
-            "Failed to load check details: GitHub returned multiple jobs for one job id."
-                .to_string(),
-        );
-    }
+    let job = select_job_for_detail(run_view.jobs, job_id)?;
 
     let steps = job
         .steps
@@ -368,9 +382,31 @@ pub async fn get_pr_check_detail(
 #[cfg(test)]
 mod tests {
     use super::{
-        compute_overall_status, parse_actions_job_id, truncate_failed_log_excerpt, PRChecksSummary,
-        MAX_FAILED_LOG_EXCERPT_CHARS,
+        compute_overall_status, get_pr_check_detail, parse_actions_job_id, select_job_for_detail,
+        truncate_failed_log_excerpt, GhRunViewJob, PRChecksSummary, MAX_FAILED_LOG_EXCERPT_CHARS,
+        TEST_GH_PATH_ENV_VAR,
     };
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::LazyLock;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    static TEST_MUTEX: LazyLock<tokio::sync::Mutex<()>> =
+        LazyLock::new(|| tokio::sync::Mutex::new(()));
+
+    fn unique_temp_dir(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock before UNIX_EPOCH")
+            .as_nanos();
+
+        std::env::temp_dir().join(format!(
+            "autopilot-github-checks-test-{}-{}-{}",
+            std::process::id(),
+            name,
+            nanos
+        ))
+    }
 
     fn build_summary(
         total: usize,
@@ -420,5 +456,115 @@ mod tests {
         assert!(truncated.chars().count() > MAX_FAILED_LOG_EXCERPT_CHARS);
         assert!(truncated.chars().count() < long_logs.chars().count() + 64);
         assert!(truncated.contains("[truncated; open on GitHub for the full failed log]"));
+    }
+
+    #[test]
+    fn select_job_for_detail_picks_requested_job_from_run_jobs() {
+        let matching_job_id = 456;
+        let selected_job = select_job_for_detail(
+            vec![
+                GhRunViewJob {
+                    database_id: 123,
+                    steps: Vec::new(),
+                },
+                GhRunViewJob {
+                    database_id: matching_job_id,
+                    steps: vec![super::GhRunViewStep {
+                        completed_at: Some("2026-06-29T15:31:36Z".to_string()),
+                        conclusion: Some("failure".to_string()),
+                        name: "Check TypeScript".to_string(),
+                        number: 8,
+                        started_at: Some("2026-06-29T15:29:13Z".to_string()),
+                        status: "completed".to_string(),
+                    }],
+                },
+            ],
+            matching_job_id,
+        )
+        .expect("expected the matching job to be selected");
+
+        assert_eq!(selected_job.database_id, matching_job_id);
+        assert_eq!(selected_job.steps.len(), 1);
+        assert_eq!(selected_job.steps[0].name, "Check TypeScript");
+    }
+
+    #[test]
+    fn select_job_for_detail_errors_when_job_is_missing() {
+        let error = select_job_for_detail(
+            vec![GhRunViewJob {
+                database_id: 123,
+                steps: Vec::new(),
+            }],
+            456,
+        )
+        .expect_err("expected missing job to return an error");
+
+        assert!(error.contains("job 456"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn get_pr_check_detail_selects_matching_job_from_multi_job_response() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let _guard = TEST_MUTEX.lock().await;
+        let temp_dir = unique_temp_dir("gh-detail");
+        let repo_dir = temp_dir.join("repo");
+        let gh_path = temp_dir.join("gh");
+        fs::create_dir_all(&repo_dir).expect("create repo dir");
+
+        let fake_gh_script = r#"#!/bin/sh
+if [ "$1" = "run" ] && [ "$2" = "view" ] && [ "$3" = "--job" ] && [ "$5" = "--json" ] && [ "$6" = "jobs" ]; then
+  cat <<'JSON'
+{"jobs":[
+  {"databaseId":84091081319,"steps":[{"name":"Set up job","status":"completed","conclusion":"success","number":1,"startedAt":"2026-06-29T15:25:54Z","completedAt":"2026-06-29T15:25:55Z"}]},
+  {"databaseId":84091081384,"steps":[
+    {"name":"Lint","status":"completed","conclusion":"success","number":7,"startedAt":"2026-06-29T15:26:55Z","completedAt":"2026-06-29T15:29:13Z"},
+    {"name":"Check TypeScript","status":"completed","conclusion":"failure","number":8,"startedAt":"2026-06-29T15:29:13Z","completedAt":"2026-06-29T15:31:36Z"}
+  ]}
+]}
+JSON
+  exit 0
+fi
+
+if [ "$1" = "run" ] && [ "$2" = "view" ] && [ "$3" = "--job" ] && [ "$5" = "--log-failed" ]; then
+  cat <<'LOG'
+Type Check  Check TypeScript  Error: Invalid environment variables
+Type Check  Check TypeScript  Found 1 error in src/lib/ai/code-review-service/__tests__/degradation-model-configs.test.ts:66
+LOG
+  exit 0
+fi
+
+echo "unexpected args: $*" >&2
+exit 1
+"#;
+
+        fs::write(&gh_path, fake_gh_script).expect("write fake gh script");
+        let mut permissions = fs::metadata(&gh_path).expect("gh metadata").permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&gh_path, permissions).expect("set gh permissions");
+
+        std::env::set_var(TEST_GH_PATH_ENV_VAR, &gh_path);
+
+        let detail = get_pr_check_detail(
+            repo_dir.to_string_lossy().to_string(),
+            Some(
+                "https://github.com/example/repo/actions/runs/28383230623/job/84091081384"
+                    .to_string(),
+            ),
+        )
+        .await
+        .expect("load check detail");
+
+        std::env::remove_var(TEST_GH_PATH_ENV_VAR);
+        fs::remove_dir_all(&temp_dir).expect("remove temp dir");
+
+        assert_eq!(detail.steps.len(), 2);
+        assert_eq!(detail.steps[1].name, "Check TypeScript");
+        assert_eq!(detail.steps[1].conclusion.as_deref(), Some("failure"));
+        assert!(detail
+            .failed_log_excerpt
+            .as_deref()
+            .is_some_and(|logs| logs.contains("Invalid environment variables")));
     }
 }
