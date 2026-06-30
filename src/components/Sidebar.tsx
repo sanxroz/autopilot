@@ -17,15 +17,18 @@ import type { WorktreeInfo } from "../types";
 import { NewWorktreeDialog } from "./NewWorktreeDialog";
 import { WorktreeItem } from "./WorktreeItem";
 import { StackGroup } from "./StackGroup";
+import { SidebarWorktreeGroup } from "./SidebarWorktreeGroup";
 import { detectStacks, getStackLabel } from "../lib/pr-stacks";
 import { useThemeMode } from "../hooks/useTheme";
 import { cn } from "../utils/cn";
 import { isWorktreeSettingUp } from "../store/worktreeSetup";
+import type { SidebarWorktreeGroup as SidebarWorktreeGroupModel } from "../lib/sidebar-groups";
 
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 480;
 const DEFAULT_WIDTH = 288;
 const DRAG_START_THRESHOLD_PX = 10;
+const GROUP_HOLD_DELAY_MS = 1200;
 
 function basename(path: string): string {
   const cleaned = path.replace(/\/+$/g, "");
@@ -48,7 +51,9 @@ export function Sidebar({ isOpen }: SidebarProps) {
     deleteWorktree,
     collapsedRepos,
     toggleRepoCollapsed,
-    reorderWorktrees,
+    createSidebarGroup,
+    moveWorktreeInSidebar,
+    renameSidebarGroup,
     setThemeMode,
     toggleSettings,
     githubSettings,
@@ -58,6 +63,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
     agentRunByWorktreePath,
     agentSidebarLifecycleEnabled,
     worktreeSetupByRepoPath,
+    sidebarGroupsByRepo,
   } = useAppStore();
   const themeMode = useThemeMode();
   const reducedMotion = useReducedMotion();
@@ -77,8 +83,19 @@ export function Sidebar({ isOpen }: SidebarProps) {
   } | null>(null);
   const [dropTarget, setDropTarget] = useState<{
     repoPath: string;
+    kind: "worktree" | "group";
+    worktreePath?: string;
+    groupId?: string;
+    position?: "before" | "after" | "inside";
+  } | null>(null);
+  const [groupingTarget, setGroupingTarget] = useState<{
+    repoPath: string;
     worktreePath: string;
-    position: "before" | "after";
+  } | null>(null);
+  const [editingGroup, setEditingGroup] = useState<{
+    repoPath: string;
+    groupId: string;
+    value: string;
   } | null>(null);
   const [isReorderPointerActive, setIsReorderPointerActive] = useState(false);
   const dragSessionRef = useRef<{
@@ -90,6 +107,12 @@ export function Sidebar({ isOpen }: SidebarProps) {
   } | null>(null);
   const draggedWorktreeRef = useRef<typeof draggedWorktree>(null);
   const dropTargetRef = useRef<typeof dropTarget>(null);
+  const groupingTargetRef = useRef<typeof groupingTarget>(null);
+  const groupHoverTimerRef = useRef<number | null>(null);
+  const groupHoverCandidateRef = useRef<{
+    repoPath: string;
+    worktreePath: string;
+  } | null>(null);
   const suppressNextWorktreeClickRef = useRef(false);
 
   const setCurrentDraggedWorktree = (value: typeof draggedWorktree) => {
@@ -100,7 +123,9 @@ export function Sidebar({ isOpen }: SidebarProps) {
   const setCurrentDropTarget = (value: typeof dropTarget) => {
     const current = dropTargetRef.current;
     if (
+      current?.kind === value?.kind &&
       current?.repoPath === value?.repoPath &&
+      current?.groupId === value?.groupId &&
       current?.worktreePath === value?.worktreePath &&
       current?.position === value?.position
     ) {
@@ -109,6 +134,19 @@ export function Sidebar({ isOpen }: SidebarProps) {
 
     dropTargetRef.current = value;
     setDropTarget(value);
+  };
+
+  const setCurrentGroupingTarget = (value: typeof groupingTarget) => {
+    groupingTargetRef.current = value;
+    setGroupingTarget(value);
+  };
+
+  const clearGroupHoverTimer = () => {
+    if (groupHoverTimerRef.current !== null) {
+      window.clearTimeout(groupHoverTimerRef.current);
+      groupHoverTimerRef.current = null;
+    }
+    groupHoverCandidateRef.current = null;
   };
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -237,9 +275,11 @@ export function Sidebar({ isOpen }: SidebarProps) {
   };
 
   const endWorktreeDrag = () => {
+    clearGroupHoverTimer();
     dragSessionRef.current = null;
     setCurrentDraggedWorktree(null);
     setCurrentDropTarget(null);
+    setCurrentGroupingTarget(null);
     setIsReorderPointerActive(false);
   };
 
@@ -268,35 +308,93 @@ export function Sidebar({ isOpen }: SidebarProps) {
       const currentDrag = draggedWorktreeRef.current;
       if (!currentDrag) return;
 
-      const target = document
-        .elementFromPoint(e.clientX, e.clientY)
-        ?.closest<HTMLElement>("[data-worktree-drop-target='true']");
+      const element = document.elementFromPoint(e.clientX, e.clientY);
+      const worktreeTarget = element?.closest<HTMLElement>(
+        "[data-worktree-drop-target='true']"
+      );
+      const groupTarget = element?.closest<HTMLElement>(
+        "[data-sidebar-group-drop-target='true']"
+      );
 
-      if (!target) {
+      if (!worktreeTarget && groupTarget) {
+        const repoPath = groupTarget.dataset.repoPath;
+        const groupId = groupTarget.dataset.groupId;
+        if (repoPath && groupId && repoPath === currentDrag.repoPath) {
+          clearGroupHoverTimer();
+          setCurrentGroupingTarget(null);
+          setCurrentDropTarget({
+            repoPath,
+            kind: "group",
+            groupId,
+            position: "inside",
+          });
+          return;
+        }
+      }
+
+      if (!worktreeTarget) {
+        clearGroupHoverTimer();
+        setCurrentGroupingTarget(null);
         setCurrentDropTarget(null);
         return;
       }
 
-      const repoPath = target.dataset.repoPath;
-      const worktreePath = target.dataset.worktreePath;
+      const repoPath = worktreeTarget.dataset.repoPath;
+      const worktreePath = worktreeTarget.dataset.worktreePath;
       if (
         !repoPath ||
         !worktreePath ||
         repoPath !== currentDrag.repoPath ||
         worktreePath === currentDrag.worktreePath
       ) {
+        clearGroupHoverTimer();
+        setCurrentGroupingTarget(null);
         setCurrentDropTarget(null);
         return;
       }
 
-      const bounds = target.getBoundingClientRect();
+      const candidate = { repoPath, worktreePath };
+      const activeGrouping = groupingTargetRef.current;
+      const currentCandidate = groupHoverCandidateRef.current;
+      const isSameCandidate =
+        currentCandidate?.repoPath === candidate.repoPath &&
+        currentCandidate.worktreePath === candidate.worktreePath;
+
+      if (!isSameCandidate && !activeGrouping) {
+        clearGroupHoverTimer();
+        groupHoverCandidateRef.current = candidate;
+        groupHoverTimerRef.current = window.setTimeout(() => {
+          setCurrentGroupingTarget(candidate);
+          setCurrentDropTarget(null);
+          groupHoverTimerRef.current = null;
+          groupHoverCandidateRef.current = candidate;
+        }, GROUP_HOLD_DELAY_MS);
+      }
+
+      if (
+        activeGrouping?.repoPath === repoPath &&
+        activeGrouping.worktreePath === worktreePath
+      ) {
+        setCurrentDropTarget(null);
+        return;
+      }
+
+      setCurrentGroupingTarget(null);
+
+      const bounds = worktreeTarget.getBoundingClientRect();
       const position = e.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
-      setCurrentDropTarget({ repoPath, worktreePath, position });
+      setCurrentDropTarget({
+        repoPath,
+        kind: "worktree",
+        worktreePath,
+        position,
+      });
     };
 
     const handlePointerUp = async () => {
       const currentDrag = draggedWorktreeRef.current;
       const currentDrop = dropTargetRef.current;
+      const currentGrouping = groupingTargetRef.current;
 
       if (!dragSessionRef.current?.isDragging) {
         const clickSession = dragSessionRef.current;
@@ -325,40 +423,66 @@ export function Sidebar({ isOpen }: SidebarProps) {
 
       if (
         !currentDrag ||
-        !currentDrop ||
-        currentDrag.repoPath !== currentDrop.repoPath ||
-        currentDrag.worktreePath === currentDrop.worktreePath
+        (currentGrouping &&
+          (currentDrag.repoPath !== currentGrouping.repoPath ||
+            currentDrag.worktreePath === currentGrouping.worktreePath))
       ) {
         endWorktreeDrag();
         return;
       }
 
-      const repo = useAppStore
-        .getState()
-        .repositories.find((item) => item.info.path === currentDrop.repoPath);
-      if (!repo) {
+      if (currentGrouping) {
+        const createdGroupId = await createSidebarGroup(
+          currentGrouping.repoPath,
+          currentDrag.worktreePath,
+          currentGrouping.worktreePath
+        );
+        if (createdGroupId) {
+          const createdGroup = useAppStore
+            .getState()
+            .sidebarGroupsByRepo[currentGrouping.repoPath]
+            ?.find((group) => group.id === createdGroupId);
+
+          if (createdGroup) {
+            setEditingGroup({
+              repoPath: currentGrouping.repoPath,
+              groupId: createdGroupId,
+              value: createdGroup.name,
+            });
+          }
+        }
         endWorktreeDrag();
         return;
       }
 
-      const currentOrder = repo.worktrees
-        .filter((wt) => wt.name !== "main")
-        .map((wt) => wt.path)
-        .filter((path) => path !== currentDrag.worktreePath);
-      const targetIndex = currentOrder.indexOf(currentDrop.worktreePath);
-
-      if (targetIndex === -1) {
+      if (
+        !currentDrop ||
+        currentDrag.repoPath !== currentDrop.repoPath ||
+        (currentDrop.kind === "worktree" &&
+          currentDrag.worktreePath === currentDrop.worktreePath)
+      ) {
         endWorktreeDrag();
         return;
       }
 
-      currentOrder.splice(
-        targetIndex + (currentDrop.position === "after" ? 1 : 0),
-        0,
-        currentDrag.worktreePath
-      );
+      if (currentDrop.kind === "group" && currentDrop.groupId) {
+        await moveWorktreeInSidebar(currentDrop.repoPath, {
+          sourceWorktreePath: currentDrag.worktreePath,
+          targetGroupId: currentDrop.groupId,
+          position: "inside",
+        });
+      } else if (
+        currentDrop.kind === "worktree" &&
+        currentDrop.worktreePath &&
+        currentDrop.position
+      ) {
+        await moveWorktreeInSidebar(currentDrop.repoPath, {
+          sourceWorktreePath: currentDrag.worktreePath,
+          targetWorktreePath: currentDrop.worktreePath,
+          position: currentDrop.position,
+        });
+      }
 
-      await reorderWorktrees(currentDrop.repoPath, currentOrder);
       endWorktreeDrag();
     };
 
@@ -371,7 +495,20 @@ export function Sidebar({ isOpen }: SidebarProps) {
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", endWorktreeDrag);
     };
-  }, [isReorderPointerActive, reorderWorktrees]);
+  }, [createSidebarGroup, isReorderPointerActive, moveWorktreeInSidebar, selectWorktree]);
+
+  const commitGroupRename = async (
+    repoPath: string,
+    groupId: string,
+    value: string
+  ) => {
+    await renameSidebarGroup(repoPath, groupId, value);
+    setEditingGroup((current) =>
+      current?.repoPath === repoPath && current.groupId === groupId
+        ? null
+        : current
+    );
+  };
 
   const handleToggleTheme = () => {
     setThemeMode(themeMode === "dark" ? "light" : "dark");
@@ -495,29 +632,34 @@ export function Sidebar({ isOpen }: SidebarProps) {
                    <div className="w-full min-w-0 space-y-1">
                      {(() => {
                        const repoPrs = prStatusByBranch[group.repoPath] ?? {};
-                       const { stacks, standalone } = detectStacks(repoPrs);
-                       const standaloneBranches = new Set(standalone.map((p) => p.head_branch));
-
-                       const stackWts: { stackIndex: number; wt: WorktreeInfo }[] = [];
-                       const soloWts: WorktreeInfo[] = [];
-
-                       for (const wt of group.worktrees) {
-                         const pr = wt.branch ? repoPrs[wt.branch] : undefined;
-                         if (!pr || standaloneBranches.has(pr.head_branch)) {
-                           soloWts.push(wt);
-                         } else {
-                           const idx = stacks.findIndex((s) =>
-                             s.allPrs.some((sp) => sp.head_branch === pr.head_branch)
-                           );
-                           if (idx >= 0) stackWts.push({ stackIndex: idx, wt });
-                           else soloWts.push(wt);
+                       const repoSidebarGroups = sidebarGroupsByRepo[group.repoPath] ?? [];
+                       const groupByWorktreePath = new Map<string, SidebarWorktreeGroupModel>();
+                       for (const sidebarGroup of repoSidebarGroups) {
+                         for (const worktreePath of sidebarGroup.worktreePaths) {
+                           groupByWorktreePath.set(worktreePath, sidebarGroup);
                          }
                        }
 
-                       const stackGroups = new Map<number, WorktreeInfo[]>();
-                       for (const { stackIndex, wt } of stackWts) {
-                         if (!stackGroups.has(stackIndex)) stackGroups.set(stackIndex, []);
-                         stackGroups.get(stackIndex)!.push(wt);
+                       const ungroupedPrs = Object.fromEntries(
+                         group.worktrees
+                           .filter((wt) => !groupByWorktreePath.has(wt.path) && wt.branch)
+                           .flatMap((wt) => {
+                             const pr = wt.branch ? repoPrs[wt.branch] : undefined;
+                             return pr ? [[wt.branch, pr] as const] : [];
+                           })
+                       );
+                       const { stacks } = detectStacks(ungroupedPrs);
+                       const stackWorktreePaths = new Map<string, number>();
+
+                       for (const [stackIndex, stack] of stacks.entries()) {
+                         for (const pr of stack.allPrs) {
+                           const matchingWorktree = group.worktrees.find(
+                             (wt) => wt.branch === pr.head_branch
+                           );
+                           if (matchingWorktree) {
+                             stackWorktreePaths.set(matchingWorktree.path, stackIndex);
+                           }
+                         }
                        }
 
                        const renderItem = (wt: WorktreeInfo) => {
@@ -525,8 +667,19 @@ export function Sidebar({ isOpen }: SidebarProps) {
                          const processStatus = processStatusByPath[wt.path] || 'none';
                          const agentRunState = agentSidebarLifecycleEnabled ? agentRunByWorktreePath[wt.path] : undefined;
                          const isDragSource = draggedWorktree?.worktreePath === wt.path;
-                         const showDropBefore = dropTarget?.repoPath === group.repoPath && dropTarget.worktreePath === wt.path && dropTarget.position === "before";
-                         const showDropAfter = dropTarget?.repoPath === group.repoPath && dropTarget.worktreePath === wt.path && dropTarget.position === "after";
+                         const showDropBefore =
+                           dropTarget?.repoPath === group.repoPath &&
+                           dropTarget.kind === "worktree" &&
+                           dropTarget.worktreePath === wt.path &&
+                           dropTarget.position === "before";
+                         const showDropAfter =
+                           dropTarget?.repoPath === group.repoPath &&
+                           dropTarget.kind === "worktree" &&
+                           dropTarget.worktreePath === wt.path &&
+                           dropTarget.position === "after";
+                         const showGroupingTarget =
+                           groupingTarget?.repoPath === group.repoPath &&
+                           groupingTarget.worktreePath === wt.path;
 
                          return (
                            <div
@@ -539,6 +692,9 @@ export function Sidebar({ isOpen }: SidebarProps) {
                            >
                              {showDropBefore && (
                                <div className="absolute inset-x-2 top-0 h-0.5 rounded-full bg-border-strong" />
+                             )}
+                             {showGroupingTarget && (
+                               <div className="absolute inset-0 rounded-md border border-dashed border-accent-primary pointer-events-none" />
                              )}
                              <WorktreeItem
                                name={wt.name}
@@ -565,27 +721,107 @@ export function Sidebar({ isOpen }: SidebarProps) {
                        };
 
                        const elements: React.ReactNode[] = [];
+                       const renderedWorktreePaths = new Set<string>();
 
-                       for (const [stackIndex, wts] of stackGroups) {
-                         const stack = stacks[stackIndex];
-                         const prOrder = new Map(
-                           stack.allPrs.map((pr, index) => [pr.head_branch, index] as const)
-                         );
-                         const orderedWts = [...wts].sort((a, b) => {
-                           const aIndex = a.branch ? prOrder.get(a.branch) ?? Number.POSITIVE_INFINITY : Number.POSITIVE_INFINITY;
-                           const bIndex = b.branch ? prOrder.get(b.branch) ?? Number.POSITIVE_INFINITY : Number.POSITIVE_INFINITY;
-                           return aIndex - bIndex;
-                         });
-                         elements.push(
-                            <StackGroup key={`stack-${stackIndex}`} label={getStackLabel(stack)} count={stack.allPrs.length}>
-                             {orderedWts.map(renderItem)}
-                           </StackGroup>
-                         );
+                       for (const wt of group.worktrees) {
+                         if (renderedWorktreePaths.has(wt.path)) {
+                           continue;
+                         }
+
+                         const sidebarGroup = groupByWorktreePath.get(wt.path);
+                         if (sidebarGroup) {
+                           const isEditingGroup =
+                             editingGroup?.repoPath === group.repoPath &&
+                             editingGroup.groupId === sidebarGroup.id;
+                           const isGroupDropTarget =
+                             dropTarget?.repoPath === group.repoPath &&
+                             dropTarget.kind === "group" &&
+                             dropTarget.groupId === sidebarGroup.id;
+                           const groupedWorktrees = sidebarGroup.worktreePaths
+                             .map((worktreePath) =>
+                               group.worktrees.find((worktree) => worktree.path === worktreePath)
+                             )
+                             .filter((worktree): worktree is WorktreeInfo => worktree !== undefined);
+
+                           for (const groupedWorktree of groupedWorktrees) {
+                             renderedWorktreePaths.add(groupedWorktree.path);
+                           }
+
+                           elements.push(
+                             <div
+                               key={sidebarGroup.id}
+                               data-sidebar-group-drop-target="true"
+                               data-repo-path={group.repoPath}
+                               data-group-id={sidebarGroup.id}
+                             >
+                               <SidebarWorktreeGroup
+                                 label={sidebarGroup.name}
+                                 count={groupedWorktrees.length}
+                                 isDropTarget={isGroupDropTarget}
+                                 isEditing={isEditingGroup}
+                                 editingValue={
+                                   isEditingGroup ? editingGroup.value : sidebarGroup.name
+                                 }
+                                 onEditingValueChange={(value) =>
+                                   setEditingGroup({
+                                     repoPath: group.repoPath,
+                                     groupId: sidebarGroup.id,
+                                     value,
+                                   })
+                                 }
+                                 onEditingSubmit={() =>
+                                   commitGroupRename(
+                                     group.repoPath,
+                                     sidebarGroup.id,
+                                     (isEditingGroup ? editingGroup.value : sidebarGroup.name)
+                                   )
+                                 }
+                                 onEditingCancel={() => setEditingGroup(null)}
+                                 onStartEditing={() =>
+                                   setEditingGroup({
+                                     repoPath: group.repoPath,
+                                     groupId: sidebarGroup.id,
+                                     value: sidebarGroup.name,
+                                   })
+                                 }
+                               >
+                                 {groupedWorktrees.map(renderItem)}
+                               </SidebarWorktreeGroup>
+                             </div>
+                           );
+                           continue;
+                         }
+
+                        const stackIndex = stackWorktreePaths.get(wt.path);
+                        if (stackIndex !== undefined) {
+                          const stack = stacks[stackIndex];
+                          const groupedWorktrees = stack.allPrs
+                            .map((pr) =>
+                              group.worktrees.find(
+                                (worktree) => worktree.branch === pr.head_branch
+                              )
+                            )
+                            .filter((worktree): worktree is WorktreeInfo => worktree !== undefined);
+
+                          for (const groupedWorktree of groupedWorktrees) {
+                            renderedWorktreePaths.add(groupedWorktree.path);
+                          }
+
+                           elements.push(
+                             <StackGroup
+                               key={`stack-${stack.root.pr.number}`}
+                               label={getStackLabel(stack)}
+                               count={stack.allPrs.length}
+                             >
+                               {groupedWorktrees.map(renderItem)}
+                             </StackGroup>
+                           );
+                           continue;
+                         }
+
+                         renderedWorktreePaths.add(wt.path);
+                         elements.push(renderItem(wt));
                        }
-
-                        for (const wt of soloWts) {
-                          elements.push(renderItem(wt));
-                        }
 
                         return elements;
                      })()}
