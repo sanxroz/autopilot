@@ -33,4 +33,29 @@ describe("agent run state reconciliation", () => {
     expect(result?.status).toBe("completed");
     expect(result?.endedAt).toBe(2000);
   });
+
+  test("replaces a completed lifecycle state when polling detects a new running process", () => {
+    const result = reconcileAgentRunState(
+      "/repo/worktree",
+      "agent_running",
+      {
+        worktreePath: "/repo/worktree",
+        sessionId: "terminal-1",
+        status: "completed",
+        startedAt: 1000,
+        lastEventAt: 1500,
+        endedAt: 1900,
+      },
+      2000
+    );
+
+    expect(result).toEqual<AgentRunState>({
+      worktreePath: "/repo/worktree",
+      sessionId: "process-/repo/worktree",
+      status: "running",
+      startedAt: 2000,
+      lastEventAt: 2000,
+      label: "Agent process detected",
+    });
+  });
 });

@@ -13,7 +13,11 @@ export function reconcileAgentRunState(
   now: number
 ): AgentRunState | undefined {
   if (processStatus === "agent_running") {
-    return currentState ?? {
+    if (currentState && isAgentActiveStatus(currentState.status)) {
+      return currentState;
+    }
+
+    return {
       worktreePath,
       sessionId: `process-${worktreePath}`,
       status: "running",

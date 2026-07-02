@@ -42,10 +42,14 @@ fn is_dev_server_process(cmd: &[String]) -> bool {
 
 fn cmd_has_executable(cmd: &[String], executable: &str) -> bool {
     cmd.iter().any(|part| {
-        Path::new(part)
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.eq_ignore_ascii_case(executable))
+        part.rsplit(['/', '\\'])
+            .next()
+            .is_some_and(|name| {
+                name.eq_ignore_ascii_case(executable)
+                    || name
+                        .strip_suffix(".exe")
+                        .is_some_and(|stem| stem.eq_ignore_ascii_case(executable))
+            })
     })
 }
 
@@ -102,6 +106,13 @@ mod tests {
         let cmd = vec!["/Users/santiago/.local/bin/pi".to_string()];
 
         assert!(is_ai_agent_process(&cmd, "pi"));
+    }
+
+    #[test]
+    fn detects_windows_pi_executable_as_ai_agent_process() {
+        let cmd = vec![r"C:\Users\santiago\AppData\Local\Programs\pi.exe".to_string()];
+
+        assert!(is_ai_agent_process(&cmd, "pi.exe"));
     }
 
     #[test]
