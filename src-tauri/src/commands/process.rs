@@ -40,6 +40,15 @@ fn is_dev_server_process(cmd: &[String]) -> bool {
         || cmd_str.contains("tsx watch")
 }
 
+fn cmd_has_executable(cmd: &[String], executable: &str) -> bool {
+    cmd.iter().any(|part| {
+        Path::new(part)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case(executable))
+    })
+}
+
 fn is_ai_agent_process(cmd: &[String], name: &str) -> bool {
     let cmd_str = cmd.join(" ").to_lowercase();
     let name_lower = name.to_lowercase();
@@ -47,6 +56,9 @@ fn is_ai_agent_process(cmd: &[String], name: &str) -> bool {
     name_lower.contains("claude")
         || name_lower.contains("droid")
         || name_lower.contains("opencode")
+        || name_lower.contains("codex")
+        || name_lower == "pi"
+        || name_lower.contains("pi-coding-agent")
         || name_lower.contains("cursor")
         || name_lower.contains("codeium")
         || name_lower.contains("copilot")
@@ -54,11 +66,60 @@ fn is_ai_agent_process(cmd: &[String], name: &str) -> bool {
         || cmd_str.contains("claude")
         || cmd_str.contains("droid")
         || cmd_str.contains("opencode")
+        || cmd_str.contains("codex")
+        || cmd_str.contains("pi-coding-agent")
+        || cmd_has_executable(cmd, "pi")
         || cmd_str.contains("cursor-agent")
         || cmd_str.contains("codeium")
         || cmd_str.contains("github-copilot")
         || cmd_str.contains("amp ")
         || cmd_str.contains("/amp")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_codex_as_ai_agent_process() {
+        let cmd = vec!["/Users/santiago/.local/bin/codex".to_string()];
+
+        assert!(is_ai_agent_process(&cmd, "codex"));
+    }
+
+    #[test]
+    fn detects_codex_when_process_name_is_node_wrapper() {
+        let cmd = vec![
+            "node".to_string(),
+            "/Users/santiago/.local/bin/codex".to_string(),
+        ];
+
+        assert!(is_ai_agent_process(&cmd, "node"));
+    }
+
+    #[test]
+    fn detects_pi_as_ai_agent_process() {
+        let cmd = vec!["/Users/santiago/.local/bin/pi".to_string()];
+
+        assert!(is_ai_agent_process(&cmd, "pi"));
+    }
+
+    #[test]
+    fn detects_pi_package_process() {
+        let cmd = vec![
+            "node".to_string(),
+            "/usr/local/lib/node_modules/@earendil-works/pi-coding-agent/bin/pi.js".to_string(),
+        ];
+
+        assert!(is_ai_agent_process(&cmd, "node"));
+    }
+
+    #[test]
+    fn rejects_processes_that_only_contain_pi_inside_another_word() {
+        let cmd = vec!["npm".to_string(), "run".to_string(), "pipeline".to_string()];
+
+        assert!(!is_ai_agent_process(&cmd, "npm"));
+    }
 }
 
 fn is_process_in_worktree(cwd: Option<&Path>, worktree_path: &Path) -> bool {

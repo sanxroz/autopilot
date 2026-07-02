@@ -320,7 +320,9 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn windows_launcher_places_labels_outside_the_note_condition() {
-        let script = build_windows_launcher(Path::new(r"C:\Users\me\AppData\Roaming\autopilot\cli\autopilot-note.mjs"));
+        let script = build_windows_launcher(Path::new(
+            r"C:\Users\me\AppData\Roaming\autopilot\cli\autopilot-note.mjs",
+        ));
 
         assert!(script.contains("if /I \"%~1\"==\"note\" goto note"));
         assert!(script.contains("\n:note\nshift\nset \"ARGS=\"\n:collect_args\n"));
@@ -333,11 +335,17 @@ mod tests {
         let temp_dir = make_temp_dir();
         let profile_path = temp_dir.join(".profile");
 
-        append_block_if_missing(&profile_path, "\n# AUTOPILOT PATH\nexport PATH=\"/tmp/bin:$PATH\"\n")
-            .expect("missing profile should be created");
+        append_block_if_missing(
+            &profile_path,
+            "\n# AUTOPILOT PATH\nexport PATH=\"/tmp/bin:$PATH\"\n",
+        )
+        .expect("missing profile should be created");
 
         let contents = fs::read_to_string(profile_path).expect("profile contents");
-        assert_eq!(contents, "# AUTOPILOT PATH\nexport PATH=\"/tmp/bin:$PATH\"\n");
+        assert_eq!(
+            contents,
+            "# AUTOPILOT PATH\nexport PATH=\"/tmp/bin:$PATH\"\n"
+        );
         fs::remove_dir_all(temp_dir).expect("cleanup temp dir");
     }
 

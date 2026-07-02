@@ -33,6 +33,7 @@ import {
   type SidebarWorktreeDrop,
   type SidebarWorktreeGroup,
 } from '../lib/sidebar-groups';
+import { reconcileAgentRunState } from './agentRunState';
 
 interface PersistedState {
   repositoryPaths: string[];
@@ -153,20 +154,15 @@ const persistedStore = new LazyStore(STORE_PATH, { autoSave: true, defaults: {} 
 let storeSaveQueue = Promise.resolve();
 let sidebarNotesSaveQueue = Promise.resolve();
 let pendingLegacySidebarNotesMarkdown: string | null = null;
-const AGENT_COMPLETED_TTL_MS = 5000;
 const DEFAULT_AUTO_FETCH_SETTINGS: AutoFetchSettings = {
   enabled: false,
   intervalMinutes: 5,
 };
 
-const KNOWN_AGENTS: AIAgent[] = ['opencode', 'claude', 'droid', 'amp', 'codex'];
+const KNOWN_AGENTS: AIAgent[] = ['opencode', 'claude', 'droid', 'amp', 'codex', 'pi'];
 
 function isKnownAgent(value: string | undefined): value is AIAgent {
   return !!value && KNOWN_AGENTS.includes(value as AIAgent);
-}
-
-function isAgentActiveStatus(status: AgentRunState['status']): boolean {
-  return status === 'starting' || status === 'running' || status === 'waiting_input';
 }
 
 function getWorktreeSortTimestamp(worktree: WorktreeInfo): number {
@@ -227,44 +223,6 @@ function orderWorktrees(
     });
 
   return [...mainWorktrees, ...branchWorktrees];
-}
-
-function reconcileOneAgentRunState(
-  _path: string,
-  processStatus: ProcessStatus,
-  currentState: AgentRunState | undefined,
-  now: number
-): AgentRunState | undefined {
-  if (processStatus === 'agent_running') {
-    // Don't create lifecycle state from process polling alone.
-    // Lifecycle is driven by hooks (for hook-enabled agents) or
-    // the inactivity watchdog (for others). Process polling can only
-    // keep existing state alive — never fabricate new state.
-    return currentState;
-  }
-
-  if (!currentState) return undefined;
-
-  // Agent process is gone — mark completed immediately.
-  // If process detection is briefly wrong, hooks will restore the correct
-  // state on the next event.
-  if (isAgentActiveStatus(currentState.status)) {
-    return {
-      ...currentState,
-      status: 'completed',
-      lastEventAt: now,
-      endedAt: now,
-      label: 'Agent process exited',
-    };
-  }
-
-  if ((currentState.status === 'completed' || currentState.status === 'error') && currentState.endedAt) {
-    if (now - currentState.endedAt > AGENT_COMPLETED_TTL_MS) {
-      return undefined;
-    }
-  }
-
-  return currentState;
 }
 
 async function loadPersistedState(): Promise<PersistedState & { themeMode?: ThemeMode; addressedComments?: AddressedCommentsMap }> {
@@ -1332,7 +1290,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
         const nextAgentRun: Record<string, AgentRunState | undefined> = {};
         for (const path of worktreePaths) {
-          const reconciled = reconcileOneAgentRunState(
+          const reconciled = reconcileAgentRunState(
             path,
             nextProcessStatus[path],
             current.agentRunByWorktreePath[path],
@@ -1444,7 +1402,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const now = Date.now();
     set((state) => {
       const current = state.agentRunByWorktreePath[worktreePath];
-      const reconciled = reconcileOneAgentRunState(worktreePath, processStatus, current, now);
+      const reconciled = reconcileAgentRunState(worktreePath, processStatus, current, now);
       if (reconciled === current) {
         return state;
       }
