@@ -196,11 +196,13 @@ fn is_bot_author(author: &str, head_branch: &str) -> bool {
         || author_lc == "codex"
         || author_lc == "amp"
         || author_lc == "droid"
+        || author_lc == "pi"
         || branch_lc.starts_with("opencode/")
         || branch_lc.starts_with("claude/")
         || branch_lc.starts_with("codex/")
         || branch_lc.starts_with("amp/")
         || branch_lc.starts_with("droid/")
+        || branch_lc.starts_with("pi/")
 }
 
 fn map_gh_pr_to_status(pr: GhPRResponse) -> PRStatus {
