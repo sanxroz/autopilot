@@ -331,6 +331,9 @@ fn detect_agent_from_command(command: &str) -> Option<&'static str> {
     if first_token.ends_with("/codex") || first_token == "codex" {
         return Some("codex");
     }
+    if first_token.ends_with("/pi") || first_token == "pi" {
+        return Some("pi");
+    }
 
     None
 }
@@ -449,6 +452,7 @@ curl -sG "http://127.0.0.1:${AUTOPILOT_HOOK_PORT}/hook/complete" \
   --connect-timeout 1 --max-time 2 \
   --data-urlencode "terminalId=$AUTOPILOT_TERMINAL_ID" \
   --data-urlencode "eventType=$EVENT_TYPE" \
+  --data-urlencode "agent=$AUTOPILOT_AGENT" \
   > /dev/null 2>&1 &
 exit 0
 "#;
@@ -471,6 +475,7 @@ curl -sG "http://127.0.0.1:${AUTOPILOT_HOOK_PORT}/hook/complete" \
   --connect-timeout 1 --max-time 2 \
   --data-urlencode "terminalId=$AUTOPILOT_TERMINAL_ID" \
   --data-urlencode "eventType=Start" \
+  --data-urlencode "agent=amp" \
   > /dev/null 2>&1 &
 exit 0
 "#;
@@ -559,6 +564,15 @@ fn detect_agent_name_from_event(event_type: &str) -> &'static str {
     }
 }
 
+fn normalize_hook_agent(agent: Option<&str>, event_type: &str) -> String {
+    match agent {
+        Some(agent @ ("opencode" | "claude" | "droid" | "amp" | "codex" | "pi")) => {
+            agent.to_string()
+        }
+        _ => detect_agent_name_from_event(event_type).to_string(),
+    }
+}
+
 fn run_hook_server(
     app: AppHandle,
     agent_terminals: Arc<Mutex<HashMap<String, Arc<AgentTerminalInfo>>>>,
@@ -576,6 +590,7 @@ fn run_hook_server(
 
             let terminal_id = parse_query_param(&url, "terminalId");
             let event_type = parse_query_param(&url, "eventType");
+            let agent = parse_query_param(&url, "agent");
 
             if let (Some(terminal_id), Some(event_type)) = (terminal_id, event_type) {
                 eprintln!(
@@ -593,14 +608,14 @@ fn run_hook_server(
                             .get(&terminal_id)
                             .cloned()
                             .unwrap_or_default();
-                        let agent = detect_agent_name_from_event(&event_type);
+                        let agent = normalize_hook_agent(agent.as_deref(), &event_type);
                         eprintln!(
                             "[autopilot:hook] creating AgentTerminalInfo on-the-fly for terminal={terminal_id} agent={agent} worktree={worktree_path}"
                         );
                         let new_info = Arc::new(AgentTerminalInfo {
                             worktree_path,
                             session_id: terminal_id.clone(),
-                            agent: agent.to_string(),
+                            agent,
                             last_output_ms: AtomicI64::new(now_ms()),
                             is_waiting: AtomicBool::new(true),
                             is_alive: AtomicBool::new(true),
@@ -1328,6 +1343,7 @@ pub fn spawn_terminal_with_command(
         );
         cmd.env("AUTOPILOT_TERMINAL_ID", &terminal_id);
         cmd.env("AUTOPILOT_HOOK_PORT", hook_runtime.port.to_string());
+        cmd.env("AUTOPILOT_AGENT", agent);
 
         if agent == "claude" {
             if let Some(settings_path) = hook_runtime.claude_settings_path.as_deref() {
@@ -1347,7 +1363,6 @@ pub fn spawn_terminal_with_command(
                     let codex_notify = format!("notify={notify_json}");
                     full_command =
                         format!("{} -c {}", full_command, shell_quote_single(&codex_notify));
-                    hooks_injected = true;
                     eprintln!("[autopilot] codex hooks injected, full_command={full_command}");
                 }
             }
@@ -1688,6 +1703,8 @@ mod tests {
         assert_eq!(detect_agent_from_command("amp"), Some("amp"));
         assert_eq!(detect_agent_from_command("codex"), Some("codex"));
         assert_eq!(detect_agent_from_command("  codex  --flag"), Some("codex"));
+        assert_eq!(detect_agent_from_command("pi"), Some("pi"));
+        assert_eq!(detect_agent_from_command("  pi -p hello"), Some("pi"));
     }
 
     #[test]
@@ -1793,6 +1810,19 @@ mod tests {
     fn map_hook_event_unknown_types() {
         assert_eq!(map_hook_event("unknown"), None);
         assert_eq!(map_hook_event(""), None);
+    }
+
+    #[test]
+    fn normalize_hook_agent_prefers_explicit_codex_agent() {
+        assert_eq!(
+            normalize_hook_agent(Some("codex"), "UserPromptSubmit"),
+            "codex"
+        );
+    }
+
+    #[test]
+    fn normalize_hook_agent_falls_back_to_event_mapping() {
+        assert_eq!(normalize_hook_agent(None, "UserPromptSubmit"), "claude");
     }
 
     #[test]
