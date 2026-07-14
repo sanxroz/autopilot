@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useState } from "react";
 import { CircleAlert, CircleCheck, GitBranch, Loader, Trash2 } from "lucide-react";
 import type { ProcessStatus, DiffStats, AgentRunState } from "../types";
 import type { PRStatus } from "../types/github";
@@ -140,6 +140,47 @@ function formatTimeAgo(dateStr: string | null | undefined): string {
   return date.toLocaleDateString();
 }
 
+function ReviewerAvatars({ reviewers }: { readonly reviewers: readonly string[] }) {
+  const [failedReviewerAvatars, setFailedReviewerAvatars] = useState<Set<string>>(new Set());
+  const visibleReviewers = reviewers.slice(0, 3);
+
+  if (reviewers.length === 0) return null;
+
+  return (
+    <div
+      className="flex -space-x-1.5 shrink-0"
+      aria-label={`Reviewers: ${reviewers.join(", ")}`}
+      title={`Reviewers: ${reviewers.join(", ")}`}
+    >
+      {visibleReviewers.map((reviewer) => (
+        <div
+          key={reviewer}
+          className="flex size-4 items-center justify-center overflow-hidden rounded-full border border-bg-secondary bg-tertiary text-[7px] font-semibold text-secondary"
+          title={reviewer}
+        >
+          {failedReviewerAvatars.has(reviewer) ? (
+            reviewer.slice(0, 2).toUpperCase()
+          ) : (
+            <img
+              src={`https://github.com/${reviewer}.png?size=64`}
+              alt={reviewer}
+              className="size-full object-cover"
+              onError={() => {
+                setFailedReviewerAvatars((current) => new Set(current).add(reviewer));
+              }}
+            />
+          )}
+        </div>
+      ))}
+      {reviewers.length > visibleReviewers.length && (
+        <div className="flex size-4 items-center justify-center rounded-full border border-bg-secondary bg-tertiary text-[7px] font-semibold text-secondary">
+          +{reviewers.length - visibleReviewers.length}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export const WorktreeItem = memo(function WorktreeItem({
   name,
   branch,
@@ -206,7 +247,12 @@ export const WorktreeItem = memo(function WorktreeItem({
           <div className="truncate min-w-0 font-medium text-sm flex-1 text-primary">
             {branch || name}
           </div>
-          <div className="relative flex items-center gap-1.5">
+          <div className="relative flex h-4 w-10 shrink-0 items-center justify-end">
+            {prStatus && (
+              <div className="transition-opacity group-hover:opacity-0 group-focus:opacity-0">
+                <ReviewerAvatars reviewers={prStatus.requested_reviewers} />
+              </div>
+            )}
             {!prStatus && hasStats && (
               <div className="flex items-center gap-1 font-mono font-medium flex-shrink-0 rounded-sm text-xs py-0.5 px-1 group-hover:opacity-0 transition-opacity">
                 {additions > 0 && (
@@ -217,25 +263,17 @@ export const WorktreeItem = memo(function WorktreeItem({
                 )}
               </div>
             )}
-            <div className="absolute inset-y-0 right-0 flex items-center gap-2.5 invisible group-hover:visible">
-              <div
-                className={cn(
-                  "absolute inset-y-0 -left-5 right-0 w-8 pointer-events-none",
-                  isActive
-                    ? "bg-gradient-to-r from-transparent to-bg-active"
-                    : "bg-gradient-to-r from-transparent to-bg-hover"
-                )}
-              />
-
-              <button
-                onClick={onDelete}
-                className="rounded-sm relative z-10 p-0.5 transition-colors text-secondary hover:text-semantic-error"
-                title="Delete worktree"
-                aria-label="Delete worktree"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
+            <button
+              onClick={onDelete}
+              className={cn(
+                "invisible absolute inset-y-0 right-0 z-10 rounded-md p-1 transition-colors hover:text-semantic-error group-hover:visible group-focus:visible focus-visible:visible focus-visible:text-semantic-error",
+                isActive ? "bg-active" : "bg-hover"
+              )}
+              title="Delete worktree"
+              aria-label="Delete worktree"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
         <div className="text-xs pl-5 flex items-center gap-1 min-w-0 overflow-hidden whitespace-nowrap text-secondary">
