@@ -67,6 +67,10 @@ export function TerminalGrid() {
   }, [handleKeyDown]);
 
   const allWorktreePaths = Object.keys(terminalsByWorktree);
+  const selectedWorktreeData = selectedWorktree
+    ? terminalsByWorktree[selectedWorktree.path]
+    : null;
+  const visibleTerminals = selectedWorktreeData?.terminals ?? [];
 
   if (!selectedWorktree && allWorktreePaths.length === 0) {
     return (
@@ -108,68 +112,52 @@ export function TerminalGrid() {
   }
 
   return (
-    <div className="flex-1 relative">
-      {allWorktreePaths.map((worktreePath) => {
-        const worktreeData = terminalsByWorktree[worktreePath];
-        const isCurrentWorktree = selectedWorktree?.path === worktreePath;
-        const worktreeTerminals = worktreeData.terminals;
-
-        if (worktreeTerminals.length === 0) return null;
-
-        const terminalCount = worktreeTerminals.length;
-        const cols = terminalCount;
-        const rows = 1;
-
-        return (
-          <div
-            key={worktreePath}
-            className="absolute inset-0 grid gap-[1px]"
-            style={{
-              gridTemplateColumns: `repeat(${cols}, 1fr)`,
-              gridTemplateRows: `repeat(${rows}, 1fr)`,
-              visibility: isCurrentWorktree ? "visible" : "hidden",
-              zIndex: isCurrentWorktree ? 1 : 0,
-            }}
-          >
-            {worktreeTerminals.map((terminal, index) => (
-              <div
-                key={terminal.id}
-                className={`min-w-0 min-h-0 bg-transparent overflow-hidden relative ${index > 0 ? "border-l border-border" : ""}`}
-              >
-                <Terminal
-                  ref={(handle) => {
-                    if (handle) {
-                      terminalRefs.current.set(terminal.id, handle);
-                    } else {
-                      terminalRefs.current.delete(terminal.id);
-                    }
-                  }}
-                  terminalId={terminal.id}
-                  isActive={
-                    isCurrentWorktree && activeTerminalId === terminal.id
+    <div className="flex-1 relative min-w-0 min-h-0 overflow-hidden">
+      {selectedWorktree && visibleTerminals.length > 0 && (
+        <div
+          className="absolute inset-0 grid gap-[1px]"
+          style={{
+            gridTemplateColumns: `repeat(${visibleTerminals.length}, 1fr)`,
+            gridTemplateRows: "repeat(1, 1fr)",
+            display: "grid",
+            zIndex: 1,
+          }}
+        >
+          {visibleTerminals.map((terminal, index) => (
+            <div
+              key={terminal.id}
+              className={`min-w-0 min-h-0 bg-transparent overflow-hidden relative ${index > 0 ? "border-l border-border" : ""}`}
+            >
+              <Terminal
+                ref={(handle) => {
+                  if (handle) {
+                    terminalRefs.current.set(terminal.id, handle);
+                  } else {
+                    terminalRefs.current.delete(terminal.id);
                   }
-                  isVisible={isCurrentWorktree}
-                  onFocus={() => setActiveTerminal(terminal.id)}
+                }}
+                terminalId={terminal.id}
+                isActive={activeTerminalId === terminal.id}
+                onFocus={() => setActiveTerminal(terminal.id)}
+              />
+              {searchOpenIds.has(terminal.id) && (
+                <TerminalSearchBar
+                  terminalHandle={
+                    terminalRefs.current.get(terminal.id) ?? null
+                  }
+                  onClose={() =>
+                    setSearchOpenIds((prev) => {
+                      const next = new Set(prev);
+                      next.delete(terminal.id);
+                      return next;
+                    })
+                  }
                 />
-                {searchOpenIds.has(terminal.id) && isCurrentWorktree && (
-                  <TerminalSearchBar
-                    terminalHandle={
-                      terminalRefs.current.get(terminal.id) ?? null
-                    }
-                    onClose={() =>
-                      setSearchOpenIds((prev) => {
-                        const next = new Set(prev);
-                        next.delete(terminal.id);
-                        return next;
-                      })
-                    }
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-        );
-      })}
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {(!selectedWorktree || terminals.length === 0) && (
         <div className="absolute inset-0 flex items-center justify-center bg-transparent z-10 overflow-hidden">

@@ -10,10 +10,11 @@ import { useTheme } from "../hooks/useTheme";
 import { getTheme, subscribeTheme } from "../theme";
 import { observeResize } from "../utils/sharedResizeObserver";
 
+const TERMINAL_SCROLLBACK_LINES = 2000;
+
 interface Props {
   terminalId: string;
   isActive: boolean;
-  isVisible: boolean;
   onFocus: () => void;
 }
 
@@ -25,13 +26,23 @@ export interface TerminalHandle {
   focus: () => void;
 }
 
-export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ terminalId, isActive, isVisible, onFocus }, ref) {
+interface TerminalOutput {
+  readonly data: string;
+  readonly sequence: number;
+}
+
+interface TerminalOutputSnapshot extends TerminalOutput {}
+
+interface TerminalDimensions {
+  readonly cols: number;
+  readonly rows: number;
+}
+
+export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ terminalId, isActive, onFocus }, ref) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
-  const prevVisibleRef = useRef(isVisible);
-  const isVisibleRef = useRef(isVisible);
   const pendingOutputRef = useRef("");
   const outputFrameRef = useRef<number | null>(null);
   const outputTimerRef = useRef<number | null>(null);
@@ -56,26 +67,28 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     },
   }));
 
-  // Keep ref in sync with prop to avoid stale closure in resize observer
-  isVisibleRef.current = isVisible;
-
   const fit = useCallback(() => {
-    if (fitAddonRef.current && containerRef.current) {
-      try {
-        fitAddonRef.current.fit();
-        const dims = fitAddonRef.current.proposeDimensions();
-        if (dims && dims.cols > 0 && dims.rows > 0) {
-          invoke("resize_terminal", {
-            terminalId,
-            cols: dims.cols,
-            rows: dims.rows,
-          }).catch(console.error);
-        }
-      } catch (e) {
-        console.error("Fit error:", e);
-      }
+    if (!fitAddonRef.current || !containerRef.current) return null;
+    try {
+      const dimensions = fitAddonRef.current.proposeDimensions();
+      if (!dimensions) return null;
+      fitAddonRef.current.fit();
+      return dimensions satisfies TerminalDimensions;
+    } catch (error) {
+      console.error("Fit error:", error);
+      return null;
     }
-  }, [terminalId]);
+  }, []);
+
+  const resizeTerminal = useCallback(async () => {
+    const dimensions = fit();
+    if (!dimensions) return;
+    try {
+      await invoke("resize_terminal", { terminalId, ...dimensions });
+    } catch (error) {
+      console.error("Terminal resize failed:", error);
+    }
+  }, [fit, terminalId]);
 
   const flushPendingOutput = useCallback(() => {
     if (outputFrameRef.current !== null) {
@@ -112,7 +125,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       cursorBlink: true,
       fontSize: 13,
       fontFamily: '"SF Mono", ui-monospace, Menlo, Monaco, "Courier New", monospace',
-      scrollback: 10000,
+      scrollback: TERMINAL_SCROLLBACK_LINES,
       allowTransparency: true,
       // Required for SearchAddon decorations — registerDecoration is experimental in xterm v6
       allowProposedApi: true,
@@ -152,12 +165,6 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
     searchAddonRef.current = searchAddon;
-
-    setTimeout(() => {
-      if (isVisibleRef.current) {
-        fit();
-      }
-    }, 50);
 
     term.onData((data) => {
       invoke("write_to_terminal", { terminalId, data }).catch(console.error);
@@ -207,13 +214,73 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       return true;
     });
 
-    const unlisten = listen<string>(
-      `terminal-output-${terminalId}`,
-      (event) => {
-        pendingOutputRef.current += event.payload;
-        scheduleOutputFlush();
+    let disposed = false;
+    let replayLoaded = false;
+    let appliedSequence = 0;
+    let unlistenOutput: (() => void) | null = null;
+    const replayEvents: TerminalOutput[] = [];
+    const appendOutput = (output: TerminalOutput) => {
+      if (output.sequence <= appliedSequence) return;
+      appliedSequence = output.sequence;
+      pendingOutputRef.current += output.data;
+      scheduleOutputFlush();
+    };
+
+    void listen<TerminalOutput>(`terminal-output-${terminalId}`, (event) => {
+      if (!replayLoaded) {
+        replayEvents.push(event.payload);
+        return;
       }
-    );
+      appendOutput(event.payload);
+    })
+      .then(async (unlisten) => {
+        if (disposed) {
+          unlisten();
+          return;
+        }
+        unlistenOutput = unlisten;
+        try {
+          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          if (disposed) return;
+          await resizeTerminal();
+          if (disposed) return;
+          const snapshot = await invoke<TerminalOutputSnapshot>(
+            "get_terminal_output",
+            { terminalId }
+          );
+          if (disposed) return;
+          appliedSequence = snapshot.sequence;
+          term.write(snapshot.data, () => {
+            if (disposed) return;
+            replayLoaded = true;
+            for (const output of replayEvents) {
+              appendOutput(output);
+            }
+            replayEvents.length = 0;
+            requestAnimationFrame(() => {
+              if (!terminalRef.current) return;
+              fit();
+              terminalRef.current.refresh(0, terminalRef.current.rows - 1);
+              terminalRef.current.scrollToBottom();
+            });
+          });
+        } catch (error) {
+          console.error("Failed to replay terminal output:", error);
+          if (disposed) return;
+          replayLoaded = true;
+          for (const output of replayEvents) {
+            appendOutput(output);
+          }
+          replayEvents.length = 0;
+          requestAnimationFrame(() => {
+            if (!terminalRef.current) return;
+            fit();
+            terminalRef.current.refresh(0, terminalRef.current.rows - 1);
+            terminalRef.current.scrollToBottom();
+          });
+        }
+      })
+      .catch(console.error);
 
     const unlistenClose = listen<void>(`terminal-closed-${terminalId}`, () => {
       flushPendingOutput();
@@ -221,13 +288,14 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     });
 
     const unobserve = observeResize(containerRef.current, () => {
-      if (isVisibleRef.current) {
-        requestAnimationFrame(fit);
-      }
+      requestAnimationFrame(() => {
+        void resizeTerminal();
+      });
     });
 
     return () => {
-      unlisten.then((fn) => fn());
+      disposed = true;
+      unlistenOutput?.();
       unlistenClose.then((fn) => fn());
       if (outputFrameRef.current !== null) {
         cancelAnimationFrame(outputFrameRef.current);
@@ -245,31 +313,13 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       fitAddonRef.current = null;
       searchAddonRef.current = null;
     };
-  }, [terminalId, scheduleOutputFlush, flushPendingOutput]);
+  }, [terminalId, scheduleOutputFlush, flushPendingOutput, resizeTerminal, fit]);
 
   useEffect(() => {
-    const wasHidden = !prevVisibleRef.current;
-    const isNowVisible = isVisible;
-    prevVisibleRef.current = isVisible;
-
-    if (!wasHidden || !isNowVisible) return;
-    if (!terminalRef.current) return;
-
-    const frameId = requestAnimationFrame(() => {
-      if (!terminalRef.current) return;
-      fit();
-      terminalRef.current.refresh(0, terminalRef.current.rows - 1);
-      terminalRef.current.scrollToBottom();
-    });
-
-    return () => cancelAnimationFrame(frameId);
-  }, [isVisible, fit]);
-
-  useEffect(() => {
-    if (isActive && isVisible && terminalRef.current) {
+    if (isActive && terminalRef.current) {
       terminalRef.current.focus();
     }
-  }, [isActive, isVisible]);
+  }, [isActive]);
 
   useEffect(() => {
     const updateTerminalTheme = () => {
@@ -304,9 +354,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       themeFrameRef.current = requestAnimationFrame(() => {
         themeFrameRef.current = null;
         if (!terminalRef.current) return;
-        if (isVisibleRef.current) {
-          fit();
-        }
+        fit();
         terminalRef.current.refresh(0, terminalRef.current.rows - 1);
       });
     };
@@ -329,15 +377,16 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           onFocus();
+          terminalRef.current?.focus();
         }
       }}
       role="region"
       tabIndex={0}
       aria-label={`Terminal ${terminalId}`}
-      className="w-full h-full bg-transparent relative"
+      className="w-full h-full min-w-0 min-h-0 overflow-hidden bg-transparent relative"
       style={{ padding: "4px", background: theme.terminal.surfaceBackground }}
     >
-      {isActive && isVisible && (
+      {isActive && (
         <div
           className="absolute top-0 left-0 w-1 h-4 rounded-br"
           style={{
