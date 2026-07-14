@@ -2,7 +2,7 @@ use parking_lot::Mutex;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -25,6 +25,7 @@ pub struct TerminalSession {
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
     master: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
+    replay: Arc<Mutex<TerminalReplayBuffer>>,
 }
 
 /// Shared state for an agent-backed terminal, readable from any thread.
@@ -81,6 +82,146 @@ const INACTIVITY_TIMEOUT_MS: i64 = 2000;
 /// How often the watchdog thread checks for inactivity.
 const WATCHDOG_POLL_MS: u64 = 500;
 
+const TERMINAL_REPLAY_MAX_BYTES: usize = 256 * 1024;
+const TERMINAL_REPLAY_CHUNK_MAX_BYTES: usize = 4096;
+const COMPLETED_TERMINAL_OUTPUT_MAX_BYTES: usize = 4 * 1024 * 1024;
+const COMPLETED_TERMINAL_OUTPUT_MAX_ENTRIES: usize = 64;
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TerminalOutput {
+    data: String,
+    sequence: u64,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalOutputSnapshot {
+    data: String,
+    sequence: u64,
+}
+
+impl TerminalOutputSnapshot {
+    fn new(data: impl Into<String>, sequence: u64) -> Self {
+        Self {
+            data: data.into(),
+            sequence,
+        }
+    }
+}
+
+struct TerminalReplayBuffer {
+    chunks: VecDeque<String>,
+    bytes: usize,
+    max_bytes: usize,
+    chunk_max_bytes: usize,
+    sequence: u64,
+}
+
+impl TerminalReplayBuffer {
+    fn new(max_bytes: usize) -> Self {
+        Self {
+            chunks: VecDeque::new(),
+            bytes: 0,
+            max_bytes,
+            chunk_max_bytes: max_bytes.min(TERMINAL_REPLAY_CHUNK_MAX_BYTES),
+            sequence: 0,
+        }
+    }
+
+    fn push(&mut self, data: String) -> TerminalOutput {
+        self.bytes += data.len();
+        let append_to_last_chunk = self
+            .chunks
+            .back()
+            .is_some_and(|chunk| chunk.len() + data.len() <= self.chunk_max_bytes);
+        if append_to_last_chunk {
+            if let Some(chunk) = self.chunks.back_mut() {
+                chunk.push_str(&data);
+            }
+        } else {
+            self.chunks.push_back(data.clone());
+        }
+
+        while self.bytes > self.max_bytes {
+            let Some(removed) = self.chunks.pop_front() else {
+                break;
+            };
+            self.bytes -= removed.len();
+        }
+
+        self.sequence += 1;
+        TerminalOutput {
+            data,
+            sequence: self.sequence,
+        }
+    }
+
+    fn snapshot(&self) -> TerminalOutputSnapshot {
+        TerminalOutputSnapshot::new(
+            self.chunks.iter().map(String::as_str).collect::<String>(),
+            self.sequence,
+        )
+    }
+}
+
+pub struct CompletedTerminalOutputCache {
+    entries: VecDeque<(String, TerminalOutputSnapshot)>,
+    bytes: usize,
+    max_bytes: usize,
+    max_entries: usize,
+}
+
+impl Default for CompletedTerminalOutputCache {
+    fn default() -> Self {
+        Self::new(COMPLETED_TERMINAL_OUTPUT_MAX_BYTES)
+    }
+}
+
+impl CompletedTerminalOutputCache {
+    fn new(max_bytes: usize) -> Self {
+        Self {
+            entries: VecDeque::new(),
+            bytes: 0,
+            max_bytes,
+            max_entries: COMPLETED_TERMINAL_OUTPUT_MAX_ENTRIES,
+        }
+    }
+
+    fn get(&self, terminal_id: &str) -> Option<TerminalOutputSnapshot> {
+        self.entries
+            .iter()
+            .find(|(id, _)| id == terminal_id)
+            .map(|(_, snapshot)| snapshot.clone())
+    }
+
+    fn insert(&mut self, terminal_id: String, snapshot: TerminalOutputSnapshot) {
+        if let Some(index) = self.entries.iter().position(|(id, _)| id == &terminal_id) {
+            if let Some((_, removed)) = self.entries.remove(index) {
+                self.bytes -= removed.data.len();
+            }
+        }
+
+        self.bytes += snapshot.data.len();
+        self.entries.push_back((terminal_id, snapshot));
+
+        while self.bytes > self.max_bytes || self.entries.len() > self.max_entries {
+            let Some((_, removed)) = self.entries.pop_front() else {
+                break;
+            };
+            self.bytes -= removed.data.len();
+        }
+    }
+
+    fn remove(&mut self, terminal_id: &str) {
+        if let Some(index) = self.entries.iter().position(|(id, _)| id == terminal_id) {
+            if let Some((_, removed)) = self.entries.remove(index) {
+                self.bytes -= removed.data.len();
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -92,11 +233,17 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-fn emit_terminal_output(app: &AppHandle, event_name: &str, data: String) {
+fn emit_terminal_output(
+    app: &AppHandle,
+    event_name: &str,
+    replay: &Arc<Mutex<TerminalReplayBuffer>>,
+    data: String,
+) {
     if data.is_empty() {
         return;
     }
-    let _ = app.emit(event_name, data);
+    let output = replay.lock().push(data);
+    let _ = app.emit(event_name, output);
 }
 
 struct Utf8StreamDecoder {
@@ -930,10 +1077,14 @@ pub fn spawn_terminal(
     let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
+    let replay = Arc::new(Mutex::new(TerminalReplayBuffer::new(
+        TERMINAL_REPLAY_MAX_BYTES,
+    )));
     let session = TerminalSession {
         writer: Arc::new(Mutex::new(writer)),
         child,
         master: Arc::new(Mutex::new(pair.master)),
+        replay: replay.clone(),
     };
 
     state.terminals.lock().insert(terminal_id.clone(), session);
@@ -945,11 +1096,12 @@ pub fn spawn_terminal(
     let tid = terminal_id.clone();
     let app_clone = app.clone();
     let state_terminals = state.terminals.clone();
+    let state_completed_terminal_outputs = state.completed_terminal_outputs.clone();
     let state_agent_terminals = state.agent_terminals.clone();
-    let state_terminal_worktrees = state.terminal_worktrees.clone();
 
     let event_name = format!("terminal-output-{}", terminal_id);
     let close_event_name = format!("terminal-closed-{}", terminal_id);
+    let replay_for_events = replay;
 
     thread::spawn(move || {
         let mut reader = reader;
@@ -960,24 +1112,31 @@ pub fn spawn_terminal(
             match reader.read(&mut buf) {
                 Ok(0) => {
                     let flushed = utf8_decoder.flush();
-                    emit_terminal_output(&app_clone, &event_name, flushed);
+                    emit_terminal_output(&app_clone, &event_name, &replay_for_events, flushed);
                     break;
                 }
                 Ok(n) => {
                     let decoded = utf8_decoder.push(&buf[..n]);
-                    emit_terminal_output(&app_clone, &event_name, decoded);
+                    emit_terminal_output(&app_clone, &event_name, &replay_for_events, decoded);
                 }
                 Err(_) => {
                     let flushed = utf8_decoder.flush();
-                    emit_terminal_output(&app_clone, &event_name, flushed);
+                    emit_terminal_output(&app_clone, &event_name, &replay_for_events, flushed);
                     break;
                 }
             }
         }
 
-        state_terminals.lock().remove(&tid);
+        let snapshot = replay_for_events.lock().snapshot();
+        {
+            let mut terminals = state_terminals.lock();
+            if terminals.remove(&tid).is_some() {
+                state_completed_terminal_outputs
+                    .lock()
+                    .insert(tid.clone(), snapshot);
+            }
+        }
         state_agent_terminals.lock().remove(&tid);
-        state_terminal_worktrees.lock().remove(&tid);
         let _ = app_clone.emit(&close_event_name, ());
     });
 
@@ -1020,6 +1179,21 @@ pub fn write_to_terminal(
 }
 
 #[tauri::command]
+pub fn get_terminal_output(
+    state: State<'_, AppState>,
+    terminal_id: String,
+) -> Result<TerminalOutputSnapshot, String> {
+    let live_snapshot = state
+        .terminals
+        .lock()
+        .get(&terminal_id)
+        .map(|session| session.replay.lock().snapshot());
+    live_snapshot
+        .or_else(|| state.completed_terminal_outputs.lock().get(&terminal_id))
+        .ok_or("Terminal not found".to_string())
+}
+
+#[tauri::command]
 pub fn resize_terminal(
     state: State<'_, AppState>,
     terminal_id: String,
@@ -1047,9 +1221,12 @@ fn close_terminal_inner(state: &AppState, terminal_id: &str) -> Result<(), Strin
         info.is_alive.store(false, Ordering::Relaxed);
     }
     state.terminal_worktrees.lock().remove(terminal_id);
-
-    let mut terminals = state.terminals.lock();
-    if let Some(session) = terminals.remove(terminal_id) {
+    let session = {
+        let mut terminals = state.terminals.lock();
+        state.completed_terminal_outputs.lock().remove(terminal_id);
+        terminals.remove(terminal_id)
+    };
+    if let Some(session) = session {
         if let Some(pid) = session.child.process_id() {
             #[cfg(unix)]
             {
@@ -1263,10 +1440,14 @@ pub fn spawn_terminal_with_command(
     let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
 
+    let replay = Arc::new(Mutex::new(TerminalReplayBuffer::new(
+        TERMINAL_REPLAY_MAX_BYTES,
+    )));
     let session = TerminalSession {
         writer: Arc::new(Mutex::new(writer)),
         child,
         master: Arc::new(Mutex::new(pair.master)),
+        replay: replay.clone(),
     };
 
     state.terminals.lock().insert(terminal_id.clone(), session);
@@ -1332,13 +1513,14 @@ pub fn spawn_terminal_with_command(
     let tid = terminal_id.clone();
     let app_clone = app.clone();
     let state_terminals = state.terminals.clone();
+    let state_completed_terminal_outputs = state.completed_terminal_outputs.clone();
     let state_agent_terminals = state.agent_terminals.clone();
-    let state_terminal_worktrees = state.terminal_worktrees.clone();
     let event_name = format!("terminal-output-{}", terminal_id);
     let close_event_name = format!("terminal-closed-{}", terminal_id);
     let cwd_for_events = cwd.clone();
     let agent_for_events = detected_agent.map(|v| v.to_string());
     let session_for_events = session_id.clone();
+    let replay_for_events = replay;
 
     thread::spawn(move || {
         let mut reader = reader;
@@ -1351,7 +1533,7 @@ pub fn spawn_terminal_with_command(
             match reader.read(&mut buf) {
                 Ok(0) => {
                     let flushed = utf8_decoder.flush();
-                    emit_terminal_output(&app_clone, &event_name, flushed);
+                    emit_terminal_output(&app_clone, &event_name, &replay_for_events, flushed);
                     break;
                 }
                 Ok(n) => {
@@ -1446,11 +1628,11 @@ pub fn spawn_terminal_with_command(
                         }
                     }
 
-                    emit_terminal_output(&app_clone, &event_name, data);
+                    emit_terminal_output(&app_clone, &event_name, &replay_for_events, data);
                 }
                 Err(e) => {
                     let flushed = utf8_decoder.flush();
-                    emit_terminal_output(&app_clone, &event_name, flushed);
+                    emit_terminal_output(&app_clone, &event_name, &replay_for_events, flushed);
                     if let Some(agent) = agent_for_events.as_deref() {
                         emit_agent_status(
                             &app_clone,
@@ -1489,9 +1671,16 @@ pub fn spawn_terminal_with_command(
             ws.is_alive.store(false, Ordering::Relaxed);
         }
 
-        state_terminals.lock().remove(&tid);
+        let snapshot = replay_for_events.lock().snapshot();
+        {
+            let mut terminals = state_terminals.lock();
+            if terminals.remove(&tid).is_some() {
+                state_completed_terminal_outputs
+                    .lock()
+                    .insert(tid.clone(), snapshot);
+            }
+        }
         state_agent_terminals.lock().remove(&tid);
-        state_terminal_worktrees.lock().remove(&tid);
         let _ = app_clone.emit(&close_event_name, ());
     });
 
@@ -1649,5 +1838,53 @@ mod tests {
     #[test]
     fn shell_quote_single_with_quotes() {
         assert_eq!(shell_quote_single("it's"), "'it'\"'\"'s'");
+    }
+
+    #[test]
+    fn terminal_replay_buffer_evicts_the_oldest_chunk_at_its_byte_limit() {
+        let mut buffer = TerminalReplayBuffer::new(6);
+
+        buffer.push("abc".to_string());
+        buffer.push("def".to_string());
+        buffer.push("ghi".to_string());
+
+        assert_eq!(buffer.snapshot().data, "ghi");
+    }
+
+    #[test]
+    fn completed_output_cache_evicts_the_oldest_snapshot_at_its_byte_limit() {
+        let mut cache = CompletedTerminalOutputCache::new(6);
+
+        cache.insert("first".to_string(), TerminalOutputSnapshot::new("abc", 1));
+        cache.insert("second".to_string(), TerminalOutputSnapshot::new("def", 2));
+        cache.insert("third".to_string(), TerminalOutputSnapshot::new("ghi", 3));
+
+        assert!(cache.get("first").is_none());
+        assert_eq!(
+            cache.get("second").map(|snapshot| snapshot.data),
+            Some("def".to_string())
+        );
+        assert_eq!(
+            cache.get("third").map(|snapshot| snapshot.data),
+            Some("ghi".to_string())
+        );
+    }
+
+    #[test]
+    fn completed_output_cache_limits_empty_snapshots() {
+        let mut cache = CompletedTerminalOutputCache {
+            entries: VecDeque::new(),
+            bytes: 0,
+            max_bytes: 1,
+            max_entries: 2,
+        };
+
+        cache.insert("first".to_string(), TerminalOutputSnapshot::new("", 1));
+        cache.insert("second".to_string(), TerminalOutputSnapshot::new("", 2));
+        cache.insert("third".to_string(), TerminalOutputSnapshot::new("", 3));
+
+        assert!(cache.get("first").is_none());
+        assert!(cache.get("second").is_some());
+        assert!(cache.get("third").is_some());
     }
 }

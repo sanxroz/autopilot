@@ -62,6 +62,7 @@ fn position_traffic_lights(window: &WebviewWindow, x: f64, y: f64) {
 
 pub struct AppState {
     pub terminals: Arc<Mutex<HashMap<String, terminal::TerminalSession>>>,
+    pub completed_terminal_outputs: Arc<Mutex<terminal::CompletedTerminalOutputCache>>,
     pub agent_terminals: Arc<Mutex<HashMap<String, Arc<terminal::AgentTerminalInfo>>>>,
     pub terminal_worktrees: Arc<Mutex<HashMap<String, String>>>,
     pub worktree_setup_processes: Arc<Mutex<HashMap<String, u32>>>,
@@ -72,6 +73,9 @@ impl Default for AppState {
     fn default() -> Self {
         Self {
             terminals: Arc::new(Mutex::new(HashMap::new())),
+            completed_terminal_outputs: Arc::new(Mutex::new(
+                terminal::CompletedTerminalOutputCache::default(),
+            )),
             agent_terminals: Arc::new(Mutex::new(HashMap::new())),
             terminal_worktrees: Arc::new(Mutex::new(HashMap::new())),
             worktree_setup_processes: Arc::new(Mutex::new(HashMap::new())),
@@ -83,6 +87,8 @@ impl Default for AppState {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let terminals = Arc::new(Mutex::new(HashMap::new()));
+    let completed_terminal_outputs =
+        Arc::new(Mutex::new(terminal::CompletedTerminalOutputCache::default()));
     let agent_terminals = Arc::new(Mutex::new(HashMap::new()));
     let terminal_worktrees: Arc<Mutex<HashMap<String, String>>> =
         Arc::new(Mutex::new(HashMap::new()));
@@ -112,6 +118,7 @@ pub fn run() {
 
             app.manage(AppState {
                 terminals: terminals.clone(),
+                completed_terminal_outputs: completed_terminal_outputs.clone(),
                 agent_terminals: agent_terminals.clone(),
                 terminal_worktrees: terminal_worktrees.clone(),
                 worktree_setup_processes: worktree_setup_processes.clone(),
@@ -189,6 +196,7 @@ pub fn run() {
             terminal::spawn_terminal,
             terminal::spawn_terminal_with_command,
             terminal::write_to_terminal,
+            terminal::get_terminal_output,
             terminal::resize_terminal,
             terminal::close_terminal,
             terminal::close_terminals_for_worktree,
