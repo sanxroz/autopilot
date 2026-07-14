@@ -1131,7 +1131,9 @@ pub fn spawn_terminal(
         {
             let mut terminals = state_terminals.lock();
             if terminals.remove(&tid).is_some() {
-                state_completed_terminal_outputs.lock().insert(tid.clone(), snapshot);
+                state_completed_terminal_outputs
+                    .lock()
+                    .insert(tid.clone(), snapshot);
             }
         }
         state_agent_terminals.lock().remove(&tid);
@@ -1673,7 +1675,9 @@ pub fn spawn_terminal_with_command(
         {
             let mut terminals = state_terminals.lock();
             if terminals.remove(&tid).is_some() {
-                state_completed_terminal_outputs.lock().insert(tid.clone(), snapshot);
+                state_completed_terminal_outputs
+                    .lock()
+                    .insert(tid.clone(), snapshot);
             }
         }
         state_agent_terminals.lock().remove(&tid);

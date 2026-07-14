@@ -87,9 +87,8 @@ impl Default for AppState {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let terminals = Arc::new(Mutex::new(HashMap::new()));
-    let completed_terminal_outputs = Arc::new(Mutex::new(
-        terminal::CompletedTerminalOutputCache::default(),
-    ));
+    let completed_terminal_outputs =
+        Arc::new(Mutex::new(terminal::CompletedTerminalOutputCache::default()));
     let agent_terminals = Arc::new(Mutex::new(HashMap::new()));
     let terminal_worktrees: Arc<Mutex<HashMap<String, String>>> =
         Arc::new(Mutex::new(HashMap::new()));
