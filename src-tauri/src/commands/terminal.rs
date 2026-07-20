@@ -1,4 +1,4 @@
-use parking_lot::Mutex;
+use parking_lot::{Condvar, Mutex};
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -26,6 +26,7 @@ pub struct TerminalSession {
     child: Box<dyn portable_pty::Child + Send + Sync>,
     master: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
     replay: Arc<Mutex<TerminalReplayBuffer>>,
+    output_flow: Arc<TerminalOutputFlow>,
 }
 
 /// Shared state for an agent-backed terminal, readable from any thread.
@@ -86,6 +87,47 @@ const TERMINAL_REPLAY_MAX_BYTES: usize = 256 * 1024;
 const TERMINAL_REPLAY_CHUNK_MAX_BYTES: usize = 4096;
 const COMPLETED_TERMINAL_OUTPUT_MAX_BYTES: usize = 4 * 1024 * 1024;
 const COMPLETED_TERMINAL_OUTPUT_MAX_ENTRIES: usize = 64;
+
+#[derive(Default)]
+struct TerminalOutputFlowState {
+    attached: bool,
+    acknowledged_sequence: u64,
+}
+
+#[derive(Default)]
+struct TerminalOutputFlow {
+    state: Mutex<TerminalOutputFlowState>,
+    acknowledged: Condvar,
+}
+
+impl TerminalOutputFlow {
+    fn attach(&self) {
+        self.state.lock().attached = true;
+    }
+
+    fn detach(&self) {
+        self.state.lock().attached = false;
+        self.acknowledged.notify_all();
+    }
+
+    fn is_attached(&self) -> bool {
+        self.state.lock().attached
+    }
+
+    fn acknowledge(&self, sequence: u64) {
+        let mut state = self.state.lock();
+        state.acknowledged_sequence = state.acknowledged_sequence.max(sequence);
+        self.acknowledged.notify_all();
+    }
+
+    fn wait_for_acknowledgement(&self, sequence: u64) -> bool {
+        let mut state = self.state.lock();
+        while state.attached && state.acknowledged_sequence < sequence {
+            self.acknowledged.wait(&mut state);
+        }
+        state.attached
+    }
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -237,13 +279,17 @@ fn emit_terminal_output(
     app: &AppHandle,
     event_name: &str,
     replay: &Arc<Mutex<TerminalReplayBuffer>>,
+    output_flow: &Arc<TerminalOutputFlow>,
     data: String,
 ) {
     if data.is_empty() {
         return;
     }
     let output = replay.lock().push(data);
-    let _ = app.emit(event_name, output);
+    if output_flow.is_attached() {
+        let _ = app.emit(event_name, output.clone());
+        output_flow.wait_for_acknowledgement(output.sequence);
+    }
 }
 
 struct Utf8StreamDecoder {
@@ -1080,11 +1126,13 @@ pub fn spawn_terminal(
     let replay = Arc::new(Mutex::new(TerminalReplayBuffer::new(
         TERMINAL_REPLAY_MAX_BYTES,
     )));
+    let output_flow = Arc::new(TerminalOutputFlow::default());
     let session = TerminalSession {
         writer: Arc::new(Mutex::new(writer)),
         child,
         master: Arc::new(Mutex::new(pair.master)),
         replay: replay.clone(),
+        output_flow: output_flow.clone(),
     };
 
     state.terminals.lock().insert(terminal_id.clone(), session);
@@ -1102,6 +1150,7 @@ pub fn spawn_terminal(
     let event_name = format!("terminal-output-{}", terminal_id);
     let close_event_name = format!("terminal-closed-{}", terminal_id);
     let replay_for_events = replay;
+    let output_flow_for_events = output_flow;
 
     thread::spawn(move || {
         let mut reader = reader;
@@ -1112,16 +1161,34 @@ pub fn spawn_terminal(
             match reader.read(&mut buf) {
                 Ok(0) => {
                     let flushed = utf8_decoder.flush();
-                    emit_terminal_output(&app_clone, &event_name, &replay_for_events, flushed);
+                    emit_terminal_output(
+                        &app_clone,
+                        &event_name,
+                        &replay_for_events,
+                        &output_flow_for_events,
+                        flushed,
+                    );
                     break;
                 }
                 Ok(n) => {
                     let decoded = utf8_decoder.push(&buf[..n]);
-                    emit_terminal_output(&app_clone, &event_name, &replay_for_events, decoded);
+                    emit_terminal_output(
+                        &app_clone,
+                        &event_name,
+                        &replay_for_events,
+                        &output_flow_for_events,
+                        decoded,
+                    );
                 }
                 Err(_) => {
                     let flushed = utf8_decoder.flush();
-                    emit_terminal_output(&app_clone, &event_name, &replay_for_events, flushed);
+                    emit_terminal_output(
+                        &app_clone,
+                        &event_name,
+                        &replay_for_events,
+                        &output_flow_for_events,
+                        flushed,
+                    );
                     break;
                 }
             }
@@ -1194,6 +1261,40 @@ pub fn get_terminal_output(
 }
 
 #[tauri::command]
+pub fn attach_terminal_output(
+    state: State<'_, AppState>,
+    terminal_id: String,
+) -> Result<(), String> {
+    let terminals = state.terminals.lock();
+    let session = terminals.get(&terminal_id).ok_or("Terminal not found")?;
+    session.output_flow.attach();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn detach_terminal_output(
+    state: State<'_, AppState>,
+    terminal_id: String,
+) -> Result<(), String> {
+    let terminals = state.terminals.lock();
+    let session = terminals.get(&terminal_id).ok_or("Terminal not found")?;
+    session.output_flow.detach();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn acknowledge_terminal_output(
+    state: State<'_, AppState>,
+    terminal_id: String,
+    sequence: u64,
+) -> Result<(), String> {
+    let terminals = state.terminals.lock();
+    let session = terminals.get(&terminal_id).ok_or("Terminal not found")?;
+    session.output_flow.acknowledge(sequence);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn resize_terminal(
     state: State<'_, AppState>,
     terminal_id: String,
@@ -1227,6 +1328,7 @@ fn close_terminal_inner(state: &AppState, terminal_id: &str) -> Result<(), Strin
         terminals.remove(terminal_id)
     };
     if let Some(session) = session {
+        session.output_flow.detach();
         if let Some(pid) = session.child.process_id() {
             #[cfg(unix)]
             {
@@ -1443,11 +1545,13 @@ pub fn spawn_terminal_with_command(
     let replay = Arc::new(Mutex::new(TerminalReplayBuffer::new(
         TERMINAL_REPLAY_MAX_BYTES,
     )));
+    let output_flow = Arc::new(TerminalOutputFlow::default());
     let session = TerminalSession {
         writer: Arc::new(Mutex::new(writer)),
         child,
         master: Arc::new(Mutex::new(pair.master)),
         replay: replay.clone(),
+        output_flow: output_flow.clone(),
     };
 
     state.terminals.lock().insert(terminal_id.clone(), session);
@@ -1521,6 +1625,7 @@ pub fn spawn_terminal_with_command(
     let agent_for_events = detected_agent.map(|v| v.to_string());
     let session_for_events = session_id.clone();
     let replay_for_events = replay;
+    let output_flow_for_events = output_flow;
 
     thread::spawn(move || {
         let mut reader = reader;
@@ -1533,7 +1638,13 @@ pub fn spawn_terminal_with_command(
             match reader.read(&mut buf) {
                 Ok(0) => {
                     let flushed = utf8_decoder.flush();
-                    emit_terminal_output(&app_clone, &event_name, &replay_for_events, flushed);
+                    emit_terminal_output(
+                        &app_clone,
+                        &event_name,
+                        &replay_for_events,
+                        &output_flow_for_events,
+                        flushed,
+                    );
                     break;
                 }
                 Ok(n) => {
@@ -1628,11 +1739,23 @@ pub fn spawn_terminal_with_command(
                         }
                     }
 
-                    emit_terminal_output(&app_clone, &event_name, &replay_for_events, data);
+                    emit_terminal_output(
+                        &app_clone,
+                        &event_name,
+                        &replay_for_events,
+                        &output_flow_for_events,
+                        data,
+                    );
                 }
                 Err(e) => {
                     let flushed = utf8_decoder.flush();
-                    emit_terminal_output(&app_clone, &event_name, &replay_for_events, flushed);
+                    emit_terminal_output(
+                        &app_clone,
+                        &event_name,
+                        &replay_for_events,
+                        &output_flow_for_events,
+                        flushed,
+                    );
                     if let Some(agent) = agent_for_events.as_deref() {
                         emit_agent_status(
                             &app_clone,
@@ -1849,6 +1972,41 @@ mod tests {
         buffer.push("ghi".to_string());
 
         assert_eq!(buffer.snapshot().data, "ghi");
+    }
+
+    #[test]
+    fn terminal_output_flow_waits_for_the_frontend_acknowledgement() {
+        let flow = Arc::new(TerminalOutputFlow::default());
+        flow.attach();
+
+        let waiting_flow = flow.clone();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            sender
+                .send(waiting_flow.wait_for_acknowledgement(1))
+                .unwrap()
+        });
+
+        assert!(receiver.recv_timeout(Duration::from_millis(10)).is_err());
+        flow.acknowledge(1);
+        assert!(receiver.recv_timeout(Duration::from_millis(100)).unwrap());
+    }
+
+    #[test]
+    fn terminal_output_flow_detach_releases_a_waiting_reader() {
+        let flow = Arc::new(TerminalOutputFlow::default());
+        flow.attach();
+
+        let waiting_flow = flow.clone();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        thread::spawn(move || {
+            sender
+                .send(waiting_flow.wait_for_acknowledgement(1))
+                .unwrap()
+        });
+
+        flow.detach();
+        assert!(!receiver.recv_timeout(Duration::from_millis(100)).unwrap());
     }
 
     #[test]

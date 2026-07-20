@@ -43,9 +43,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
   const terminalRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
-  const pendingOutputRef = useRef("");
-  const outputFrameRef = useRef<number | null>(null);
-  const outputTimerRef = useRef<number | null>(null);
+  const terminalDimensionsRef = useRef<TerminalDimensions | null>(null);
   const themeFrameRef = useRef<number | null>(null);
   const theme = useTheme();
 
@@ -81,42 +79,24 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
   }, []);
 
   const resizeTerminal = useCallback(async () => {
-    const dimensions = fit();
+    if (!fitAddonRef.current) return;
+    const dimensions = fitAddonRef.current.proposeDimensions();
     if (!dimensions) return;
+    if (
+      terminalDimensionsRef.current?.cols === dimensions.cols &&
+      terminalDimensionsRef.current?.rows === dimensions.rows
+    ) {
+      return;
+    }
+
+    fitAddonRef.current.fit();
+    terminalDimensionsRef.current = dimensions;
     try {
       await invoke("resize_terminal", { terminalId, ...dimensions });
     } catch (error) {
       console.error("Terminal resize failed:", error);
     }
-  }, [fit, terminalId]);
-
-  const flushPendingOutput = useCallback(() => {
-    if (outputFrameRef.current !== null) {
-      cancelAnimationFrame(outputFrameRef.current);
-      outputFrameRef.current = null;
-    }
-    if (outputTimerRef.current !== null) {
-      clearTimeout(outputTimerRef.current);
-      outputTimerRef.current = null;
-    }
-
-    const output = pendingOutputRef.current;
-    if (!output || !terminalRef.current) return;
-
-    pendingOutputRef.current = "";
-    terminalRef.current.write(output);
-  }, []);
-
-  const scheduleOutputFlush = useCallback(() => {
-    if (outputFrameRef.current !== null || outputTimerRef.current !== null) return;
-
-    if (document.visibilityState === "visible") {
-      outputFrameRef.current = requestAnimationFrame(flushPendingOutput);
-      return;
-    }
-
-    outputTimerRef.current = window.setTimeout(flushPendingOutput, 50);
-  }, [flushPendingOutput]);
+  }, [terminalId]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -165,6 +145,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     terminalRef.current = term;
     fitAddonRef.current = fitAddon;
     searchAddonRef.current = searchAddon;
+    terminalDimensionsRef.current = null;
 
     term.onData((data) => {
       invoke("write_to_terminal", { terminalId, data }).catch(console.error);
@@ -219,11 +200,31 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     let appliedSequence = 0;
     let unlistenOutput: (() => void) | null = null;
     const replayEvents: TerminalOutput[] = [];
+    const outputQueue: TerminalOutput[] = [];
+    let isWritingOutput = false;
+
+    const flushOutputQueue = () => {
+      if (isWritingOutput || disposed) return;
+
+      const output = outputQueue.shift();
+      if (!output) return;
+
+      isWritingOutput = true;
+      term.write(output.data, () => {
+        isWritingOutput = false;
+        void invoke("acknowledge_terminal_output", {
+          terminalId,
+          sequence: output.sequence,
+        }).catch(console.error);
+        flushOutputQueue();
+      });
+    };
+
     const appendOutput = (output: TerminalOutput) => {
       if (output.sequence <= appliedSequence) return;
       appliedSequence = output.sequence;
-      pendingOutputRef.current += output.data;
-      scheduleOutputFlush();
+      outputQueue.push(output);
+      flushOutputQueue();
     };
 
     void listen<TerminalOutput>(`terminal-output-${terminalId}`, (event) => {
@@ -240,7 +241,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
         }
         unlistenOutput = unlisten;
         try {
-          await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+          await invoke("attach_terminal_output", { terminalId });
           if (disposed) return;
           await resizeTerminal();
           if (disposed) return;
@@ -252,6 +253,10 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
           appliedSequence = snapshot.sequence;
           term.write(snapshot.data, () => {
             if (disposed) return;
+            void invoke("acknowledge_terminal_output", {
+              terminalId,
+              sequence: snapshot.sequence,
+            }).catch(console.error);
             replayLoaded = true;
             for (const output of replayEvents) {
               appendOutput(output);
@@ -283,7 +288,6 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       .catch(console.error);
 
     const unlistenClose = listen<void>(`terminal-closed-${terminalId}`, () => {
-      flushPendingOutput();
       term.write("\r\n\x1b[31m[Process exited]\x1b[0m\r\n");
     });
 
@@ -295,25 +299,18 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
 
     return () => {
       disposed = true;
+      void invoke("detach_terminal_output", { terminalId }).catch(console.error);
       unlistenOutput?.();
       unlistenClose.then((fn) => fn());
-      if (outputFrameRef.current !== null) {
-        cancelAnimationFrame(outputFrameRef.current);
-        outputFrameRef.current = null;
-      }
-      if (outputTimerRef.current !== null) {
-        clearTimeout(outputTimerRef.current);
-        outputTimerRef.current = null;
-      }
-      flushPendingOutput();
-      pendingOutputRef.current = "";
+      outputQueue.length = 0;
       unobserve();
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
       searchAddonRef.current = null;
+      terminalDimensionsRef.current = null;
     };
-  }, [terminalId, scheduleOutputFlush, flushPendingOutput, resizeTerminal, fit]);
+  }, [terminalId, resizeTerminal, fit]);
 
   useEffect(() => {
     if (isActive && terminalRef.current) {
