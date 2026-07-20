@@ -56,13 +56,19 @@ function getStatusInfo(prStatus: PRStatus | null): StatusInfo {
   }
 
   switch (prStatus.review_decision) {
-    case "APPROVED":
-      return { label: "Ready to merge", colorClass: "text-semantic-success" };
     case "CHANGES_REQUESTED":
       return { label: "Changes requested", colorClass: "text-semantic-warning" };
-    default:
-      return { label: "In review", colorClass: "text-semantic-info" };
   }
+
+  if (prStatus.has_unresolved_review_threads) {
+    return { label: "Comments to address", colorClass: "text-semantic-attention" };
+  }
+
+  if (prStatus.review_decision === "APPROVED") {
+    return { label: "Ready to merge", colorClass: "text-semantic-success" };
+  }
+
+  return { label: "In review", colorClass: "text-semantic-info" };
 }
 
 interface WorktreeItemProps {

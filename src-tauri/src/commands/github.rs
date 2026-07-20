@@ -24,6 +24,7 @@ pub struct PRStatus {
     pub updated_at: String,
     pub labels: Vec<String>,
     pub requested_reviewers: Vec<String>,
+    pub has_unresolved_review_threads: bool,
     pub is_bot: bool,
 }
 
@@ -253,6 +254,7 @@ fn map_gh_pr_to_status(pr: GhPRResponse) -> PRStatus {
         updated_at,
         labels,
         requested_reviewers,
+        has_unresolved_review_threads: false,
         is_bot: is_bot_author(&author, &pr.head_ref_name),
     }
 }
@@ -459,6 +461,14 @@ fn parse_graphql_pr_node(node: &serde_json::Value) -> Option<PRStatusCandidate> 
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let has_unresolved_review_threads = node["reviewThreads"]["nodes"]
+        .as_array()
+        .map(|threads| {
+            threads
+                .iter()
+                .any(|thread| thread["isResolved"].as_bool() == Some(false))
+        })
+        .unwrap_or(false);
     let head_oid = node["headRefOid"].as_str().map(ToString::to_string);
 
     // Parse checks from commits -> nodes[0] -> commit -> statusCheckRollup -> contexts -> nodes
@@ -513,6 +523,7 @@ fn parse_graphql_pr_node(node: &serde_json::Value) -> Option<PRStatusCandidate> 
             updated_at,
             labels,
             requested_reviewers,
+            has_unresolved_review_threads,
             is_bot: is_bot_author(&author, &head_ref_name),
         },
         head_oid,
@@ -665,6 +676,7 @@ fn fetch_prs_graphql(
                                     }}
                                 }}
                             }}
+                            reviewThreads(first: 100) {{ nodes {{ isResolved }} }}
                             commits(last: 1) {{
                                 nodes {{
                                     commit {{
@@ -2190,6 +2202,17 @@ pub async fn get_notifications() -> Result<Vec<GithubNotification>, String> {
 mod tests {
     use super::*;
 
+    fn graphql_pr_with_review_threads(review_threads: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "number": 42,
+            "title": "PR 42",
+            "url": "https://example.com/pr/42",
+            "state": "OPEN",
+            "headRefName": "feature",
+            "reviewThreads": review_threads,
+        })
+    }
+
     fn pr_status(number: u64, state: &str) -> PRStatus {
         PRStatus {
             number,
@@ -2210,8 +2233,24 @@ mod tests {
             updated_at: "2026-01-01T00:00:00Z".to_string(),
             labels: Vec::new(),
             requested_reviewers: Vec::new(),
+            has_unresolved_review_threads: false,
             is_bot: false,
         }
+    }
+
+    #[test]
+    fn graphql_pr_status_marks_only_unresolved_review_threads() {
+        let with_unresolved = parse_graphql_pr_node(&graphql_pr_with_review_threads(
+            serde_json::json!({ "nodes": [{ "isResolved": true }, { "isResolved": false }] }),
+        ))
+        .expect("expected PR status");
+        let all_resolved = parse_graphql_pr_node(&graphql_pr_with_review_threads(
+            serde_json::json!({ "nodes": [{ "isResolved": true }] }),
+        ))
+        .expect("expected PR status");
+
+        assert!(with_unresolved.status.has_unresolved_review_threads);
+        assert!(!all_resolved.status.has_unresolved_review_threads);
     }
 
     #[test]
