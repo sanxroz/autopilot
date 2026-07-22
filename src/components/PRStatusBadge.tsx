@@ -69,6 +69,15 @@ function getBadgeVariant(prStatus: PRStatus): BadgeVariant {
     };
   }
 
+  if (prStatus.has_unresolved_review_threads) {
+    return {
+      icon: AlertTriangle,
+      colorClass: "text-semantic-attention",
+      bgClass: "bg-semantic-warning-muted",
+      label: "Comments",
+    };
+  }
+
   switch (prStatus.review_decision) {
     case "APPROVED":
       return {
