@@ -90,9 +90,9 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     }
 
     fitAddonRef.current.fit();
-    terminalDimensionsRef.current = dimensions;
     try {
       await invoke("resize_terminal", { terminalId, ...dimensions });
+      terminalDimensionsRef.current = dimensions;
     } catch (error) {
       console.error("Terminal resize failed:", error);
     }
