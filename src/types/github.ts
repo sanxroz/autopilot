@@ -21,6 +21,7 @@ export interface PRStatus {
   updated_at: string;
   labels: string[];
   requested_reviewers: string[];
+  has_unresolved_review_threads: boolean;
   is_bot: boolean;
 }
 

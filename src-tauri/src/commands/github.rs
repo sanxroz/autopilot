@@ -24,6 +24,7 @@ pub struct PRStatus {
     pub updated_at: String,
     pub labels: Vec<String>,
     pub requested_reviewers: Vec<String>,
+    pub has_unresolved_review_threads: bool,
     pub is_bot: bool,
 }
 
@@ -253,6 +254,7 @@ fn map_gh_pr_to_status(pr: GhPRResponse) -> PRStatus {
         updated_at,
         labels,
         requested_reviewers,
+        has_unresolved_review_threads: false,
         is_bot: is_bot_author(&author, &pr.head_ref_name),
     }
 }
@@ -459,6 +461,7 @@ fn parse_graphql_pr_node(node: &serde_json::Value) -> Option<PRStatusCandidate> 
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
+    let has_unresolved_review_threads = review_threads_have_unresolved(&node["reviewThreads"]);
     let head_oid = node["headRefOid"].as_str().map(ToString::to_string);
 
     // Parse checks from commits -> nodes[0] -> commit -> statusCheckRollup -> contexts -> nodes
@@ -513,10 +516,72 @@ fn parse_graphql_pr_node(node: &serde_json::Value) -> Option<PRStatusCandidate> 
             updated_at,
             labels,
             requested_reviewers,
+            has_unresolved_review_threads,
             is_bot: is_bot_author(&author, &head_ref_name),
         },
         head_oid,
     })
+}
+
+fn review_threads_have_unresolved(review_threads: &serde_json::Value) -> bool {
+    review_threads["nodes"].as_array().is_some_and(|threads| {
+        threads
+            .iter()
+            .any(|thread| thread["isResolved"].as_bool() == Some(false))
+    })
+}
+
+fn review_threads_next_cursor(review_threads: &serde_json::Value) -> Option<String> {
+    review_threads["pageInfo"]["hasNextPage"]
+        .as_bool()
+        .filter(|has_next_page| *has_next_page)
+        .and_then(|_| review_threads["pageInfo"]["endCursor"].as_str())
+        .map(ToString::to_string)
+}
+
+fn fetch_unresolved_review_threads_after(
+    gh_path: &str,
+    repo_path: &str,
+    owner: &str,
+    name: &str,
+    pr_number: u64,
+    mut cursor: String,
+) -> Option<bool> {
+    loop {
+        let owner = serde_json::to_string(owner).ok()?;
+        let name = serde_json::to_string(name).ok()?;
+        let cursor_json = serde_json::to_string(&cursor).ok()?;
+        let query = format!(
+            "query {{ repository(owner: {owner}, name: {name}) {{ pullRequest(number: {pr_number}) {{ reviewThreads(first: 100, after: {cursor_json}) {{ nodes {{ isResolved }} pageInfo {{ hasNextPage endCursor }} }} }} }} }}"
+        );
+        let output = Command::new(gh_path)
+            .args(["api", "graphql", "-f", &format!("query={query}")])
+            .current_dir(repo_path)
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            return None;
+        }
+
+        let response: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+        if response
+            .get("errors")
+            .is_some_and(|errors| !errors.is_null())
+        {
+            return None;
+        }
+
+        let review_threads = &response["data"]["repository"]["pullRequest"]["reviewThreads"];
+        if review_threads_have_unresolved(review_threads) {
+            return Some(true);
+        }
+
+        match review_threads_next_cursor(review_threads) {
+            Some(next_cursor) => cursor = next_cursor,
+            None => return Some(false),
+        }
+    }
 }
 
 fn unique_branches(worktrees: &[WorktreePRLookup]) -> Vec<String> {
@@ -665,6 +730,10 @@ fn fetch_prs_graphql(
                                     }}
                                 }}
                             }}
+                            reviewThreads(first: 100) {{
+                                nodes {{ isResolved }}
+                                pageInfo {{ hasNextPage endCursor }}
+                            }}
                             commits(last: 1) {{
                                 nodes {{
                                     commit {{
@@ -731,10 +800,28 @@ fn fetch_prs_graphql(
             let branch = branch.clone();
 
             if let Some(nodes) = repo_data[&alias]["nodes"].as_array() {
-                let parsed = nodes
-                    .iter()
-                    .filter_map(parse_graphql_pr_node)
-                    .collect::<Vec<_>>();
+                let mut parsed = Vec::new();
+                for node in nodes {
+                    let Some(mut candidate) = parse_graphql_pr_node(node) else {
+                        continue;
+                    };
+
+                    if !candidate.status.has_unresolved_review_threads {
+                        if let Some(cursor) = review_threads_next_cursor(&node["reviewThreads"]) {
+                            candidate.status.has_unresolved_review_threads =
+                                fetch_unresolved_review_threads_after(
+                                    gh_path,
+                                    repo_path,
+                                    owner,
+                                    name,
+                                    candidate.status.number,
+                                    cursor,
+                                )?;
+                        }
+                    }
+
+                    parsed.push(candidate);
+                }
 
                 if parsed.is_empty() && !nodes.is_empty() {
                     eprintln!(
@@ -2190,6 +2277,17 @@ pub async fn get_notifications() -> Result<Vec<GithubNotification>, String> {
 mod tests {
     use super::*;
 
+    fn graphql_pr_with_review_threads(review_threads: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "number": 42,
+            "title": "PR 42",
+            "url": "https://example.com/pr/42",
+            "state": "OPEN",
+            "headRefName": "feature",
+            "reviewThreads": review_threads,
+        })
+    }
+
     fn pr_status(number: u64, state: &str) -> PRStatus {
         PRStatus {
             number,
@@ -2210,8 +2308,42 @@ mod tests {
             updated_at: "2026-01-01T00:00:00Z".to_string(),
             labels: Vec::new(),
             requested_reviewers: Vec::new(),
+            has_unresolved_review_threads: false,
             is_bot: false,
         }
+    }
+
+    #[test]
+    fn graphql_pr_status_marks_only_unresolved_review_threads() {
+        let with_unresolved = parse_graphql_pr_node(&graphql_pr_with_review_threads(
+            serde_json::json!({ "nodes": [{ "isResolved": true }, { "isResolved": false }] }),
+        ))
+        .expect("expected PR status");
+        let all_resolved = parse_graphql_pr_node(&graphql_pr_with_review_threads(
+            serde_json::json!({ "nodes": [{ "isResolved": true }] }),
+        ))
+        .expect("expected PR status");
+
+        assert!(with_unresolved.status.has_unresolved_review_threads);
+        assert!(!all_resolved.status.has_unresolved_review_threads);
+    }
+
+    #[test]
+    fn review_threads_next_cursor_requires_another_page() {
+        let first_page = serde_json::json!({
+            "nodes": [{ "isResolved": true }],
+            "pageInfo": { "hasNextPage": true, "endCursor": "next-page" }
+        });
+        let final_page = serde_json::json!({
+            "nodes": [{ "isResolved": true }],
+            "pageInfo": { "hasNextPage": false, "endCursor": null }
+        });
+
+        assert_eq!(
+            review_threads_next_cursor(&first_page),
+            Some("next-page".to_string())
+        );
+        assert_eq!(review_threads_next_cursor(&final_page), None);
     }
 
     #[test]

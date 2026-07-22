@@ -45,6 +45,8 @@ export default {
           'success-muted': 'var(--color-semantic-success-muted)',
           warning: 'var(--color-semantic-warning)',
           'warning-muted': 'var(--color-semantic-warning-muted)',
+          attention: 'var(--color-semantic-attention)',
+          'attention-muted': 'var(--color-semantic-attention-muted)',
           info: 'var(--color-semantic-info)',
           'info-muted': 'var(--color-semantic-info-muted)',
           merged: 'var(--color-semantic-merged)',

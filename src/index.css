@@ -35,6 +35,8 @@
   --color-semantic-success-muted: rgba(20, 83, 45, 0.5);
   --color-semantic-warning: #F59E0B;
   --color-semantic-warning-muted: rgba(120, 53, 15, 0.5);
+  --color-semantic-attention: #EC4899;
+  --color-semantic-attention-muted: rgba(80, 7, 36, 0.5);
   --color-semantic-info: #3B82F6;
   --color-semantic-info-muted: rgba(30, 58, 138, 0.5);
   --color-semantic-merged: #A855F7;
@@ -77,6 +79,8 @@
   --color-semantic-success-muted: rgba(220, 252, 231, 0.8);
   --color-semantic-warning: #F59E0B;
   --color-semantic-warning-muted: rgba(254, 243, 199, 0.8);
+  --color-semantic-attention: #DB2777;
+  --color-semantic-attention-muted: rgba(252, 231, 243, 0.8);
   --color-semantic-info: #3B82F6;
   --color-semantic-info-muted: rgba(219, 234, 254, 0.8);
   --color-semantic-merged: #A855F7;
