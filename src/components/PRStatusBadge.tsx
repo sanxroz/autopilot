@@ -69,6 +69,15 @@ function getBadgeVariant(prStatus: PRStatus): BadgeVariant {
     };
   }
 
+  if (prStatus.review_decision === "CHANGES_REQUESTED") {
+    return {
+      icon: AlertTriangle,
+      colorClass: "text-semantic-warning",
+      bgClass: "bg-semantic-warning-muted",
+      label: "Changes",
+    };
+  }
+
   if (prStatus.has_unresolved_review_threads) {
     return {
       icon: AlertTriangle,
@@ -85,13 +94,6 @@ function getBadgeVariant(prStatus: PRStatus): BadgeVariant {
         colorClass: "text-semantic-success",
         bgClass: "bg-semantic-success-muted",
         label: "Approved",
-      };
-    case "CHANGES_REQUESTED":
-      return {
-        icon: AlertTriangle,
-        colorClass: "text-semantic-warning",
-        bgClass: "bg-semantic-warning-muted",
-        label: "Changes",
       };
     default:
       return {
