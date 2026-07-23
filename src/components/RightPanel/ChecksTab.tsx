@@ -8,8 +8,8 @@ import { CheckRow } from "./CheckRow";
 import {
   getCheckKey,
   getCheckDetailVersion,
-  getMergeStatusColorClass,
-  getMergeStatusText,
+  getCheckColorClass,
+  getCheckLabel,
   isDeploymentCheck,
 } from "./checks-tab-domain";
 
@@ -70,7 +70,13 @@ function CheckSection({
 }
 
 export function ChecksTab({ repoPath, prNumber, prStatus }: ChecksTabProps) {
-  const { checksResult, prDetails, isLoading, error, fetchData } = useCachedPRData({ repoPath, prNumber, prStatus, includeChecks: true });
+  const { checksResult, isLoading, error, fetchData } = useCachedPRData({
+    repoPath,
+    prNumber,
+    prStatus,
+    includeChecks: true,
+    includeDetails: false,
+  });
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
   const [details, setDetails] = useState<DetailState>({});
   const [detailVersions, setDetailVersions] = useState<DetailVersionState>({});
@@ -148,15 +154,6 @@ export function ChecksTab({ repoPath, prNumber, prStatus }: ChecksTabProps) {
 
   if (!prNumber) return <div className="flex flex-1 items-center justify-center text-sm text-secondary">No PR found for this branch</div>;
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-1 items-center justify-center text-sm text-secondary">
-        <Loader className="mr-2 h-3.5 w-3.5 animate-spin" />
-        Loading checks...
-      </div>
-    );
-  }
-
   if (error) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-sm text-semantic-error">
@@ -171,9 +168,21 @@ export function ChecksTab({ repoPath, prNumber, prStatus }: ChecksTabProps) {
       </div>
     );
   }
+
+  const overallStatus = checksResult?.overall_status ?? prStatus?.checks_status;
+  const overallBucket =
+    overallStatus === "failure" ? "fail" :
+    overallStatus === "success" ? "pass" :
+    overallStatus === "cancelled" ? "cancel" :
+    overallStatus === "skipped" ? "skipping" :
+    overallStatus ?? "unknown";
+  const overallLabel =
+    overallStatus === "none" ? "No checks" :
+    overallStatus ? getCheckLabel(overallBucket) : "Loading checks";
+
   return (
     <div className="flex h-full flex-col overflow-auto bg-primary">
-      {prDetails && (
+      {prStatus && (
         <section className="px-4 py-4">
           <div className="rounded-xl border border-border-subtle bg-secondary/20 px-4 py-3">
             <div className="min-w-0">
@@ -181,22 +190,29 @@ export function ChecksTab({ repoPath, prNumber, prStatus }: ChecksTabProps) {
                 <Circle
                   className={cn(
                     "h-3.5 w-3.5 flex-shrink-0",
-                    getMergeStatusColorClass(prDetails.merge_state_status),
+                    getCheckColorClass(overallBucket),
                   )}
                 />
                 <div className="text-sm font-medium text-primary">
-                  {getMergeStatusText(prDetails.merge_state_status)}
+                  {overallLabel}
                 </div>
               </div>
               <div className="mt-1 truncate text-[12px] text-tertiary">
-                {prStatus ? `#${prStatus.number} ${prStatus.title}` : `#${prNumber}`}
+                #{prStatus.number} {prStatus.title}
               </div>
             </div>
           </div>
         </section>
       )}
 
-      <CheckSection
+      {isLoading && !checksResult && (
+        <div className="flex flex-1 items-center justify-center text-sm text-secondary">
+          <Loader className="mr-2 h-3.5 w-3.5 animate-spin" />
+          Loading checks...
+        </div>
+      )}
+
+      {checksResult && <CheckSection
         title="Deployments"
         checks={deploymentChecks}
         details={details}
@@ -204,8 +220,8 @@ export function ChecksTab({ repoPath, prNumber, prStatus }: ChecksTabProps) {
         loadingDetails={loadingDetails}
         expandedKeys={expandedKeys}
         onToggle={handleToggleCheck}
-      />
-      <CheckSection
+      />}
+      {checksResult && <CheckSection
         title="Checks"
         checks={regularChecks}
         details={details}
@@ -213,9 +229,9 @@ export function ChecksTab({ repoPath, prNumber, prStatus }: ChecksTabProps) {
         loadingDetails={loadingDetails}
         expandedKeys={expandedKeys}
         onToggle={handleToggleCheck}
-      />
+      />}
 
-      {(!checksResult || checksResult.checks.length === 0) && (
+      {!isLoading && (!checksResult || checksResult.checks.length === 0) && (
         <div className="flex flex-1 items-center justify-center text-sm text-secondary">
           No checks reported by GitHub
         </div>

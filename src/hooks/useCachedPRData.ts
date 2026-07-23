@@ -8,11 +8,13 @@ export function useCachedPRData({
   prNumber,
   prStatus,
   includeChecks = false,
+  includeDetails = true,
 }: {
   repoPath: string | null;
   prNumber: number | null;
   prStatus?: PRStatus | null;
   includeChecks?: boolean;
+  includeDetails?: boolean;
 }) {
   const getPRDataCache = useAppStore((state) => state.getPRDataCache);
   const setPRDataCache = useAppStore((state) => state.setPRDataCache);
@@ -54,7 +56,9 @@ export function useCachedPRData({
 
     try {
       const [details, checks] = await Promise.all([
-        invoke<PRDetailedInfo>('get_pr_details', { repoPath, prNumber }),
+        includeDetails
+          ? invoke<PRDetailedInfo>('get_pr_details', { repoPath, prNumber })
+          : Promise.resolve(null),
         includeChecks ? invoke<PRChecksResult>('get_pr_checks', { repoPath, prNumber }) : Promise.resolve(null),
       ]);
       if (
@@ -65,10 +69,10 @@ export function useCachedPRData({
         return;
       }
 
-      setPrDetails(details);
+      if (includeDetails) setPrDetails(details);
       if (includeChecks) setChecksResult(checks);
       setPRDataCache(repoPath, prNumber, {
-        prDetails: details,
+        ...(includeDetails ? { prDetails: details } : {}),
         ...(includeChecks ? { checksResult: checks } : {}),
       });
       if (isPolling) setError(null);
@@ -82,7 +86,7 @@ export function useCachedPRData({
       }
       if (!isPolling) {
         setError(String(e));
-        setPrDetails(null);
+        if (includeDetails) setPrDetails(null);
         if (includeChecks) setChecksResult(null);
       }
     } finally {
@@ -95,7 +99,7 @@ export function useCachedPRData({
         setIsLoading(false);
       }
     }
-  }, [includeChecks, prNumber, repoPath, setPRDataCache]);
+  }, [includeChecks, includeDetails, prNumber, repoPath, setPRDataCache]);
 
   useEffect(() => {
     if (!repoPath || !prNumber) {
@@ -110,18 +114,20 @@ export function useCachedPRData({
     lastPrStatusRef.current = null;
 
     const cached = getPRDataCache(repoPath, prNumber);
-    const hasRequiredCache = cached?.prDetails && (!includeChecks || cached.checksResult);
+    const hasRequiredCache =
+      (!includeDetails || cached?.prDetails) &&
+      (!includeChecks || cached?.checksResult);
     if (hasRequiredCache) {
       loadedFromCacheRef.current = true;
-      setPrDetails(cached.prDetails);
-      if (includeChecks) setChecksResult(cached.checksResult);
+      if (includeDetails) setPrDetails(cached?.prDetails ?? null);
+      if (includeChecks) setChecksResult(cached?.checksResult ?? null);
       setError(null);
     } else {
       void fetchData();
     }
 
     initialFetchDoneRef.current = true;
-  }, [fetchData, getPRDataCache, includeChecks, prNumber, repoPath]);
+  }, [fetchData, getPRDataCache, includeChecks, includeDetails, prNumber, repoPath]);
 
   useEffect(() => {
     if (!prStatus) return;
