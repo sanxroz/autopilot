@@ -64,7 +64,9 @@ export function CaptainTerminalGrid({
   }, [activeTerminalId, onClose, terminalIds]);
 
   useEffect(() => {
-    if (open && !hasStartedRef.current && terminalIds.length === 0) {
+    if (!open) {
+      hasStartedRef.current = false;
+    } else if (!hasStartedRef.current && terminalIds.length === 0) {
       void addTerminal();
     }
   }, [addTerminal, open, terminalIds.length]);
