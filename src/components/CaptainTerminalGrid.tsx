@@ -29,6 +29,7 @@ export function CaptainTerminalGrid({
     if (!cwd || starting) return;
 
     setStarting(true);
+    hasStartedRef.current = true;
     try {
       const result = await invoke<{ terminal_id: string }>("spawn_terminal", {
         cwd,
@@ -37,7 +38,6 @@ export function CaptainTerminalGrid({
         isDarkMode: getThemeMode() === "dark",
       });
       terminalRootRef.current = cwd;
-      hasStartedRef.current = true;
       setTerminalIds((current) => [...current, result.terminal_id]);
       setActiveTerminalId(result.terminal_id);
     } catch (error) {
@@ -93,8 +93,8 @@ export function CaptainTerminalGrid({
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, [activeTerminalId, addTerminal, open, removeTerminal]);
 
   if (!open) return null;
