@@ -180,6 +180,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
   const prevDiffViewModeRef = useRef(diffViewMode);
 
   const showChangesTab = diffViewMode === "sidebar";
+  const displayedTab = !prStatus && activeTab === "checks" ? "comments" : activeTab;
 
   useEffect(() => {
     const prevMode = prevDiffViewModeRef.current;
@@ -194,12 +195,9 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
 
   const tabs: { id: TabId; label: string; icon: LucideIcon; color?: string }[] =
     [
-      {
-        id: "checks",
-        label: "Checks",
-        icon: ListTodo,
-        color: getChecksColor(),
-      },
+      ...(prStatus
+        ? [{ id: "checks" as TabId, label: "Checks", icon: ListTodo, color: getChecksColor() }]
+        : []),
       { id: "comments", label: "Comments", icon: ClipboardList },
       { id: "notes", label: "Notes", icon: FileText },
       ...(showChangesTab
@@ -249,7 +247,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
 
         <Tooltip.Provider delayDuration={300}>
           <Tabs
-            value={activeTab}
+            value={displayedTab}
             onValueChange={(value: string) => setActiveTab(value as TabId)}
           >
             <TabsList
@@ -257,7 +255,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
               floatingBgColor="var(--color-bg-tertiary)"
             >
               {tabs.map((tab) => {
-                const isActive = activeTab === tab.id;
+                const isActive = displayedTab === tab.id;
                 return (
                   <Tooltip.Root key={tab.id}>
                     <Tooltip.Trigger asChild>
@@ -357,7 +355,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
 
       <div className="flex-1 overflow-hidden flex flex-col">
         <AnimatePresence mode="wait">
-          {activeTab === "checks" && (
+          {prStatus && displayedTab === "checks" && (
             <motion.div
               key="checks"
               initial={reducedMotion ? { opacity: 1 } : { opacity: 0, x: 10 }}
@@ -376,7 +374,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
               />
             </motion.div>
           )}
-          {activeTab === "comments" && (
+          {displayedTab === "comments" && (
             <motion.div
               key="comments"
               initial={reducedMotion ? { opacity: 1 } : { opacity: 0, x: 10 }}
@@ -396,7 +394,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
             </motion.div>
           )}
 
-          {activeTab === "changes" && (
+          {displayedTab === "changes" && (
             <motion.div
               key="changes"
               initial={reducedMotion ? { opacity: 1 } : { opacity: 0, x: 10 }}
@@ -412,7 +410,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
             </motion.div>
           )}
 
-          {activeTab === "notes" && (
+          {displayedTab === "notes" && (
             <motion.div
               key="notes"
               initial={reducedMotion ? { opacity: 1 } : { opacity: 0, x: 10 }}
@@ -428,7 +426,7 @@ export function RightPanel({ worktreePath }: RightPanelProps) {
             </motion.div>
           )}
 
-          {activeTab === "git" && (
+          {displayedTab === "git" && (
             <motion.div
               key="git"
               initial={reducedMotion ? { opacity: 1 } : { opacity: 0, x: 10 }}

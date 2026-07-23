@@ -2,7 +2,8 @@ use super::cli_tools::find_cli_tool;
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
-const MAX_FAILED_LOG_EXCERPT_CHARS: usize = 24_000;
+const MAX_FAILED_LOG_EXCERPT_LINES: usize = 80;
+const MAX_FAILED_LOG_EXCERPT_CHARS: usize = 6_000;
 #[cfg(test)]
 const TEST_GH_PATH_ENV_VAR: &str = "AUTOPILOT_TEST_GH_PATH";
 
@@ -165,22 +166,33 @@ fn is_failed_step(status: &str, conclusion: Option<&str>) -> bool {
 }
 
 fn truncate_failed_log_excerpt(logs: &str) -> String {
-    let mut excerpt = String::new();
-    let mut chars = logs.chars();
+    let lines = logs.lines().collect::<Vec<_>>();
+    let log_tail = if lines.len() <= MAX_FAILED_LOG_EXCERPT_LINES {
+        logs.to_string()
+    } else {
+        lines[lines.len() - MAX_FAILED_LOG_EXCERPT_LINES..].join("\n")
+    };
 
-    for _ in 0..MAX_FAILED_LOG_EXCERPT_CHARS {
-        let Some(ch) = chars.next() else {
-            return logs.to_string();
-        };
-        excerpt.push(ch);
+    let tail = if log_tail.chars().count() <= MAX_FAILED_LOG_EXCERPT_CHARS {
+        log_tail
+    } else {
+        log_tail
+            .chars()
+            .rev()
+            .take(MAX_FAILED_LOG_EXCERPT_CHARS)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect()
+    };
+
+    if tail == logs {
+        tail
+    } else {
+        format!(
+            "[showing the final failure output; open on GitHub for the full failed log]\n{tail}",
+        )
     }
-
-    if chars.next().is_none() {
-        return logs.to_string();
-    }
-
-    excerpt.push_str("\n\n[truncated; open on GitHub for the full failed log]");
-    excerpt
 }
 
 fn select_job_for_detail(jobs: Vec<GhRunViewJob>, job_id: u64) -> Result<GhRunViewJob, String> {
@@ -384,7 +396,7 @@ mod tests {
     use super::{
         compute_overall_status, get_pr_check_detail, parse_actions_job_id, select_job_for_detail,
         truncate_failed_log_excerpt, GhRunViewJob, PRChecksSummary, MAX_FAILED_LOG_EXCERPT_CHARS,
-        TEST_GH_PATH_ENV_VAR,
+        MAX_FAILED_LOG_EXCERPT_LINES, TEST_GH_PATH_ENV_VAR,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -449,13 +461,26 @@ mod tests {
     }
 
     #[test]
-    fn truncate_failed_log_excerpt_adds_marker_when_logs_are_too_large() {
-        let long_logs = "x".repeat(MAX_FAILED_LOG_EXCERPT_CHARS + 10);
+    fn truncate_failed_log_excerpt_keeps_the_end_of_long_logs() {
+        let long_logs = (0..=MAX_FAILED_LOG_EXCERPT_LINES)
+            .map(|line| format!("line {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let truncated = truncate_failed_log_excerpt(&long_logs);
 
-        assert!(truncated.chars().count() > MAX_FAILED_LOG_EXCERPT_CHARS);
-        assert!(truncated.chars().count() < long_logs.chars().count() + 64);
-        assert!(truncated.contains("[truncated; open on GitHub for the full failed log]"));
+        assert!(truncated.contains("[showing the final failure output"));
+        assert!(!truncated.contains("line 0\n"));
+        assert!(truncated.ends_with("line 80"));
+    }
+
+    #[test]
+    fn truncate_failed_log_excerpt_limits_a_single_long_line() {
+        let long_log = "x".repeat(MAX_FAILED_LOG_EXCERPT_CHARS + 1);
+        let truncated = truncate_failed_log_excerpt(&long_log);
+
+        assert!(truncated.contains("[showing the final failure output"));
+        assert!(truncated.ends_with('x'));
+        assert!(truncated.chars().count() < MAX_FAILED_LOG_EXCERPT_CHARS + 100);
     }
 
     #[test]
