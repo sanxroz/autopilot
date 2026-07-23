@@ -8,14 +8,16 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { useAppStore } from "../store";
+import type { WorktreeInfo } from "../types";
 import { cn } from "../utils/cn";
 
 interface NavbarProps {
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
+  headerWorktree?: WorktreeInfo | null;
 }
 
-export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
+export function Navbar({ sidebarOpen, onToggleSidebar, headerWorktree }: NavbarProps) {
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
   const diffOverlayOpen = useAppStore((state) => state.diffOverlayOpen);
   const toggleDiffOverlay = useAppStore((state) => state.toggleDiffOverlay);
@@ -28,8 +30,9 @@ export function Navbar({ sidebarOpen, onToggleSidebar }: NavbarProps) {
     setCodeReviewOpen(!codeReviewOpen);
   };
 
-  const worktreeName = selectedWorktree?.name ?? null;
-  const branchName = selectedWorktree?.branch ?? null;
+  const displayedWorktree = headerWorktree ?? selectedWorktree;
+  const worktreeName = displayedWorktree?.name ?? null;
+  const branchName = displayedWorktree?.branch ?? null;
 
   return (
     <div

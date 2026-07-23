@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Navbar } from "./components/Navbar";
 import { Sidebar } from "./components/Sidebar";
 import { TerminalGrid } from "./components/TerminalGrid";
+import { CaptainTerminalGrid } from "./components/CaptainTerminalGrid";
 import { RightPanel } from "./components/RightPanel";
 import { DiffOverlay } from "./components/DiffOverlay";
 import { GitFileDiffOverlay } from "./components/GitFileDiffOverlay";
@@ -41,6 +42,7 @@ function App() {
   const refreshWorktrees = useAppStore((state) => state.refreshWorktrees);
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [captainTerminalRepoPath, setCaptainTerminalRepoPath] = useState<string | null>(null);
 
   useEffect(() => {
     initialize();
@@ -114,6 +116,10 @@ function App() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
+
+  useEffect(() => {
+    setCaptainTerminalRepoPath(null);
+  }, [selectedWorktree?.path]);
 
   usePRStatusPolling();
   useProcessStatusPolling();
@@ -201,13 +207,42 @@ function App() {
     }
   }, [updateStatus]);
 
+  const captainRepository = repositories.find(
+    (repository) => repository.info.path === captainTerminalRepoPath
+  );
+  const captainHeaderWorktree = captainRepository
+    ? captainRepository.worktrees.find(
+      (worktree) => worktree.path === captainRepository.info.path
+    ) ?? captainRepository.worktrees.find((worktree) => worktree.name === "main")
+    : null;
+
   return (
     <div className="h-dvh overflow-hidden rounded-lg flex flex-col bg-transparent">
       <div className="overflow-hidden flex h-full bg-primary text-primary ring-1 ring-inset ring-border-subtle">
-        <Sidebar isOpen={sidebarOpen} />
+        <Sidebar
+          isOpen={sidebarOpen}
+          captainTerminalRepoPath={captainTerminalRepoPath}
+          onToggleCaptainTerminal={(repoPath) => {
+            setCaptainTerminalRepoPath((current) =>
+              current === repoPath ? null : repoPath
+            );
+          }}
+        />
         <div className="flex flex-col flex-1 overflow-hidden relative">
-          <Navbar sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
+          <Navbar
+            sidebarOpen={sidebarOpen}
+            onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+            headerWorktree={captainHeaderWorktree}
+          />
           <TerminalGrid />
+          {repositories.map((repository) => (
+            <CaptainTerminalGrid
+              key={repository.info.path}
+              open={captainTerminalRepoPath === repository.info.path}
+              repositoryRoot={repository.info.path}
+              onClose={() => setCaptainTerminalRepoPath(null)}
+            />
+          ))}
           {diffOverlayOpen && diffViewMode === 'overlay' && (
             <DiffOverlay
               worktreePath={selectedWorktree?.path ?? null}

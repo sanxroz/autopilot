@@ -9,8 +9,10 @@ import {
   ChevronDown,
   ChevronRight,
   Archive,
+  Ellipsis,
   User,
   Folder,
+  SquareTerminal,
 } from "lucide-react";
 import { useAppStore } from "../store";
 import type { WorktreeInfo } from "../types";
@@ -23,6 +25,12 @@ import { useThemeMode } from "../hooks/useTheme";
 import { cn } from "../utils/cn";
 import { isWorktreeSettingUp } from "../store/worktreeSetup";
 import type { SidebarWorktreeGroup as SidebarWorktreeGroupModel } from "../lib/sidebar-groups";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 
 const MIN_WIDTH = 200;
 const MAX_WIDTH = 480;
@@ -38,9 +46,15 @@ function basename(path: string): string {
 
 interface SidebarProps {
   isOpen: boolean;
+  captainTerminalRepoPath: string | null;
+  onToggleCaptainTerminal: (repoPath: string) => void;
 }
 
-export function Sidebar({ isOpen }: SidebarProps) {
+export function Sidebar({
+  isOpen,
+  captainTerminalRepoPath,
+  onToggleCaptainTerminal,
+}: SidebarProps) {
   const {
     repositories,
     addRepository,
@@ -249,8 +263,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
     }
   };
 
-  const handleRemoveRepository = (e: React.MouseEvent, repoPath: string) => {
-    e.stopPropagation();
+  const handleRemoveRepository = (repoPath: string) => {
     removeRepository(repoPath);
   };
 
@@ -605,7 +618,28 @@ export function Sidebar({ isOpen }: SidebarProps) {
                        )}
                      </span>
                    </div>
-                   <div className="flex items-center gap-2.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                   <div className="flex items-center gap-2.5 flex-shrink-0 opacity-100">
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            onClick={(e) => e.stopPropagation()}
+                            className="p-1 -m-1 rounded-sm transition-colors text-tertiary hover:bg-hover hover:text-primary"
+                            title="Repository actions"
+                            aria-label={`${group.repoName} repository actions`}
+                          >
+                            <Ellipsis className="h-3.5 w-3.5" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start">
+                          <DropdownMenuItem
+                            onSelect={() => handleRemoveRepository(group.repoPath)}
+                            className="text-red-500 focus:text-red-500"
+                          >
+                            <Archive />
+                            Archive repository
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -618,13 +652,22 @@ export function Sidebar({ isOpen }: SidebarProps) {
                        <Plus className="h-3.5 w-3.5" />
                      </button>
                       <button
-                        onClick={(e) => handleRemoveRepository(e, group.repoPath)}
-                        className="p-1 -m-1 rounded-sm transition-colors text-tertiary hover:text-primary hover:bg-hover"
-                        title="Archive repository"
-                        aria-label="Archive repository"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleCaptainTerminal(group.repoPath);
+                        }}
+                        className={cn(
+                          "p-1 -m-1 rounded-sm transition-colors hover:bg-hover",
+                          captainTerminalRepoPath === group.repoPath
+                            ? "text-accent-primary"
+                            : "text-tertiary hover:text-primary"
+                        )}
+                        title={`Open ${group.repoName} captain terminal`}
+                        aria-label={`Open ${group.repoName} captain terminal`}
+                        aria-pressed={captainTerminalRepoPath === group.repoPath}
                       >
-                       <Archive className="h-3.5 w-3.5" />
-                     </button>
+                        <SquareTerminal className="h-3.5 w-3.5" />
+                      </button>
                    </div>
                  </div>
 
@@ -705,7 +748,7 @@ export function Sidebar({ isOpen }: SidebarProps) {
                                processStatus={processStatus}
                                agentRunState={agentRunState}
                                isSettingUp={isWorktreeSettingUp(worktreeSetupByRepoPath, group.repoPath, wt.name)}
-                               isActive={selectedWorktree?.path === wt.path}
+                               isActive={!captainTerminalRepoPath && selectedWorktree?.path === wt.path}
                                onSelect={() => handleWorktreeClick(wt)}
                                onDelete={(e) => handleDeleteWorktree(e, group.repoPath, wt.name)}
                                className={cn(

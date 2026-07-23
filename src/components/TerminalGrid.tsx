@@ -39,6 +39,8 @@ export function TerminalGrid() {
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+
       const isMeta = e.metaKey || e.ctrlKey;
 
       if (isMeta && e.key === "d" && !e.shiftKey) {
