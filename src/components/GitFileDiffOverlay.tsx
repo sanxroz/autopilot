@@ -1,114 +1,31 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { useVirtualizer } from "@tanstack/react-virtual";
-import { X, Loader, Eye, Code2, ChevronsRight, ChevronsLeft } from "lucide-react";
+import {
+  X,
+  Eye,
+  Code2,
+} from "lucide-react";
+import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
 import { useAppStore } from "../store";
+import { useThemeMode } from "../hooks/useTheme";
 import { cn } from "../utils/cn";
+import { DiffErrorBoundary, PatchFileDiff } from "./DiffFileList";
 import {
   markdownSanitizeSchema,
   MarkdownErrorBoundary,
   markdownComponents,
 } from "../lib/markdown-components";
+import {
+  getCachedGitFileDiff,
+  getGitFileDiffKey,
+  invalidateGitFileDiffCache,
+  loadGitFileDiff,
+} from "../lib/git-file-diff-cache";
 import type { FileDiffData } from "../types";
-
-interface DiffLine {
-  type: "context" | "add" | "del" | "hunk-header" | "meta";
-  content: string;
-  oldLineNum?: number;
-  newLineNum?: number;
-}
-
-interface EditIndicator {
-  top: number;
-  height: number;
-  type: "add" | "del";
-}
-
-const LINE_HEIGHT = 20;
-
-function parsePatch(patch: string): DiffLine[] {
-  if (!patch || patch.trim() === "") return [];
-
-  const rows: DiffLine[] = [];
-  const lines = patch.split("\n");
-  let oldLineNum = 0;
-  let newLineNum = 0;
-  let inHunk = false;
-
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index];
-
-    if (line === "" && index === lines.length - 1) {
-      continue;
-    }
-
-    if (
-      line.startsWith("diff --git") ||
-      line.startsWith("index ") ||
-      line.startsWith("--- ") ||
-      line.startsWith("+++ ")
-    ) {
-      continue;
-    }
-
-    if (line.startsWith("@@")) {
-      const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-      if (match) {
-        oldLineNum = parseInt(match[1], 10);
-        newLineNum = parseInt(match[2], 10);
-      }
-      inHunk = true;
-      rows.push({ type: "hunk-header", content: line });
-      continue;
-    }
-
-    if (!inHunk) {
-      continue;
-    }
-
-    if (line.startsWith("+")) {
-      rows.push({
-        type: "add",
-        content: line.substring(1),
-        newLineNum,
-      });
-      newLineNum++;
-      continue;
-    }
-
-    if (line.startsWith("-")) {
-      rows.push({
-        type: "del",
-        content: line.substring(1),
-        oldLineNum,
-      });
-      oldLineNum++;
-      continue;
-    }
-
-    if (line.startsWith(" ")) {
-      rows.push({
-        type: "context",
-        content: line.substring(1),
-        oldLineNum,
-        newLineNum,
-      });
-      oldLineNum++;
-      newLineNum++;
-      continue;
-    }
-
-    if (line.startsWith("\\")) {
-      rows.push({ type: "meta", content: line });
-    }
-  }
-
-  return rows;
-}
 
 function getFileName(path: string): string {
   const parts = path.split("/");
@@ -121,59 +38,99 @@ function isMarkdownFile(filePath: string): boolean {
 }
 
 export function GitFileDiffOverlay() {
+  const themeMode = useThemeMode();
   const preview = useAppStore((state) => state.gitFileDiffPreview);
   const setPreview = useAppStore((state) => state.setGitFileDiffPreview);
-  const codeReviewOpen = useAppStore((state) => state.codeReviewOpen);
-  const setCodeReviewOpen = useAppStore((state) => state.setCodeReviewOpen);
-
-  const [diffData, setDiffData] = useState<FileDiffData | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<"diff" | "preview">("diff");
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const hasScrolledRef = useRef(false);
-
   const filePath = preview?.filePath ?? null;
   const worktreePath = preview?.worktreePath ?? null;
   const isStaged = preview?.isStaged ?? false;
   const isMd = filePath ? isMarkdownFile(filePath) : false;
 
+  const [loadedDiff, setLoadedDiff] = useState<{
+    key: string;
+    data: FileDiffData;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"diff" | "preview">("diff");
+  const lastSavedContentRef = useRef<string | null>(null);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSaveRef = useRef<{
+    worktreePath: string;
+    filePath: string;
+    content: string;
+    version: number;
+  } | null>(null);
+  const saveInFlightRef = useRef(false);
+  const editVersionRef = useRef(0);
+  const activeTargetRef = useRef({ worktreePath, filePath });
+  const [isDirty, setIsDirty] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  activeTargetRef.current = { worktreePath, filePath };
+
+  const requestKey =
+    worktreePath && filePath
+      ? getGitFileDiffKey(worktreePath, filePath, isStaged)
+      : "";
+  const diffData =
+    loadedDiff?.key === requestKey
+      ? loadedDiff.data
+      : getCachedGitFileDiff(requestKey);
+  const isDiffPending = preview != null && diffData == null;
+  const editContent = diffData?.worktree_content ?? diffData?.new_content;
+  const isEditable =
+    diffData != null &&
+    !diffData.is_binary &&
+    editContent != null;
+
   useEffect(() => {
-    setViewMode(isMd ? "preview" : "diff");
-  }, [filePath, isMd]);
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    pendingSaveRef.current = null;
+    editVersionRef.current += 1;
+    setViewMode("diff");
+    lastSavedContentRef.current = null;
+    setIsDirty(false);
+  }, [filePath]);
 
   useEffect(() => {
     if (!filePath || !worktreePath) {
-      setDiffData(null);
+      setLoadedDiff(null);
       setError(null);
-      hasScrolledRef.current = false;
+      return;
+    }
+
+    const cached = getCachedGitFileDiff(requestKey);
+    if (cached) {
+      setLoadedDiff({ key: requestKey, data: cached });
+      lastSavedContentRef.current =
+        !cached.is_binary
+          ? (cached.worktree_content ?? cached.new_content ?? null)
+          : null;
+      setError(null);
       return;
     }
 
     let cancelled = false;
-    hasScrolledRef.current = false;
 
     const loadDiff = async () => {
-      setIsLoading(true);
       setError(null);
       try {
-        const diff = await invoke<FileDiffData>("get_uncommitted_diff", {
-          worktreePath,
-          filePath,
-          isStaged,
-          includeContent: isMd,
-        });
+        const diff = await loadGitFileDiff(worktreePath, filePath, isStaged);
         if (!cancelled) {
-          setDiffData(diff);
+          setLoadedDiff({ key: requestKey, data: diff });
+          lastSavedContentRef.current =
+            !diff.is_binary
+              ? (diff.worktree_content ?? diff.new_content ?? null)
+              : null;
+          setIsDirty(false);
         }
       } catch (e) {
         if (!cancelled) {
           setError(String(e));
-          setDiffData(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
+          setLoadedDiff(null);
         }
       }
     };
@@ -183,175 +140,204 @@ export function GitFileDiffOverlay() {
     return () => {
       cancelled = true;
     };
-  }, [filePath, worktreePath, isStaged, isMd]);
-
-  const diffLines = useMemo(() => {
-    if (!diffData?.patch) return [];
-    return parsePatch(diffData.patch);
-  }, [diffData?.patch]);
-
-  const firstChangeIndex = useMemo(
-    () => diffLines.findIndex((line) => line.type === "add" || line.type === "del"),
-    [diffLines]
-  );
-
-  const rowVirtualizer = useVirtualizer({
-    count: diffLines.length,
-    getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => LINE_HEIGHT,
-    overscan: 20,
-  });
-
-  useEffect(() => {
-    if (viewMode === "preview") return;
-    if (firstChangeIndex < 0 || isLoading || hasScrolledRef.current) return;
-
-    hasScrolledRef.current = true;
-    rowVirtualizer.scrollToOffset(Math.max(0, (firstChangeIndex - 3) * LINE_HEIGHT));
-  }, [firstChangeIndex, isLoading, rowVirtualizer, viewMode]);
+  }, [filePath, worktreePath, isStaged, requestKey]);
 
   const stats = useMemo(() => {
     let added = 0;
     let deleted = 0;
 
-    for (const line of diffLines) {
-      if (line.type === "add") added++;
-      if (line.type === "del") deleted++;
+    for (const line of diffData?.patch.split("\n") ?? []) {
+      if (line.startsWith("+") && !line.startsWith("+++")) added++;
+      if (line.startsWith("-") && !line.startsWith("---")) deleted++;
     }
 
     return { added, deleted };
-  }, [diffLines]);
-
-  const editIndicators = useMemo(() => {
-    if (diffLines.length === 0) return [] as EditIndicator[];
-
-    const indicators: EditIndicator[] = [];
-    let runStart = -1;
-    let runType: "add" | "del" | null = null;
-
-    const flushRun = (endIndex: number) => {
-      if (runStart < 0 || !runType) return;
-      indicators.push({
-        top: runStart / diffLines.length,
-        height: Math.max((endIndex - runStart + 1) / diffLines.length, 0.003),
-        type: runType,
-      });
-      runStart = -1;
-      runType = null;
-    };
-
-    diffLines.forEach((line, index) => {
-      if (line.type !== "add" && line.type !== "del") {
-        flushRun(index - 1);
-        return;
-      }
-
-      if (runType === line.type) {
-        return;
-      }
-
-      flushRun(index - 1);
-      runStart = index;
-      runType = line.type;
-    });
-
-    flushRun(diffLines.length - 1);
-    return indicators;
-  }, [diffLines]);
+  }, [diffData?.patch]);
+  const diffOptions = useMemo(
+    () => ({
+      themeType: themeMode,
+      diffStyle: "unified" as const,
+      diffIndicators: "bars" as const,
+      disableFileHeader: true,
+      hunkSeparators: "line-info" as const,
+      lineDiffType: "word-alt" as const,
+      overflow: "scroll" as const,
+    }),
+    [themeMode],
+  );
 
   const handleClose = useCallback(() => {
+    if (isDirty && !window.confirm("Discard your unsaved edits?")) return;
+    if (autosaveTimerRef.current) {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = null;
+    }
+    pendingSaveRef.current = null;
     setPreview(null);
-  }, [setPreview]);
+  }, [isDirty, setPreview]);
+
+  const flushAutosave = useCallback(async () => {
+    if (saveInFlightRef.current || !pendingSaveRef.current) return;
+
+    saveInFlightRef.current = true;
+    setIsSaving(true);
+    try {
+      while (pendingSaveRef.current) {
+        const pendingSave = pendingSaveRef.current;
+        pendingSaveRef.current = null;
+
+        try {
+          await invoke("save_worktree_file", {
+            worktreePath: pendingSave.worktreePath,
+            filePath: pendingSave.filePath,
+            content: pendingSave.content,
+          });
+          invalidateGitFileDiffCache(pendingSave.worktreePath);
+
+          if (
+            pendingSave.worktreePath === activeTargetRef.current.worktreePath &&
+            pendingSave.filePath === activeTargetRef.current.filePath &&
+            pendingSave.version === editVersionRef.current
+          ) {
+            lastSavedContentRef.current = pendingSave.content;
+            setIsDirty(false);
+          }
+        } catch (saveError) {
+          pendingSaveRef.current = pendingSave;
+          toast.error(
+            `Failed to autosave ${getFileName(pendingSave.filePath)}: ${String(saveError)}`,
+          );
+          break;
+        }
+      }
+    } finally {
+      saveInFlightRef.current = false;
+      setIsSaving(false);
+    }
+  }, []);
+
+  const handleEditChange = useCallback(
+    (contents: string) => {
+      editVersionRef.current += 1;
+
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = null;
+      }
+
+      const needsSave =
+        contents !== lastSavedContentRef.current || saveInFlightRef.current;
+      setIsDirty(needsSave);
+
+      if (!needsSave || !worktreePath || !filePath) {
+        pendingSaveRef.current = null;
+        return;
+      }
+
+      pendingSaveRef.current = {
+        worktreePath,
+        filePath,
+        content: contents,
+        version: editVersionRef.current,
+      };
+      autosaveTimerRef.current = setTimeout(() => {
+        autosaveTimerRef.current = null;
+        void flushAutosave();
+      }, 600);
+    },
+    [filePath, flushAutosave, worktreePath],
+  );
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && preview) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s" && isEditable) {
+        e.preventDefault();
+        if (autosaveTimerRef.current) {
+          clearTimeout(autosaveTimerRef.current);
+          autosaveTimerRef.current = null;
+        }
+        void flushAutosave();
+      } else if (e.key === "Escape" && preview) {
         handleClose();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [preview, handleClose]);
+  }, [preview, isEditable, handleClose, flushAutosave]);
 
   if (!preview) return null;
 
   return (
-    <div className="absolute inset-0 z-20 flex flex-col bg-primary">
+    <div
+      className={cn(
+        "absolute inset-0 z-20 flex flex-col bg-primary diff-overlay",
+        themeMode === "light" && "light-mode",
+      )}
+    >
       <div
         data-tauri-drag-region
-        className="flex items-center justify-between select-none flex-shrink-0 h-[35px] min-h-[35px] px-3 border-b border-border bg-secondary"
+        className="flex h-9 min-h-9 flex-shrink-0 select-none items-center justify-between border-b border-border-subtle bg-primary px-3"
       >
-        <div data-tauri-drag-region className="flex items-center gap-3 flex-1 min-w-0">
-          <span className="text-sm font-medium text-primary truncate">
-            {getFileName(preview.filePath)}
+        <div data-tauri-drag-region className="min-w-0 flex-1 pr-4">
+          <span className="block truncate font-mono text-[12px] font-medium leading-none text-secondary">
+            {preview.filePath}
           </span>
-          <span className="text-[11px] px-1.5 py-0.5 rounded text-tertiary bg-tertiary">
-            {preview.isStaged ? "staged" : "unstaged"}
-          </span>
-          {viewMode === "diff" && (
-            <span className="text-[11px] px-1.5 py-0.5 rounded text-tertiary bg-tertiary">
-              changed hunks
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {stats.added > 0 && (
+            <span className="font-mono text-[11px] tabular-nums text-semantic-success">
+              +{stats.added}
             </span>
           )}
-          {stats.added > 0 && (
-            <span className="text-[11px] font-mono text-semantic-success">+{stats.added}</span>
-          )}
           {stats.deleted > 0 && (
-            <span className="text-[11px] font-mono text-semantic-error">-{stats.deleted}</span>
+            <span className="font-mono text-[11px] tabular-nums text-semantic-error">
+              −{stats.deleted}
+            </span>
           )}
-        </div>
-        <div className="flex items-center gap-1">
-          {isMd && (
+          <span
+            className="w-12 text-right text-[10px] text-muted"
+            aria-live="polite"
+          >
+            {isSaving ? "Saving…" : ""}
+          </span>
+          <div className="flex items-center gap-0.5">
+            {isMd && (
+              <button
+                onClick={() =>
+                  setViewMode(viewMode === "preview" ? "diff" : "preview")
+                }
+                className={cn(
+                  "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
+                  "text-tertiary hover:bg-hover hover:text-primary",
+                )}
+                aria-label={
+                  viewMode === "preview" ? "Show diff" : "Show preview"
+                }
+                title={viewMode === "preview" ? "Show diff" : "Show preview"}
+              >
+                {viewMode === "preview" ? (
+                  <Code2 className="h-3.5 w-3.5" />
+                ) : (
+                  <Eye className="h-3.5 w-3.5" />
+                )}
+              </button>
+            )}
             <button
-              onClick={() => setViewMode(viewMode === "preview" ? "diff" : "preview")}
-              className={cn(
-                "p-1 rounded transition-colors",
-                "text-tertiary hover:bg-hover hover:text-primary"
-              )}
-              aria-label={viewMode === "preview" ? "Show diff" : "Show preview"}
-              title={viewMode === "preview" ? "Show diff" : "Show preview"}
+              onClick={handleClose}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-tertiary transition-colors hover:bg-hover hover:text-primary"
+              aria-label="Close diff preview"
+              title="Close preview"
             >
-              {viewMode === "preview" ? (
-                <Code2 className="w-3.5 h-3.5" />
-              ) : (
-                <Eye className="w-3.5 h-3.5" />
-              )}
+              <X className="h-3.5 w-3.5" />
             </button>
-          )}
-          <button
-            onClick={handleClose}
-            className="p-1 rounded transition-colors text-tertiary hover:bg-hover hover:text-primary"
-            aria-label="Close diff preview"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => setCodeReviewOpen(!codeReviewOpen)}
-            className={cn(
-              "p-1 rounded transition-colors",
-              codeReviewOpen
-                ? "text-accent-primary"
-                : "text-tertiary hover:bg-hover hover:text-primary"
-            )}
-            title={codeReviewOpen ? "Close panel" : "Open panel"}
-            aria-label={codeReviewOpen ? "Close checks and review panel" : "Open checks and review panel"}
-          >
-            {codeReviewOpen ? (
-              <ChevronsRight className="w-3.5 h-3.5" />
-            ) : (
-              <ChevronsLeft className="w-3.5 h-3.5" />
-            )}
-          </button>
+          </div>
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden relative">
-        <div ref={scrollContainerRef} className="flex-1 overflow-auto">
-          {isLoading ? (
-            <div className="flex items-center justify-center gap-2 py-12 text-tertiary">
-              <Loader className="w-4 h-4 animate-spin" />
-              <span className="text-sm">Loading...</span>
-            </div>
+      <div className="flex-1 overflow-auto">
+        <div className="h-full min-w-0">
+          {!error && isDiffPending ? (
+            <div className="h-full" />
           ) : error ? (
             <div className="px-4 py-12 text-center text-sm text-semantic-error">{error}</div>
           ) : viewMode === "preview" && isMd ? (
@@ -382,94 +368,23 @@ export function GitFileDiffOverlay() {
                 No preview available for this file
               </div>
             )
-          ) : diffLines.length > 0 ? (
-            <div
-              className="font-mono text-[13px]"
-              style={{
-                height: rowVirtualizer.getTotalSize(),
-                lineHeight: `${LINE_HEIGHT}px`,
-                position: "relative",
-              }}
-            >
-              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-                const line = diffLines[virtualRow.index];
-                if (!line) return null;
-
-                if (line.type === "hunk-header" || line.type === "meta") {
-                  return (
-                    <div
-                      key={virtualRow.index}
-                      className={cn(
-                        "absolute left-0 right-0 px-3 text-[12px]",
-                        line.type === "hunk-header"
-                          ? "bg-secondary text-tertiary border-y border-border-subtle"
-                          : "bg-primary text-muted"
-                      )}
-                      style={{
-                        top: 0,
-                        height: `${LINE_HEIGHT}px`,
-                        transform: `translateY(${virtualRow.start}px)`,
-                      }}
-                    >
-                      {line.content}
-                    </div>
-                  );
-                }
-
-                const isAdd = line.type === "add";
-                const isDel = line.type === "del";
-
-                return (
-                  <div
-                    key={virtualRow.index}
-                    className={cn(
-                      "absolute left-0 right-0 flex",
-                      isAdd && "bg-semantic-success-muted",
-                      isDel && "bg-semantic-error-muted"
-                    )}
-                    style={{
-                      top: 0,
-                      height: `${LINE_HEIGHT}px`,
-                      transform: `translateY(${virtualRow.start}px)`,
-                    }}
-                  >
-                    <span
-                      className={cn(
-                        "flex-shrink-0 text-right select-none w-[56px] px-2 text-muted border-r border-border-subtle",
-                        !isAdd && !isDel && "bg-secondary"
-                      )}
-                    >
-                      {line.oldLineNum ?? ""}
-                    </span>
-                    <span
-                      className={cn(
-                        "flex-shrink-0 text-right select-none w-[56px] px-2 text-muted border-r border-border-subtle",
-                        !isAdd && !isDel && "bg-secondary"
-                      )}
-                    >
-                      {line.newLineNum ?? ""}
-                    </span>
-                    <span
-                      className={cn(
-                        "flex-shrink-0 select-none text-center w-5",
-                        isAdd && "text-semantic-success bg-semantic-success-muted",
-                        isDel && "text-semantic-error bg-semantic-error-muted",
-                        !isAdd && !isDel && "text-transparent"
-                      )}
-                    >
-                      {isAdd ? "+" : isDel ? "-" : " "}
-                    </span>
-                    <pre className="flex-1 m-0 pl-2 pr-4 whitespace-pre overflow-visible">
-                      {line.content || " "}
-                    </pre>
-                  </div>
-                );
-              })}
-            </div>
-          ) : diffData?.patch?.trim() ? (
+          ) : diffData?.is_binary ? (
             <div className="px-4 py-12 text-center text-sm text-tertiary">
-              Diff preview unavailable for this file
+              Binary file — text preview unavailable
             </div>
+          ) : diffData?.patch ? (
+            <DiffErrorBoundary fileName={preview.filePath}>
+              <PatchFileDiff
+                patch={diffData.patch}
+                cacheKey={requestKey}
+                options={diffOptions}
+                filePath={preview.filePath}
+                oldContent={diffData.old_content}
+                newContent={editContent}
+                edit={isEditable}
+                onEditChange={isEditable ? handleEditChange : undefined}
+              />
+            </DiffErrorBoundary>
           ) : (
             <div className="px-4 py-12 text-center text-sm text-tertiary">
               No changes in this file
@@ -477,23 +392,6 @@ export function GitFileDiffOverlay() {
           )}
         </div>
 
-        {editIndicators.length > 0 && viewMode === "diff" && (
-          <div className="absolute top-0 right-0 bottom-0 w-1.5 pointer-events-none">
-            {editIndicators.map((indicator, index) => (
-              <div
-                key={index}
-                className={cn(
-                  "absolute right-0 w-1.5",
-                  indicator.type === "add" ? "bg-semantic-success" : "bg-semantic-error"
-                )}
-                style={{
-                  top: `${indicator.top * 100}%`,
-                  height: `${indicator.height * 100}%`,
-                }}
-              />
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );

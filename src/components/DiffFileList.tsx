@@ -1,8 +1,7 @@
 import {
   Component,
-  useEffect,
   useMemo,
-  useRef,
+  type ComponentProps,
   type ReactNode,
 } from "react";
 import { motion, useReducedMotion } from "framer-motion";
@@ -15,11 +14,11 @@ import {
   Loader,
   AlertTriangle,
 } from "lucide-react";
-import { DiffView, DiffModeEnum, DiffFile } from "@git-diff-view/react";
-import "@git-diff-view/react/styles/diff-view.css";
+import { parseDiffFromFile, parsePatchFiles } from "@pierre/diffs";
+import { FileDiff as PierreFileDiff } from "@pierre/diffs/react";
+import type { EditorOptions } from "@pierre/diffs/edit";
 import { cn } from "../utils/cn";
-import type { DiffHighlighter } from "../lib/diff-highlighter";
-import type { ChangedFile } from "../types";
+import type { ChangedFile, FileDiffData } from "../types";
 
 /* ── Shared constants ─────────────────────────────────────────────── */
 
@@ -70,37 +69,6 @@ export function dirname(path: string): string {
   return parts.slice(0, -1).join("/");
 }
 
-export function getLangFromPath(path: string): string {
-  const ext = path.split(".").pop()?.toLowerCase() || "";
-  const langMap: Record<string, string> = {
-    ts: "typescript",
-    tsx: "tsx",
-    js: "javascript",
-    jsx: "jsx",
-    rs: "rust",
-    py: "python",
-    rb: "ruby",
-    go: "go",
-    java: "java",
-    c: "c",
-    cpp: "cpp",
-    h: "c",
-    hpp: "cpp",
-    css: "css",
-    scss: "scss",
-    html: "html",
-    json: "json",
-    yaml: "yaml",
-    yml: "yaml",
-    md: "markdown",
-    sql: "sql",
-    sh: "bash",
-    toml: "toml",
-    xml: "xml",
-  };
-  return langMap[ext] || "plaintext";
-}
-
 /* ── DiffErrorBoundary ────────────────────────────────────────────── */
 
 interface DiffErrorBoundaryProps {
@@ -145,15 +113,78 @@ export class DiffErrorBoundary extends Component<
   }
 }
 
+interface PatchFileDiffProps {
+  patch: string;
+  cacheKey: string;
+  options: ComponentProps<typeof PierreFileDiff>["options"];
+  filePath?: string;
+  oldContent?: string | null;
+  newContent?: string | null;
+  edit?: boolean;
+  onEditChange?: (contents: string) => void;
+}
+
+export function PatchFileDiff({
+  patch,
+  cacheKey,
+  options,
+  filePath,
+  oldContent,
+  newContent,
+  edit = false,
+  onEditChange,
+}: PatchFileDiffProps) {
+  const fileDiff = useMemo(() => {
+    if (edit && filePath && newContent != null) {
+      return {
+        ...parseDiffFromFile(
+          oldContent == null
+            ? null
+            : {
+                name: filePath,
+                contents: oldContent,
+                cacheKey: `${cacheKey}:old`,
+              },
+          {
+            name: filePath,
+            contents: newContent,
+            cacheKey: `${cacheKey}:new`,
+          },
+        ),
+        cacheKey,
+      };
+    }
+
+    return parsePatchFiles(patch, cacheKey)[0]?.files[0];
+  }, [cacheKey, edit, filePath, newContent, oldContent, patch]);
+  const editorOptions = useMemo<EditorOptions<undefined> | undefined>(
+    () =>
+      onEditChange
+        ? { onChange: (file) => onEditChange(file.contents) }
+        : undefined,
+    [onEditChange],
+  );
+
+  if (!fileDiff) return null;
+
+  return (
+    <PierreFileDiff
+      fileDiff={fileDiff}
+      options={options}
+      edit={edit}
+      editorOptions={editorOptions}
+    />
+  );
+}
+
 /* ── FileSection ──────────────────────────────────────────────────── */
 
 export interface FileSectionProps {
   file: ChangedFile;
   isExpanded: boolean;
   onToggle: () => void;
-  patch: string | null;
+  diff: FileDiffData | null;
   isLoading: boolean;
-  shikiHighlighter: Omit<DiffHighlighter, "getHighlighterEngine"> | null;
   isLightMode: boolean;
   /** When true, wraps the expanded content in a framer-motion animation. */
   animate?: boolean;
@@ -163,9 +194,8 @@ export function FileSection({
   file,
   isExpanded,
   onToggle,
-  patch,
+  diff,
   isLoading,
-  shikiHighlighter,
   isLightMode,
   animate = false,
 }: FileSectionProps) {
@@ -173,39 +203,19 @@ export function FileSection({
   const Icon = getFileIcon(file.status);
   const statusColorClass = getStatusColorClass(file.status);
   const dir = dirname(file.path);
-  const diffFileRef = useRef<DiffFile | null>(null);
-
-  const diffFile = useMemo(() => {
-    if (!patch || !isExpanded) return null;
-
-    const lang = getLangFromPath(file.path);
-    try {
-      const instance = DiffFile.createInstance({
-        oldFile: { fileName: file.path, fileLang: lang, content: null },
-        newFile: { fileName: file.path, fileLang: lang, content: null },
-        hunks: [patch],
-      });
-
-      instance.initTheme("dark");
-      instance.init();
-      instance.buildUnifiedDiffLines();
-
-      diffFileRef.current = instance;
-      return instance;
-    } catch (e) {
-      console.error("Failed to create diff instance:", e);
-      return null;
-    }
-  }, [patch, isExpanded, file.path]);
-
-  useEffect(() => {
-    return () => {
-      if (diffFileRef.current) {
-        diffFileRef.current.clear();
-        diffFileRef.current = null;
-      }
-    };
-  }, []);
+  const diffOptions = useMemo(
+    () => ({
+      themeType: isLightMode ? "light" as const : "dark" as const,
+      diffStyle: "unified" as const,
+      diffIndicators: "bars" as const,
+      disableFileHeader: true,
+      hunkSeparators: "line-info" as const,
+      lineDiffType: "word-alt" as const,
+      overflow: "scroll" as const,
+    }),
+    [isLightMode],
+  );
+  const hasTextDiff = Boolean(diff?.patch);
 
   const diffContent = (
     <>
@@ -214,15 +224,16 @@ export function FileSection({
           <Loader className="w-3.5 h-3.5 animate-spin" />
           <span className="text-sm">Loading diff...</span>
         </div>
-      ) : diffFile ? (
+      ) : diff?.is_binary ? (
+        <div className="px-4 py-8 text-center text-sm text-tertiary">
+          Binary file — text preview unavailable
+        </div>
+      ) : diff && hasTextDiff ? (
         <DiffErrorBoundary fileName={file.path}>
-          <DiffView
-            diffFile={diffFile}
-            diffViewMode={DiffModeEnum.Unified}
-            diffViewWrap={false}
-            diffViewTheme={isLightMode ? "light" : "dark"}
-            diffViewHighlight={!!shikiHighlighter}
-            registerHighlighter={shikiHighlighter as any}
+          <PatchFileDiff
+            patch={diff.patch}
+            cacheKey={`${file.path}:${diff.patch}`}
+            options={diffOptions}
           />
         </DiffErrorBoundary>
       ) : (

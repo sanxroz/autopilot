@@ -56,7 +56,7 @@ export function CheckRow({
     <div>
       <button
         onClick={() => onToggle(check)}
-        className="group flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-left transition-colors hover:bg-secondary/20"
+        className="group flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left transition-colors hover:bg-hover/40 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-[-2px]"
         type="button"
       >
         <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center">
@@ -71,7 +71,7 @@ export function CheckRow({
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0 truncate text-[13px] leading-5 text-primary">
+            <div className="min-w-0 truncate text-[12px] leading-5 text-primary">
               {check.name}
             </div>
 
@@ -85,7 +85,7 @@ export function CheckRow({
                 {showStatusBadge && (
                   <span
                     className={cn(
-                      "inline-flex rounded-md border px-2 py-0.5 text-[11px] font-medium",
+                      "inline-flex rounded px-1.5 py-0.5 text-[10px] font-medium",
                       getCheckBadgeClass(check.bucket),
                     )}
                   >
