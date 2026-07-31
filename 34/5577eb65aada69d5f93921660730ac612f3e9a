@@ -1,0 +1,40 @@
+package.json
+  s_d084aeabd56296::t_db410096320578 32
+src-tauri/src/commands/git.rs
+  s_d084aeabd56296::t_db410096320578 1053,1076-1096,1607-1616
+.agents/skills/emil-design-engineering/references/upstream.md
+  s_d084aeabd56296::t_db410096320578 4,10,19-22
+.agents/skills/emil-design-engineering/animations.md
+  s_d084aeabd56296::t_db410096320578 193,197-198
+.agents/skills/emil-design-engineering/component-design.md
+  s_d084aeabd56296::t_db410096320578 81,189,191-192,195-197,200-202
+.agents/skills/emil-design-engineering/ui-polish.md
+  s_d084aeabd56296::t_db410096320578 83
+src/store/index.ts
+  s_d084aeabd56296::t_e1b8eb1f09a01d 924-930
+  s_d084aeabd56296::t_db410096320578 944-946,948-955
+tests/terminal-tabs.test.ts
+  s_d084aeabd56296::t_6bd430e66ea8bf 11-12
+  s_d084aeabd56296::t_032abf23a4e908 1-10,13-14,23-28,49-50,52,101-122,124-164,166-180
+  s_d084aeabd56296::t_c96102d222f749 123,165
+tests/shared-build-cache.test.ts
+  s_d084aeabd56296::t_db410096320578 18-20
+src/components/GitFileDiffOverlay.tsx
+  s_d084aeabd56296::t_db410096320578 86-125,131,136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "345577eb65aada69d5f93921660730ac612f3e9a",
+  "prompts": {},
+  "sessions": {
+    "s_d084aeabd56296": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb95b-e622-77d2-a4e2-33e13da8602f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
