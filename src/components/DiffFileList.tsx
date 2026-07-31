@@ -69,6 +69,37 @@ export function dirname(path: string): string {
   return parts.slice(0, -1).join("/");
 }
 
+export function getLangFromPath(path: string): string {
+  const ext = path.split(".").pop()?.toLowerCase() || "";
+  const langMap: Record<string, string> = {
+    ts: "typescript",
+    tsx: "tsx",
+    js: "javascript",
+    jsx: "jsx",
+    rs: "rust",
+    py: "python",
+    rb: "ruby",
+    go: "go",
+    java: "java",
+    c: "c",
+    cpp: "cpp",
+    h: "c",
+    hpp: "cpp",
+    css: "css",
+    scss: "scss",
+    html: "html",
+    json: "json",
+    yaml: "yaml",
+    yml: "yaml",
+    md: "markdown",
+    sql: "sql",
+    sh: "bash",
+    toml: "toml",
+    xml: "xml",
+  };
+  return langMap[ext] || "plaintext";
+}
+
 /* ── DiffErrorBoundary ────────────────────────────────────────────── */
 
 interface DiffErrorBoundaryProps {
@@ -157,7 +188,7 @@ export function PatchFileDiff({
 
     return parsePatchFiles(patch, cacheKey)[0]?.files[0];
   }, [cacheKey, edit, filePath, newContent, oldContent, patch]);
-  const editorOptions = useMemo<EditorOptions<undefined> | undefined>(
+  const editorOptions = useMemo<EditorOptions<unknown> | undefined>(
     () =>
       onEditChange
         ? { onChange: (file) => onEditChange(file.contents) }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   ChevronDown,
+  ExternalLink,
   FileText,
   GitBranch,
   GitMerge,
@@ -152,47 +153,74 @@ export function RightPanelToolbar({
       </div>
 
       {worktreePath && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              className="flex h-7 items-center gap-1.5 rounded-md px-1.5 text-[11px] font-medium text-secondary transition-colors hover:bg-hover hover:text-primary"
-              aria-label="Open workspace with another application"
+        <div
+          className={cn(
+            "flex h-7 items-center overflow-hidden",
+            prStatus && "rounded-md border border-border-subtle",
+          )}
+        >
+          {prStatus && (
+            <a
+              href={prStatus.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex h-full items-center gap-1 border-r border-border-subtle px-2 font-mono text-[11px] tabular-nums text-secondary transition-colors hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-[-2px]"
+              title={`Open #${prStatus.number} in GitHub`}
+              aria-label={`Open pull request #${prStatus.number} in GitHub`}
             >
-              <span>
-                {isLoadingIdes && installedIdes.length === 0
-                  ? "Detecting…"
-                  : "Open with"}
-              </span>
-              <ChevronDown className="h-3 w-3" strokeWidth={1.5} />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {isLoadingIdes && installedIdes.length === 0 ? (
-              <DropdownMenuItem disabled className="gap-2">
-                <Loader className="h-3.5 w-3.5 animate-spin" />
-                Detecting editors…
-              </DropdownMenuItem>
-            ) : installedIdes.length > 0 ? (
-              installedIdes.map((ide) => (
-                <DropdownMenuItem
-                  key={ide.id}
-                  className="gap-2"
-                  disabled={openingIdeId !== null}
-                  onClick={() => void handleOpenWith(ide.id)}
-                >
-                  {openingIdeId === ide.id ? (
-                    <Loader className="h-[18px] w-[18px] animate-spin" />
-                  ) : (
-                    <OpenWithIcon ide={ide} />
-                  )}
-                  {openingIdeId === ide.id ? `Opening ${ide.name}…` : ide.name}
+              PR #{prStatus.number}
+              <ExternalLink className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
+            </a>
+          )}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                className={cn(
+                  "flex h-full items-center gap-1.5 px-2 text-[11px] font-medium text-secondary transition-colors hover:bg-hover hover:text-primary",
+                  prStatus ? "w-7 justify-center px-0" : "rounded-md",
+                )}
+                aria-label="Open workspace with another application"
+                title="Open workspace with another application"
+              >
+                {!prStatus && (
+                  <span>
+                    {isLoadingIdes && installedIdes.length === 0
+                      ? "Detecting…"
+                      : "Open with"}
+                  </span>
+                )}
+                <ChevronDown className="h-3 w-3" strokeWidth={1.5} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {isLoadingIdes && installedIdes.length === 0 ? (
+                <DropdownMenuItem disabled className="gap-2">
+                  <Loader className="h-3.5 w-3.5 animate-spin" />
+                  Detecting editors…
                 </DropdownMenuItem>
-              ))
-            ) : (
-              <DropdownMenuItem disabled>No supported editors found</DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+              ) : installedIdes.length > 0 ? (
+                installedIdes.map((ide) => (
+                  <DropdownMenuItem
+                    key={ide.id}
+                    className="gap-2"
+                    disabled={openingIdeId !== null}
+                    onClick={() => void handleOpenWith(ide.id)}
+                  >
+                    {openingIdeId === ide.id ? (
+                      <Loader className="h-[18px] w-[18px] animate-spin" />
+                    ) : (
+                      <OpenWithIcon ide={ide} />
+                    )}
+                    {openingIdeId === ide.id ? `Opening ${ide.name}…` : ide.name}
+                  </DropdownMenuItem>
+                ))
+              ) : (
+                <DropdownMenuItem disabled>No supported editors found</DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       )}
 
       {canMergePR && !hasMerged && (
@@ -200,8 +228,9 @@ export function RightPanelToolbar({
           type="button"
           onClick={handleMerge}
           disabled={isMerging}
-          className="flex h-7 items-center gap-1 rounded-md bg-semantic-success px-2 text-[11px] font-medium text-white transition-colors hover:bg-semantic-success/90 active:scale-[0.97] disabled:cursor-wait disabled:opacity-50"
-          title="Merge pull request"
+          className="flex h-7 items-center gap-1 rounded-md bg-semantic-success px-1.5 text-[11px] font-medium text-white transition-colors hover:bg-semantic-success/90 active:scale-[0.97] disabled:cursor-wait disabled:opacity-50"
+          title={isMerging ? "Merging pull request…" : "Merge pull request"}
+          aria-label={isMerging ? "Merging pull request" : "Merge pull request"}
         >
           {isMerging ? (
             <Loader className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />

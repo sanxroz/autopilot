@@ -17,7 +17,7 @@ interface RightPanelProps {
 
 const MIN_WIDTH = 360;
 const MAX_WIDTH = 900;
-const DEFAULT_WIDTH = 560;
+const DEFAULT_WIDTH = 420;
 const MemoizedChecksTab = memo(ChecksTab);
 const MemoizedCommentsTab = memo(CommentsTab);
 const MemoizedGitTab = memo(GitTab);
