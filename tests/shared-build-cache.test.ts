@@ -15,6 +15,6 @@ describe("shared build cache", () => {
 
     configureSharedCargoTarget(env, process.cwd());
 
-    expect(env.CARGO_TARGET_DIR).toMatch(/Autopilot\/cargo-target\/\w{16}$/);
+    expect(env.CARGO_TARGET_DIR).toMatch(/[\\/]cargo-target[\\/][a-f0-9]{16}$/);
   });
 });
