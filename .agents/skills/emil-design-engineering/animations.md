@@ -190,12 +190,12 @@ Only animate `transform` and `opacity`. These skip layout and paint stages, runn
 **Framer Motion:**
 
 ```jsx
-// Motion's x shorthand maps to a CSS transform
+// Hardware accelerated (transform as string)
+<motion.div animate={{ transform: "translateX(100px)" }} />
+
+// NOT hardware accelerated (more readable)
 <motion.div animate={{ x: 100 }} />
 ```
-
-Prefer Motion's transform shorthands so interpolation, composition, and spring
-behavior continue to work as expected.
 
 ### CSS vs. JavaScript
 

@@ -78,7 +78,7 @@ Too much customization: API becomes confusing, maintenance nightmare.
 1. **Variants** - Predefined options (primary, secondary, destructive)
 2. **Size** - Predefined sizes (sm, md, lg)
 3. **className** - Escape hatch for one-off customizations
-4. **asChild** - Compose supported Radix primitives with a custom child element
+4. **render** - Render as different element (Base UI pattern; this repo is Base UI only)
 
 ## Props API Design
 
@@ -186,20 +186,34 @@ function Card({ children, header, footer }) {
 </Card>;
 ```
 
-## The `asChild` Pattern
+## The `render` Pattern
 
-Radix UI primitives support `asChild` when their behavior should be composed
-onto an existing element.
+Allow rendering as a different element while preserving behavior. This repo
+uses Base UI's `render` prop (there is no `asChild` here).
+
+For link-style buttons, prefer styling the link with `buttonVariants`
+instead of rendering `Button` as a link:
 
 ```jsx
-<DropdownMenuTrigger asChild>
-  <button type="button">Open menu</button>
-</DropdownMenuTrigger>
+import { buttonVariants } from "@asym/ui/components/shadcn/button";
+
+<Link href="/page" className={cn(buttonVariants({ variant: "outline" }))}>
+  Click me
+</Link>;
 ```
 
-For reusable styled primitives, follow the existing UI components: wrap the
-Radix primitive with `React.forwardRef` and define variants with the local `tv`
-helper.
+When you must keep button behavior on a non-link element, use `render` on
+`Button` (not on links):
+
+```jsx
+// Render as button (default)
+<Button>Click me</Button>
+
+// Render as custom element with button semantics
+<Button render={<span role="presentation" />} nativeButton={false}>
+  Click me
+</Button>
+```
 
 ## Forwarding Refs
 

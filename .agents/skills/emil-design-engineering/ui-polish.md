@@ -80,7 +80,7 @@ Larger text needs tighter letter spacing; smaller text needs looser spacing. Use
 ```tsx
 // Letter spacing is handled inside the Text component
 
-<Text size="lg">Heading</Text>
+<Text size="lg>Heading</Text>
 ```
 
 Keep in mind that this is font depended.
