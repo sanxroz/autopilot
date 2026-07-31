@@ -83,17 +83,57 @@ export function GitFileDiffOverlay() {
     !diffData.is_binary &&
     editContent != null;
 
+  const flushAutosave = useCallback(async () => {
+    if (saveInFlightRef.current || !pendingSaveRef.current) return;
+
+    saveInFlightRef.current = true;
+    setIsSaving(true);
+    try {
+      while (pendingSaveRef.current) {
+        const pendingSave = pendingSaveRef.current;
+        pendingSaveRef.current = null;
+
+        try {
+          await invoke("save_worktree_file", {
+            worktreePath: pendingSave.worktreePath,
+            filePath: pendingSave.filePath,
+            content: pendingSave.content,
+          });
+          invalidateGitFileDiffCache(pendingSave.worktreePath);
+
+          if (
+            pendingSave.worktreePath === activeTargetRef.current.worktreePath &&
+            pendingSave.filePath === activeTargetRef.current.filePath &&
+            pendingSave.version === editVersionRef.current
+          ) {
+            lastSavedContentRef.current = pendingSave.content;
+            setIsDirty(false);
+          }
+        } catch (saveError) {
+          pendingSaveRef.current = pendingSave;
+          toast.error(
+            `Failed to autosave ${getFileName(pendingSave.filePath)}: ${String(saveError)}`,
+          );
+          break;
+        }
+      }
+    } finally {
+      saveInFlightRef.current = false;
+      setIsSaving(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = null;
     }
-    pendingSaveRef.current = null;
+    void flushAutosave();
     editVersionRef.current += 1;
     setViewMode("diff");
     lastSavedContentRef.current = null;
     setIsDirty(false);
-  }, [filePath]);
+  }, [filePath, worktreePath, flushAutosave]);
 
   useEffect(() => {
     if (!filePath || !worktreePath) {
@@ -175,46 +215,6 @@ export function GitFileDiffOverlay() {
     pendingSaveRef.current = null;
     setPreview(null);
   }, [isDirty, setPreview]);
-
-  const flushAutosave = useCallback(async () => {
-    if (saveInFlightRef.current || !pendingSaveRef.current) return;
-
-    saveInFlightRef.current = true;
-    setIsSaving(true);
-    try {
-      while (pendingSaveRef.current) {
-        const pendingSave = pendingSaveRef.current;
-        pendingSaveRef.current = null;
-
-        try {
-          await invoke("save_worktree_file", {
-            worktreePath: pendingSave.worktreePath,
-            filePath: pendingSave.filePath,
-            content: pendingSave.content,
-          });
-          invalidateGitFileDiffCache(pendingSave.worktreePath);
-
-          if (
-            pendingSave.worktreePath === activeTargetRef.current.worktreePath &&
-            pendingSave.filePath === activeTargetRef.current.filePath &&
-            pendingSave.version === editVersionRef.current
-          ) {
-            lastSavedContentRef.current = pendingSave.content;
-            setIsDirty(false);
-          }
-        } catch (saveError) {
-          pendingSaveRef.current = pendingSave;
-          toast.error(
-            `Failed to autosave ${getFileName(pendingSave.filePath)}: ${String(saveError)}`,
-          );
-          break;
-        }
-      }
-    } finally {
-      saveInFlightRef.current = false;
-      setIsSaving(false);
-    }
-  }, []);
 
   const handleEditChange = useCallback(
     (contents: string) => {
