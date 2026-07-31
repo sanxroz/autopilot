@@ -69,10 +69,7 @@ export function TerminalGrid() {
   }, [handleKeyDown]);
 
   const allWorktreePaths = Object.keys(terminalsByWorktree);
-  const selectedWorktreeData = selectedWorktree
-    ? terminalsByWorktree[selectedWorktree.path]
-    : null;
-  const visibleTerminals = selectedWorktreeData?.terminals ?? [];
+  const visibleTerminals = terminals;
 
   if (!selectedWorktree && allWorktreePaths.length === 0) {
     return (
@@ -128,7 +125,7 @@ export function TerminalGrid() {
           {visibleTerminals.map((terminal, index) => (
             <div
               key={terminal.id}
-              className={`min-w-0 min-h-0 bg-transparent overflow-hidden relative ${index > 0 ? "border-l border-border" : ""}`}
+              className={`relative min-h-0 min-w-0 overflow-hidden bg-transparent ${index > 0 ? "border-l border-border" : ""}`}
             >
               <Terminal
                 ref={(handle) => {

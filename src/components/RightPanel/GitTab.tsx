@@ -5,17 +5,22 @@ import {
   Plus,
   Minus,
   RotateCcw,
-  GitCommit,
   Upload,
   FilePlus,
   FileEdit,
   FileMinus,
   Loader,
   GitBranch,
+  GitCommit,
   Sparkles,
+  ChevronDown,
 } from "lucide-react";
 import { useAppStore } from "../../store";
 import type { GitStatus, GitStatusFile } from "../../types";
+import {
+  invalidateGitFileDiffCache,
+  loadGitFileDiff,
+} from "../../lib/git-file-diff-cache";
 
 import { cn } from "../../utils/cn";
 
@@ -50,6 +55,11 @@ function getFileName(path: string): string {
   return parts[parts.length - 1];
 }
 
+function getFileDirectory(path: string): string {
+  const parts = path.split("/");
+  return parts.slice(0, -1).join("/");
+}
+
 export function GitTab({ worktreePath }: GitTabProps) {
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -60,13 +70,11 @@ export function GitTab({ worktreePath }: GitTabProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isStaging, setIsStaging] = useState(false);
   const [revertingFile, setRevertingFile] = useState<string | null>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [stagedOpen, setStagedOpen] = useState(true);
+  const [unstagedOpen, setUnstagedOpen] = useState(true);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const refreshInFlightRef = useRef(false);
-  const refreshAgainRef = useRef(false);
+  const prefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeFetchIdRef = useRef(0);
-  const inFlightWorktreePathRef = useRef<string | null>(null);
-  const isMountedRef = useRef(true);
   const latestWorktreePathRef = useRef(worktreePath);
   const defaultAIAgent = useAppStore((state) => state.defaultAIAgent);
   const gitFileDiffPreview = useAppStore((state) => state.gitFileDiffPreview);
@@ -78,39 +86,21 @@ export function GitTab({ worktreePath }: GitTabProps) {
   latestWorktreePathRef.current = worktreePath;
 
   const fetchStatus = useCallback(async () => {
-    if (!isMountedRef.current) return;
-
     if (!worktreePath) {
-      refreshInFlightRef.current = false;
-      inFlightWorktreePathRef.current = null;
-      refreshAgainRef.current = false;
+      activeFetchIdRef.current += 1;
       setIsLoading(false);
       setGitStatus(null);
       return;
     }
 
-    if (refreshInFlightRef.current) {
-      if (inFlightWorktreePathRef.current === worktreePath) {
-        refreshAgainRef.current = true;
-        return;
-      }
-
-      activeFetchIdRef.current += 1;
-      refreshInFlightRef.current = false;
-      refreshAgainRef.current = false;
-    }
-
     const fetchId = activeFetchIdRef.current + 1;
     activeFetchIdRef.current = fetchId;
-    refreshInFlightRef.current = true;
-    inFlightWorktreePathRef.current = worktreePath;
     setIsLoading(true);
     setError(null);
 
     try {
       const status = await invoke<GitStatus>("get_git_status", { worktreePath });
       if (
-        !isMountedRef.current ||
         activeFetchIdRef.current !== fetchId ||
         latestWorktreePathRef.current !== worktreePath
       ) {
@@ -119,7 +109,6 @@ export function GitTab({ worktreePath }: GitTabProps) {
       setGitStatus(status);
     } catch (e) {
       if (
-        !isMountedRef.current ||
         activeFetchIdRef.current !== fetchId ||
         latestWorktreePathRef.current !== worktreePath
       ) {
@@ -129,33 +118,17 @@ export function GitTab({ worktreePath }: GitTabProps) {
       setGitStatus(null);
     } finally {
       if (
-        !isMountedRef.current ||
         activeFetchIdRef.current !== fetchId ||
         latestWorktreePathRef.current !== worktreePath
       ) {
         return;
       }
-      refreshInFlightRef.current = false;
-      inFlightWorktreePathRef.current = null;
       setIsLoading(false);
-      if (refreshAgainRef.current) {
-        refreshAgainRef.current = false;
-        if (refreshTimerRef.current) {
-          clearTimeout(refreshTimerRef.current);
-        }
-        refreshTimerRef.current = setTimeout(() => {
-          refreshTimerRef.current = null;
-          fetchStatus();
-        }, 500);
-      }
     }
   }, [worktreePath]);
 
   useEffect(() => {
-    isMountedRef.current = true;
-
     return () => {
-      isMountedRef.current = false;
       activeFetchIdRef.current += 1;
     };
   }, []);
@@ -182,12 +155,14 @@ export function GitTab({ worktreePath }: GitTabProps) {
 
     const unlistenFileChanged = listen<{ worktree_path: string }>("file-changed", (event) => {
       if (event.payload.worktree_path === worktreePath) {
+        invalidateGitFileDiffCache(worktreePath);
         scheduleStatusRefresh();
       }
     });
 
     const unlistenIndexChanged = listen<{ worktree_path: string }>("git-index-changed", (event) => {
       if (event.payload.worktree_path === worktreePath) {
+        invalidateGitFileDiffCache(worktreePath);
         scheduleStatusRefresh();
       }
     });
@@ -196,6 +171,10 @@ export function GitTab({ worktreePath }: GitTabProps) {
       if (refreshTimerRef.current) {
         clearTimeout(refreshTimerRef.current);
         refreshTimerRef.current = null;
+      }
+      if (prefetchTimerRef.current) {
+        clearTimeout(prefetchTimerRef.current);
+        prefetchTimerRef.current = null;
       }
       invoke("stop_watching_worktree_files", { worktreePath }).catch(console.error);
       unlistenFileChanged.then((fn) => fn());
@@ -241,6 +220,15 @@ export function GitTab({ worktreePath }: GitTabProps) {
       setGitFileDiffPreview({ filePath: file.path, worktreePath, isStaged });
     }
   }, [worktreePath, gitFileDiffPreview, setGitFileDiffPreview]);
+
+  const prefetchFile = useCallback((file: GitStatusFile, isStaged: boolean) => {
+    if (!worktreePath) return;
+    if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current);
+    prefetchTimerRef.current = setTimeout(() => {
+      prefetchTimerRef.current = null;
+      void loadGitFileDiff(worktreePath, file.path, isStaged).catch(() => {});
+    }, 100);
+  }, [worktreePath]);
 
   const handleStageFiles = useCallback(async (files: string[]) => {
     if (!worktreePath || files.length === 0 || isOperationInProgress) return;
@@ -321,7 +309,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
   }, [worktreePath, fetchStatus, isOperationInProgress]);
 
   const handleCommit = useCallback(async () => {
-    if (!worktreePath || !commitMessage.trim()) return;
+    if (!worktreePath || !commitMessage.trim() || isOperationInProgress) return;
     setIsCommitting(true);
     setError(null);
     try {
@@ -333,7 +321,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
     } finally {
       setIsCommitting(false);
     }
-  }, [worktreePath, commitMessage, fetchStatus]);
+  }, [worktreePath, commitMessage, fetchStatus, isOperationInProgress]);
 
   const handlePush = useCallback(async () => {
     if (!worktreePath) return;
@@ -399,23 +387,37 @@ export function GitTab({ worktreePath }: GitTabProps) {
 
   const staged = gitStatus?.staged || [];
   const unstaged = gitStatus?.unstaged || [];
-  const totalChanges = staged.length + unstaged.length;
-  const canCommit = staged.length > 0 && commitMessage.trim().length > 0 && !isCommitting;
+  const totalChanges = new Set(
+    [...staged, ...unstaged].map((file) => file.path),
+  ).size;
+  const canCommit =
+    staged.length > 0 &&
+    commitMessage.trim().length > 0 &&
+    !isOperationInProgress;
 
   const renderFileItem = (file: GitStatusFile, isStaged: boolean) => {
     const Icon = getFileIcon(file.status);
     const colorClass = getFileColorClass(file.status);
     const fileName = getFileName(file.path);
+    const directory = getFileDirectory(file.path);
     const isSelected = gitFileDiffPreview?.filePath === file.path && gitFileDiffPreview?.isStaged === isStaged;
 
     return (
       <div
         key={file.path}
         className={cn(
-          "flex items-center gap-2 py-1 px-3 transition-colors group cursor-pointer text-primary",
+          "group flex min-h-8 cursor-pointer items-center gap-2 px-3 text-primary transition-colors",
           isSelected ? "bg-active" : "bg-transparent hover:bg-hover"
         )}
         onClick={() => handleSelectFile(file, isStaged)}
+        onMouseEnter={() => prefetchFile(file, isStaged)}
+        onMouseLeave={() => {
+          if (prefetchTimerRef.current) {
+            clearTimeout(prefetchTimerRef.current);
+            prefetchTimerRef.current = null;
+          }
+        }}
+        onFocus={() => prefetchFile(file, isStaged)}
         role="button"
         tabIndex={0}
         onKeyDown={(e) => {
@@ -426,16 +428,20 @@ export function GitTab({ worktreePath }: GitTabProps) {
         }}
         aria-selected={isSelected}
       >
-        <Icon className={cn("w-4 h-4 flex-shrink-0", colorClass)} />
-        <span className="text-[13px] flex-1 truncate">{fileName}</span>
-        <div
-          className={cn(
-            "flex items-center gap-1 flex-shrink-0 transition-opacity",
-            isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+        <Icon className={cn("h-3.5 w-3.5 flex-shrink-0", colorClass)} strokeWidth={1.5} />
+        <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
+          <span className="truncate text-[12px] text-primary">{fileName}</span>
+          {directory && (
+            <span className="truncate font-mono text-[10px] text-muted">
+              {directory}
+            </span>
           )}
+        </div>
+        <div
+          className="pointer-events-none flex flex-shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100"
         >
           <button
-            className="p-0.5 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-tertiary hover:text-primary"
+            className="flex h-6 w-6 items-center justify-center rounded text-tertiary transition-colors hover:bg-tertiary hover:text-primary active:scale-[0.97] disabled:cursor-not-allowed disabled:text-muted"
             disabled={isOperationInProgress}
             onClick={(e) => {
               e.stopPropagation();
@@ -445,13 +451,13 @@ export function GitTab({ worktreePath }: GitTabProps) {
             title={`Revert ${fileName}`}
           >
             {revertingFile === file.path ? (
-              <Loader className="w-4 h-4 animate-spin" />
+              <Loader className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <RotateCcw className="w-3.5 h-3.5" />
+              <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.5} />
             )}
           </button>
           <button
-            className="p-0.5 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-tertiary hover:text-primary"
+            className="flex h-6 w-6 items-center justify-center rounded text-tertiary transition-colors hover:bg-tertiary hover:text-primary active:scale-[0.97] disabled:cursor-not-allowed disabled:text-muted"
             disabled={isOperationInProgress}
             onClick={(e) => {
               e.stopPropagation();
@@ -465,11 +471,11 @@ export function GitTab({ worktreePath }: GitTabProps) {
             title={isStaged ? `Unstage ${fileName}` : `Stage ${fileName}`}
           >
             {isStaging ? (
-              <Loader className="w-4 h-4 animate-spin" />
+              <Loader className="h-3.5 w-3.5 animate-spin" />
             ) : isStaged ? (
-              <Minus className="w-4 h-4" />
+              <Minus className="h-3.5 w-3.5" strokeWidth={1.5} />
             ) : (
-              <Plus className="w-4 h-4" />
+              <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
             )}
           </button>
         </div>
@@ -478,131 +484,200 @@ export function GitTab({ worktreePath }: GitTabProps) {
   };
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
-      <div className="flex items-center justify-between px-3 py-2">
-        <span className="text-[13px] text-primary">
-          {totalChanges} Change{totalChanges !== 1 ? "s" : ""}
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="flex h-9 shrink-0 items-center gap-2 border-b border-border-subtle px-3">
+        <span className="text-[12px] font-medium text-primary">Changes</span>
+        <span className="font-mono text-[10px] tabular-nums text-muted">
+          {totalChanges}
         </span>
-        <div className="flex items-center gap-1">
-          {unstaged.length > 0 ? (
-            <button
-              onClick={handleStageAll}
-              disabled={isOperationInProgress}
-              className="text-[12px] px-2 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-primary hover:bg-hover"
-            >
-              {isStaging ? "Staging..." : "Stage All"}
-            </button>
-          ) : staged.length > 0 ? (
-            <button
-              onClick={handleUnstageAll}
-              disabled={isOperationInProgress}
-              className="text-[12px] px-2 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-primary hover:bg-hover"
-            >
-              {isStaging ? "Unstaging..." : "Unstage All"}
-            </button>
-          ) : null}
-        </div>
+        <span className="flex h-3 w-3 items-center justify-center">
+          {isLoading && <Loader className="h-3 w-3 animate-spin text-muted" />}
+        </span>
       </div>
 
-      {staged.length > 0 && (
-        <div className={cn("overflow-auto", unstaged.length === 0 && "flex-1")}>
-          <div className="px-3 py-1.5 text-[11px] font-medium tracking-wide text-muted">
-            Staged
-          </div>
-          {staged.map((file) => renderFileItem(file, true))}
-        </div>
-      )}
+      {totalChanges > 0 && (
+        <div className="min-h-0 flex-1 overflow-auto py-1">
+          {staged.length > 0 && (
+            <div>
+              <div className="flex h-8 items-center justify-between px-2">
+                <button
+                  type="button"
+                  onClick={() => setStagedOpen((open) => !open)}
+                  className="flex h-7 min-w-0 items-center gap-1.5 rounded px-1 text-[11px] font-medium text-secondary hover:text-primary"
+                  aria-expanded={stagedOpen}
+                >
+                  <ChevronDown
+                    className={cn("h-3 w-3 transition-transform", !stagedOpen && "-rotate-90")}
+                    strokeWidth={1.5}
+                  />
+                  <span>Staged</span>
+                  <span className="font-mono text-[10px] tabular-nums text-muted">
+                    {staged.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleUnstageAll}
+                  disabled={isOperationInProgress}
+                  className="h-6 rounded px-1.5 text-[10px] text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] disabled:cursor-not-allowed disabled:text-muted"
+                >
+                  {isStaging ? "Unstaging…" : "Unstage all"}
+                </button>
+              </div>
+              {stagedOpen && staged.map((file) => renderFileItem(file, true))}
+            </div>
+          )}
 
-      {unstaged.length > 0 && (
-        <div className="flex-1 overflow-auto">
-          <div className="px-3 py-1.5 text-[11px] font-medium tracking-wide text-muted">
-            Changes
-          </div>
-          {unstaged.map((file) => renderFileItem(file, false))}
+          {unstaged.length > 0 && (
+            <div>
+              <div className="flex h-8 items-center justify-between px-2">
+                <button
+                  type="button"
+                  onClick={() => setUnstagedOpen((open) => !open)}
+                  className="flex h-7 min-w-0 items-center gap-1.5 rounded px-1 text-[11px] font-medium text-secondary hover:text-primary"
+                  aria-expanded={unstagedOpen}
+                >
+                  <ChevronDown
+                    className={cn("h-3 w-3 transition-transform", !unstagedOpen && "-rotate-90")}
+                    strokeWidth={1.5}
+                  />
+                  <span>Unstaged</span>
+                  <span className="font-mono text-[10px] tabular-nums text-muted">
+                    {unstaged.length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleStageAll}
+                  disabled={isOperationInProgress}
+                  className="h-6 rounded px-1.5 text-[10px] text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] disabled:cursor-not-allowed disabled:text-muted"
+                >
+                  {isStaging ? "Staging…" : "Stage all"}
+                </button>
+              </div>
+              {unstagedOpen && unstaged.map((file) => renderFileItem(file, false))}
+            </div>
+          )}
         </div>
       )}
 
       {totalChanges === 0 && (
-        <div className="flex-1 flex items-center justify-center text-sm text-tertiary">
-          No changes
+        <div className="flex flex-1 items-center justify-center text-[12px] text-tertiary">
+          Working tree clean
         </div>
       )}
 
-      <div className="px-3 py-2 flex items-center gap-2 border-t border-subtle">
-        <GitBranch className="w-3.5 h-3.5 text-muted" />
-        <span className="text-[12px] text-primary">
+      {error && gitStatus && (
+        <div className="border-t border-border-subtle px-3 py-2 text-[11px] text-semantic-error">
+          {error}
+        </div>
+      )}
+
+      <div className="flex h-9 shrink-0 items-center gap-2 border-t border-border-subtle px-3">
+        <GitBranch className="h-3.5 w-3.5 text-muted" strokeWidth={1.5} />
+        <span className="min-w-0 truncate font-mono text-[11px] text-secondary">
           {gitStatus?.branch || "unknown"}
         </span>
+        {gitStatus && gitStatus.ahead > 0 && (
+          <span className="font-mono text-[10px] tabular-nums text-tertiary">
+            ↑{gitStatus.ahead}
+          </span>
+        )}
+        {gitStatus && gitStatus.behind > 0 && (
+          <span className="font-mono text-[10px] tabular-nums text-tertiary">
+            ↓{gitStatus.behind}
+          </span>
+        )}
         {gitStatus && (gitStatus.ahead > 0 || !gitStatus.upstream_branch) && (
           <button
             onClick={handlePush}
-            disabled={isPushing}
-            className="ml-auto flex items-center hover:bg-hover gap-1.5 px-1.5 py-0.5 rounded text-[11px] transition-colors text-primary"
+            disabled={isOperationInProgress}
+            className="ml-auto flex h-6 items-center gap-1.5 rounded px-1.5 text-[10px] text-secondary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] disabled:cursor-wait disabled:text-muted"
           >
             {isPushing ? (
-              <Loader className="w-3 h-3 animate-spin" />
+              <Loader className="h-3 w-3 animate-spin" />
             ) : (
-              <Upload className="w-3 h-3" />
+              <Upload className="h-3 w-3" strokeWidth={1.5} />
             )}
-            {gitStatus.upstream_branch ? "Push" : "Publish Branch"}
+            {gitStatus.upstream_branch ? "Push" : "Publish branch"}
           </button>
         )}
       </div>
 
-      <div className="px-3 py-2 border-t border-subtle">
+      <form
+        className="shrink-0 border-t border-border-subtle px-3 pb-2 pt-1.5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (canCommit) void handleCommit();
+        }}
+      >
         <div className="relative">
           <textarea
-            ref={textareaRef}
             value={commitMessage}
             onChange={(e) => setCommitMessage(e.target.value)}
-            placeholder={staged.length > 0 ? `Update ${getFileName(staged[0].path)}` : "Message"}
-            rows={3}
-            className="w-full px-0 py-1 pr-8 text-[13px] resize-none outline-none bg-transparent text-primary placeholder:text-muted"
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && canCommit) {
-                e.preventDefault();
-                handleCommit();
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                (event.metaKey || event.ctrlKey) &&
+                canCommit
+              ) {
+                event.preventDefault();
+                void handleCommit();
               }
             }}
+            placeholder={
+              staged.length > 0
+                ? `Update ${getFileName(staged[0].path)}`
+                : "Stage files to commit"
+            }
+            rows={2}
+            spellCheck={false}
+            autoComplete="off"
+            data-lpignore="true"
+            data-1p-ignore
+            className="block min-h-10 w-full resize-none bg-transparent py-1 pr-8 text-[13px] leading-5 text-primary caret-accent-primary outline-none placeholder:text-muted"
             aria-label="Commit message"
           />
           <button
+            type="button"
             onClick={handleGenerateMessage}
             disabled={isGenerating || staged.length === 0}
             className={cn(
-              "absolute top-1 right-0 p-1 rounded transition-colors",
+              "absolute right-0 top-0.5 flex h-7 w-7 items-center justify-center rounded transition-colors",
               isGenerating || staged.length === 0
                 ? "text-muted cursor-not-allowed"
-                : "text-tertiary cursor-pointer hover:text-accent-primary"
+                : "text-tertiary cursor-pointer hover:bg-hover hover:text-primary active:scale-[0.97]"
             )}
             title="Generate commit message with AI"
             aria-label="Generate commit message with AI"
           >
             {isGenerating ? (
-              <Loader className="w-3.5 h-3.5 animate-spin" />
+              <Loader className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <Sparkles className="w-3.5 h-3.5" />
+              <Sparkles className="h-3.5 w-3.5" strokeWidth={1.5} />
             )}
           </button>
         </div>
-        <div className="flex justify-end mt-2">
+        <div className="flex justify-end">
           <button
-            onClick={handleCommit}
+            type="submit"
             disabled={!canCommit}
             className={cn(
-              "flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-medium transition-colors",
-              canCommit ? "text-primary cursor-pointer" : "text-muted cursor-not-allowed"
+              "flex h-7 items-center gap-1.5 rounded px-2 text-[11px] font-medium transition-colors active:scale-[0.97]",
+              canCommit
+                ? "cursor-pointer text-secondary hover:bg-hover hover:text-primary"
+                : "cursor-not-allowed text-muted"
             )}
           >
             {isCommitting ? (
-              <Loader className="w-3.5 h-3.5 animate-spin" />
+              <Loader className="h-3.5 w-3.5 animate-spin" />
             ) : (
-              <GitCommit className="w-3.5 h-3.5" />
+              <GitCommit className="h-3.5 w-3.5" strokeWidth={1.5} />
             )}
-            Commit
+            {isCommitting ? "Committing…" : "Commit"}
           </button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }

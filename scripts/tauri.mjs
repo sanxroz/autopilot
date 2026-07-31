@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { getAvailablePortConfig } from "./dev-port.mjs";
+import { configureSharedCargoTarget } from "./shared-build-cache.mjs";
 
 const [command, ...restArgs] = process.argv.slice(2);
 
@@ -8,6 +9,8 @@ if (!command) {
 }
 
 const childEnv = { ...process.env };
+
+configureSharedCargoTarget(childEnv);
 let tauriArgs = [command, ...restArgs];
 
 if (command === "dev") {

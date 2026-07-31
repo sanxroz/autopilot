@@ -8,13 +8,13 @@ import type {
   WorktreeInfo,
   TerminalInstance,
   ProcessStatus,
-  DiffViewMode,
   AIAgent,
   AgentRunState,
   AgentStatusEvent,
   InstalledIde,
   AutoFetchSettings,
   WorktreeSetupResult,
+  TerminalPane,
 } from '../types';
 import type {
   GitHubSettings,
@@ -48,8 +48,8 @@ interface PersistedState {
 }
 
 interface WorktreeTerminals {
-  terminals: TerminalInstance[];
-  activeTerminalId: string | null;
+  tabs: TerminalPane[];
+  activeTabId: string | null;
 }
 
 interface PRDataCache {
@@ -64,6 +64,8 @@ interface AppStore {
   repositories: Repository[];
   selectedWorktree: WorktreeInfo | null;
   terminalsByWorktree: Record<string, WorktreeTerminals>;
+  currentTerminalTabs: TerminalPane[];
+  currentActiveTerminalTabId: string | null;
   currentTerminals: TerminalInstance[];
   currentActiveTerminalId: string | null;
   installedIdes: readonly InstalledIde[];
@@ -79,8 +81,6 @@ interface AppStore {
   deletingWorktreePaths: Set<string>;
   settingsOpen: boolean;
   codeReviewOpen: boolean;
-  diffOverlayOpen: boolean;
-  diffViewMode: DiffViewMode;
   gitFileDiffPreview: { filePath: string; worktreePath: string; isStaged: boolean } | null;
   processStatusByPath: Record<string, ProcessStatus>;
   agentRunByWorktreePath: Record<string, AgentRunState | undefined>;
@@ -105,19 +105,18 @@ interface AppStore {
   updateWorktreeBranch: (worktreePath: string) => Promise<void>;
   selectWorktree: (worktree: WorktreeInfo) => Promise<void>;
   addTerminal: () => Promise<string | null>;
+  createTerminalTab: () => Promise<string | null>;
+  closeTerminalTab: (tabId: string) => void;
   addTerminalWithCommand: (command: string) => Promise<string | null>;
   removeTerminal: (terminalId: string) => void;
   setActiveTerminal: (terminalId: string) => void;
+  setActiveTerminalTab: (tabId: string) => void;
   toggleRepoCollapsed: (path: string) => void;
   setThemeMode: (mode: ThemeMode) => Promise<void>;
   toggleSettings: () => void;
   setCodeReviewOpen: (open: boolean) => void;
   toggleCodeReview: () => void;
-  setDiffOverlayOpen: (open: boolean) => void;
-  toggleDiffOverlay: () => void;
-  setDiffViewMode: (mode: DiffViewMode) => void;
   setGitFileDiffPreview: (preview: { filePath: string; worktreePath: string; isStaged: boolean } | null) => void;
-  toggleDiffViewMode: () => void;
   createWorktreeAuto: (repoPath: string) => Promise<WorktreeInfo | null>;
   deleteWorktree: (repoPath: string, worktreeName: string) => Promise<void>;
   setPRStatusBatch: (results: RepoPRStatuses[]) => void;
@@ -394,6 +393,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   repositories: [],
   selectedWorktree: null,
   terminalsByWorktree: {},
+  currentTerminalTabs: [],
+  currentActiveTerminalTabId: null,
   currentTerminals: [],
   currentActiveTerminalId: null,
   installedIdes: [],
@@ -409,8 +410,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
   deletingWorktreePaths: new Set<string>(),
   settingsOpen: false,
   codeReviewOpen: false,
-  diffOverlayOpen: false,
-  diffViewMode: 'overlay',
   gitFileDiffPreview: null,
   processStatusByPath: {},
   agentRunByWorktreePath: {},
@@ -506,6 +505,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
     }
 
+    savePersistedState({
+      repositoryPaths: get().repositories.map((repository) => repository.info.path),
+    });
     set({ isInitialized: true });
 
     if (reposNeedingAvatar.length > 0) {
@@ -857,11 +859,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     const existing = state.terminalsByWorktree[worktree.path];
     
-    if (existing && existing.terminals.length > 0) {
+    if (existing && existing.tabs.length > 0) {
+      const activeTab =
+        existing.tabs.find((tab) => tab.id === existing.activeTabId) ??
+        existing.tabs[0];
       set({
         selectedWorktree: worktree,
-        currentTerminals: existing.terminals,
-        currentActiveTerminalId: existing.activeTerminalId,
+        currentTerminalTabs: existing.tabs,
+        currentActiveTerminalTabId: activeTab.id,
+        currentTerminals: activeTab.terminals,
+        currentActiveTerminalId: activeTab.activeTerminalId,
         gitFileDiffPreview: null,
       });
       return;
@@ -879,23 +886,30 @@ export const useAppStore = create<AppStore>((set, get) => ({
       worktreePath: worktree.path,
       worktreeName: worktree.name,
     };
+    const tab: TerminalPane = {
+      id: terminal.id,
+      terminals: [terminal],
+      activeTerminalId: terminal.id,
+    };
 
     set((state) => ({
       selectedWorktree: worktree,
+      currentTerminalTabs: [tab],
+      currentActiveTerminalTabId: tab.id,
       currentTerminals: [terminal],
       currentActiveTerminalId: terminal.id,
       gitFileDiffPreview: null,
       terminalsByWorktree: {
         ...state.terminalsByWorktree,
         [worktree.path]: {
-          terminals: [terminal],
-          activeTerminalId: terminal.id,
+          tabs: [tab],
+          activeTabId: tab.id,
         },
       },
     }));
   },
 
-  addTerminal: async () => {
+  createTerminalTab: async () => {
     const state = get();
     const worktree = state.selectedWorktree;
     if (!worktree) return null;
@@ -912,17 +926,100 @@ export const useAppStore = create<AppStore>((set, get) => ({
       worktreePath: worktree.path,
       worktreeName: worktree.name,
     };
+    const tab: TerminalPane = {
+      id: terminal.id,
+      terminals: [terminal],
+      activeTerminalId: terminal.id,
+    };
+
+    set((state) => {
+      const tabs = [...state.currentTerminalTabs, tab];
+      return {
+        currentTerminalTabs: tabs,
+        currentActiveTerminalTabId: tab.id,
+        currentTerminals: tab.terminals,
+        currentActiveTerminalId: terminal.id,
+        terminalsByWorktree: {
+          ...state.terminalsByWorktree,
+          [worktree.path]: { tabs, activeTabId: tab.id },
+        },
+      };
+    });
+
+    return tab.id;
+  },
+
+  closeTerminalTab: (tabId: string) => {
+    const state = get();
+    const worktree = state.selectedWorktree;
+    const tabIndex = state.currentTerminalTabs.findIndex((tab) => tab.id === tabId);
+    if (!worktree || tabIndex === -1 || state.currentTerminalTabs.length === 1) {
+      return;
+    }
+
+    const closingTab = state.currentTerminalTabs[tabIndex];
+    if (typeof window !== 'undefined') {
+      for (const terminal of closingTab.terminals) {
+        void invoke('close_terminal', { terminalId: terminal.id }).catch(console.error);
+      }
+    }
+
+    set((state) => {
+      const tabs = state.currentTerminalTabs.filter((tab) => tab.id !== tabId);
+      const activeTab = state.currentActiveTerminalTabId === tabId
+        ? tabs[Math.min(tabIndex, tabs.length - 1)]
+        : tabs.find((tab) => tab.id === state.currentActiveTerminalTabId) ?? tabs[0];
+
+      return {
+        currentTerminalTabs: tabs,
+        currentActiveTerminalTabId: activeTab.id,
+        currentTerminals: activeTab.terminals,
+        currentActiveTerminalId: activeTab.activeTerminalId,
+        terminalsByWorktree: {
+          ...state.terminalsByWorktree,
+          [worktree.path]: { tabs, activeTabId: activeTab.id },
+        },
+      };
+    });
+  },
+
+  addTerminal: async () => {
+    const state = get();
+    const worktree = state.selectedWorktree;
+    if (!worktree) return null;
+    if (!state.currentActiveTerminalTabId) {
+      return get().createTerminalTab();
+    }
+
+    const result = await invoke<{ terminal_id: string }>('spawn_terminal', {
+      cwd: worktree.path,
+      cols: 80,
+      rows: 24,
+      isDarkMode: getThemeMode() === 'dark',
+    });
+
+    const terminal: TerminalInstance = {
+      id: result.terminal_id,
+      worktreePath: worktree.path,
+      worktreeName: worktree.name,
+    };
 
     set((state) => {
       const newTerminals = [...state.currentTerminals, terminal];
+      const tabs = state.currentTerminalTabs.map((tab) =>
+        tab.id === state.currentActiveTerminalTabId
+          ? { ...tab, terminals: newTerminals, activeTerminalId: terminal.id }
+          : tab
+      );
       return {
+        currentTerminalTabs: tabs,
         currentTerminals: newTerminals,
         currentActiveTerminalId: terminal.id,
         terminalsByWorktree: {
           ...state.terminalsByWorktree,
           [worktree.path]: {
-            terminals: newTerminals,
-            activeTerminalId: terminal.id,
+            tabs,
+            activeTabId: state.currentActiveTerminalTabId,
           },
         },
       };
@@ -935,6 +1032,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const state = get();
     const worktree = state.selectedWorktree;
     if (!worktree) return null;
+    if (!state.currentActiveTerminalTabId) return null;
 
     const result = await invoke<{ terminal_id: string }>('spawn_terminal_with_command', {
       cwd: worktree.path,
@@ -953,14 +1051,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     set((state) => {
       const newTerminals = [...state.currentTerminals, terminal];
+      const tabs = state.currentTerminalTabs.map((tab) =>
+        tab.id === state.currentActiveTerminalTabId
+          ? { ...tab, terminals: newTerminals, activeTerminalId: terminal.id }
+          : tab
+      );
       return {
+        currentTerminalTabs: tabs,
         currentTerminals: newTerminals,
         currentActiveTerminalId: terminal.id,
         terminalsByWorktree: {
           ...state.terminalsByWorktree,
           [worktree.path]: {
-            terminals: newTerminals,
-            activeTerminalId: terminal.id,
+            tabs,
+            activeTabId: state.currentActiveTerminalTabId,
           },
         },
       };
@@ -981,15 +1085,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const newActiveId = state.currentActiveTerminalId === terminalId
         ? newTerminals[newTerminals.length - 1]?.id || null
         : state.currentActiveTerminalId;
+      const tabs = state.currentTerminalTabs.map((tab) =>
+        tab.id === state.currentActiveTerminalTabId
+          ? { ...tab, terminals: newTerminals, activeTerminalId: newActiveId }
+          : tab
+      );
 
       return {
+        currentTerminalTabs: tabs,
         currentTerminals: newTerminals,
         currentActiveTerminalId: newActiveId,
         terminalsByWorktree: {
           ...state.terminalsByWorktree,
           [worktree.path]: {
-            terminals: newTerminals,
-            activeTerminalId: newActiveId,
+            tabs,
+            activeTabId: state.currentActiveTerminalTabId,
           },
         },
       };
@@ -1001,13 +1111,41 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const worktree = state.selectedWorktree;
     if (!worktree) return;
 
+    set((state) => {
+      const tabs = state.currentTerminalTabs.map((tab) =>
+        tab.id === state.currentActiveTerminalTabId
+          ? { ...tab, activeTerminalId: terminalId }
+          : tab
+      );
+      return {
+        currentTerminalTabs: tabs,
+        currentActiveTerminalId: terminalId,
+        terminalsByWorktree: {
+          ...state.terminalsByWorktree,
+          [worktree.path]: {
+            tabs,
+            activeTabId: state.currentActiveTerminalTabId,
+          },
+        },
+      };
+    });
+  },
+
+  setActiveTerminalTab: (tabId: string) => {
+    const state = get();
+    const worktree = state.selectedWorktree;
+    const tab = state.currentTerminalTabs.find((candidate) => candidate.id === tabId);
+    if (!worktree || !tab) return;
+
     set((state) => ({
-      currentActiveTerminalId: terminalId,
+      currentActiveTerminalTabId: tab.id,
+      currentTerminals: tab.terminals,
+      currentActiveTerminalId: tab.activeTerminalId,
       terminalsByWorktree: {
         ...state.terminalsByWorktree,
         [worktree.path]: {
-          ...state.terminalsByWorktree[worktree.path],
-          activeTerminalId: terminalId,
+          tabs: state.currentTerminalTabs,
+          activeTabId: tab.id,
         },
       },
     }));
@@ -1048,24 +1186,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => ({ codeReviewOpen: !state.codeReviewOpen }));
   },
 
-  setDiffOverlayOpen: (open: boolean) => {
-    set({ diffOverlayOpen: open });
-  },
-
-  toggleDiffOverlay: () => {
-    set((state) => ({ diffOverlayOpen: !state.diffOverlayOpen }));
-  },
-
-  setDiffViewMode: (mode: DiffViewMode) => {
-    set({ diffViewMode: mode });
-  },
-
   setGitFileDiffPreview: (preview) => {
     set({ gitFileDiffPreview: preview });
-  },
-
-  toggleDiffViewMode: () => {
-    set((state) => ({ diffViewMode: state.diffViewMode === 'overlay' ? 'sidebar' : 'overlay' }));
   },
 
   createWorktreeAuto: async (repoPath: string) => {
