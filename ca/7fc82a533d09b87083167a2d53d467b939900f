@@ -1,0 +1,25 @@
+.agents/skills/emil-design-engineering/animations.md
+  s_d084aeabd56296::t_b81cc6323cadc4 193-196
+.agents/skills/emil-design-engineering/ui-polish.md
+  s_d084aeabd56296::t_b81cc6323cadc4 83
+.agents/skills/emil-design-engineering/component-design.md
+  s_d084aeabd56296::t_b81cc6323cadc4 81,189,191-195,198-202,205-216
+.agents/skills/emil-design-engineering/references/upstream.md
+  s_d084aeabd56296::t_b81cc6323cadc4 4,10,19-22,27-29
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "ca7fc82a533d09b87083167a2d53d467b939900f",
+  "prompts": {},
+  "sessions": {
+    "s_d084aeabd56296": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fb95b-e622-77d2-a4e2-33e13da8602f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
