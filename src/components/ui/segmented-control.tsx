@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import { Slottable } from "@radix-ui/react-slot"
 import * as TabsPrimitive from "@radix-ui/react-tabs"
 import mergeRefs from "merge-refs"
 
@@ -59,7 +58,7 @@ function TabsList({
       }}
       {...props}
     >
-      <Slottable>{children}</Slottable>
+      {children}
 
       <div
         className={cn(

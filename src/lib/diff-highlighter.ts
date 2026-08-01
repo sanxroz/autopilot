@@ -5,7 +5,7 @@
  */
 
 import * as shiki from "shiki"
-import type { Root } from "hast"
+import type { DiffAST as Root } from "@git-diff-view/shiki"
 
 // Languages to load for syntax highlighting
 const SUPPORTED_LANGUAGES: shiki.BundledLanguage[] = [
