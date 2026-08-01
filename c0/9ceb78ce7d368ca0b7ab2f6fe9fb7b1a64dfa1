@@ -1,0 +1,51 @@
+src/components/RightPanel/NotesTab.tsx
+  s_9221a009a6bea9::t_fed29ce41075ed 240-256
+  s_9221a009a6bea9::t_dd80313ab9d273 138
+  s_9221a009a6bea9::t_ee68c92c8c2d47 1,3,17-24,32,35-36,40,49,57-61,72,139-140,142-144,151-154,168-169,176,224-225,230,237-239,257
+  s_9221a009a6bea9::t_ad33d22834c446 4-8,25-31,33-34,37-39,41-48,50-56,67-71,134-137,145-150,155-167,170-175,177-181,183-223,231-236
+  s_9221a009a6bea9::t_32aee2f714f47c 226-229
+tests/workspace-state.test.ts
+  s_9221a009a6bea9::t_80d4b61f6419dd 1-5,7-23,25-38
+  s_9221a009a6bea9::t_b9d6aceef196a4 6,24
+src/index.css
+  s_9221a009a6bea9::t_ce78d47f0a240b 166-176
+src/components/WorktreeItem.tsx
+  s_9221a009a6bea9::t_bea523e39e771c 3,6,83-84,201-202,233,287,293-294,297-298,308,314
+  s_9221a009a6bea9::t_32aee2f714f47c 280,295-296
+src/App.tsx
+  s_9221a009a6bea9::t_ce78d47f0a240b 12,235-240
+src/types/index.ts
+  s_9221a009a6bea9::t_80d4b61f6419dd 16-29
+src/lib/workspace-state.ts
+  s_9221a009a6bea9::t_80d4b61f6419dd 1-11,13-79
+  s_9221a009a6bea9::t_7ef8b50989118a 12
+src/components/Sidebar.tsx
+  s_9221a009a6bea9::t_029e2c34b9280b 281-284,1051
+  s_9221a009a6bea9::t_6bf9c9c17ba6d0 822,824,849-850,889-890
+  s_9221a009a6bea9::t_32aee2f714f47c 38-42,803-821,921-936,940-943,945-952,969-971,973-977,1028-1045,1065-1080,1085
+  s_9221a009a6bea9::t_08ddecdcf4a670 909,911,916-920,937-939,944,953-957,985,1049,1063-1064,1081-1082
+  s_9221a009a6bea9::t_99b5339ff5ecec 12,15,88,127
+src/components/WorkspaceContextStrip.tsx
+  s_9221a009a6bea9::t_d6bbaa46b6bc55 3,46
+  s_9221a009a6bea9::t_b9d6aceef196a4 45
+  s_9221a009a6bea9::t_ce78d47f0a240b 1-2,4-8,18-19,26-40,47-50,59-62
+  s_9221a009a6bea9::t_4536de1c22d1bc 9-17,20-25,41-44,51-58
+src/store/index.ts
+  s_9221a009a6bea9::t_cdb53cb581881f 18,38-42,54,101,156-159,252,273,285,374,439,484-487,1237-1245,1247,1776-1783
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c09ceb78ce7d368ca0b7ab2f6fe9fb7b1a64dfa1",
+  "prompts": {},
+  "sessions": {
+    "s_9221a009a6bea9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fbb7f-0871-7773-a20d-e538150c0887",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
