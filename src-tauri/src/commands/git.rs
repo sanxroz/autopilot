@@ -1050,6 +1050,7 @@ mod tests {
         let _guard = TEST_MUTEX.lock();
         let worktree_path = unique_temp_dir("inline-edit");
         fs::create_dir_all(worktree_path.join("src")).expect("create worktree temp dir");
+        Repository::init(&worktree_path).expect("initialize worktree repository");
         fs::write(worktree_path.join("src/app.ts"), "before\n").expect("write source file");
 
         save_worktree_file_inner(
@@ -1071,6 +1072,27 @@ mod tests {
         .is_err());
 
         fs::remove_dir_all(&worktree_path).expect("remove worktree temp dir");
+    }
+
+    #[test]
+    fn save_worktree_file_rejects_non_repository_directory() {
+        let _guard = TEST_MUTEX.lock();
+        let directory = unique_temp_dir("inline-edit-non-repo");
+        fs::create_dir_all(&directory).expect("create temp dir");
+        fs::write(directory.join("victim.txt"), "unchanged\n").expect("write victim file");
+
+        assert!(save_worktree_file_inner(
+            directory.to_str().expect("utf-8 directory path"),
+            "victim.txt",
+            "overwritten\n",
+        )
+        .is_err());
+        assert_eq!(
+            fs::read_to_string(directory.join("victim.txt")).expect("read victim file"),
+            "unchanged\n",
+        );
+
+        fs::remove_dir_all(&directory).expect("remove temp dir");
     }
 }
 
@@ -1582,6 +1604,16 @@ fn save_worktree_file_inner(
     }
 
     let worktree = std::fs::canonicalize(worktree_path).map_err(|e| e.to_string())?;
+    let repository = Repository::open(&worktree)
+        .map_err(|_| "Worktree path must be a Git repository".to_string())?;
+    let repository_workdir = repository
+        .workdir()
+        .ok_or_else(|| "Worktree path must be a non-bare Git worktree".to_string())?
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    if repository_workdir != worktree {
+        return Err("Worktree path must be a Git worktree root".to_string());
+    }
     let requested_path = worktree.join(relative_path);
     let parent = requested_path
         .parent()

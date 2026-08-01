@@ -921,6 +921,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
       isDarkMode: getThemeMode() === 'dark',
     });
 
+    const worktreeStillExists = get().repositories.some((repository) =>
+      repository.worktrees.some((candidate) => candidate.path === worktree.path)
+    );
+    if (!worktreeStillExists) {
+      await invoke('close_terminal', { terminalId: result.terminal_id }).catch(console.error);
+      return null;
+    }
+
     const terminal: TerminalInstance = {
       id: result.terminal_id,
       worktreePath: worktree.path,
@@ -933,12 +941,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
     };
 
     set((state) => {
-      const tabs = [...state.currentTerminalTabs, tab];
+      const existingTabs = state.terminalsByWorktree[worktree.path]?.tabs ?? [];
+      const tabs = [...existingTabs, tab];
+      const isSelectedWorktree = state.selectedWorktree?.path === worktree.path;
       return {
-        currentTerminalTabs: tabs,
-        currentActiveTerminalTabId: tab.id,
-        currentTerminals: tab.terminals,
-        currentActiveTerminalId: terminal.id,
+        ...(isSelectedWorktree
+          ? {
+              currentTerminalTabs: tabs,
+              currentActiveTerminalTabId: tab.id,
+              currentTerminals: tab.terminals,
+              currentActiveTerminalId: terminal.id,
+            }
+          : {}),
         terminalsByWorktree: {
           ...state.terminalsByWorktree,
           [worktree.path]: { tabs, activeTabId: tab.id },
