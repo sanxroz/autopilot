@@ -37,10 +37,12 @@ interface CommentsTabProps {
   repoPath: string | null;
   prNumber: number | null;
   prStatus: PRStatus | null;
+  children?: React.ReactNode;
 }
 
 function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
+  if (!Number.isFinite(date.getTime())) return "";
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);
@@ -67,7 +69,7 @@ function CopyButton({ text, className, title = "Copy code" }: { text: string; cl
     <button
       onClick={handleCopy}
       className={cn(
-        "p-1.5 rounded transition-all duration-200 hover:scale-110 active:scale-95",
+        "rounded p-1.5 transition-[background-color,color,transform] duration-150 active:scale-95",
         "hover:bg-hover text-tertiary hover:text-primary",
         className
       )}
@@ -75,7 +77,7 @@ function CopyButton({ text, className, title = "Copy code" }: { text: string; cl
       aria-label={copied ? "Copied" : title}
     >
       {copied ? (
-        <Check className="w-3.5 h-3.5 text-semantic-success animate-in zoom-in duration-200" />
+        <Check className="h-3.5 w-3.5 text-semantic-success" />
       ) : (
         <Copy className="w-3.5 h-3.5" />
       )}
@@ -124,26 +126,37 @@ function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
   );
 }
 
-export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) {
+export function CommentsTab({
+  repoPath,
+  prNumber,
+  prStatus,
+  children,
+}: CommentsTabProps) {
   const [expandedImage, setExpandedImage] = useState<{ src: string; alt: string } | null>(null);
   const { prDetails, isLoading, error, fetchData } = useCachedPRData({ repoPath, prNumber, prStatus });
 
   const markdownComponents = {
     ...sharedMarkdownComponents,
-    // Override: compact spacing for comment context
-    p: ({ children }: { children?: React.ReactNode }) => (
-      <p className="my-1.5 first:mt-0 last:mb-0">{children}</p>
+    h1: ({ children }: { children?: React.ReactNode }) => (
+      <h1 className="mb-2 mt-4 text-sm font-semibold leading-5 text-primary first:mt-0">{children}</h1>
     ),
-    // Override: clickable images for comment context
+    h2: ({ children }: { children?: React.ReactNode }) => (
+      <h2 className="mb-2 mt-4 border-0 p-0 text-[13px] font-semibold leading-5 text-primary first:mt-0">{children}</h2>
+    ),
+    h3: ({ children }: { children?: React.ReactNode }) => (
+      <h3 className="mb-1.5 mt-3 text-[13px] font-medium leading-5 text-primary first:mt-0">{children}</h3>
+    ),
+    p: ({ children }: { children?: React.ReactNode }) => (
+      <p className="my-2 leading-5 text-secondary first:mt-0 last:mb-0">{children}</p>
+    ),
     img: ({ src, alt }: { src?: string; alt?: string }) => (
       <img
         src={src}
         alt={alt || ""}
-        className="max-w-full rounded my-2 cursor-pointer hover:opacity-90 transition-opacity"
+        className="my-3 max-w-full cursor-pointer rounded-md border border-border-subtle transition-opacity hover:opacity-90"
         onClick={() => src && setExpandedImage({ src, alt: alt || "" })}
       />
     ),
-    // Override: compact code blocks with copy button
     pre: ({ children }: { children?: React.ReactNode }) => {
       const codeContent = (() => {
         try {
@@ -157,11 +170,11 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
         return "";
       })();
       return (
-        <div className="relative group my-2">
-          <pre className="p-3 rounded text-[13px] overflow-x-auto bg-tertiary">
+        <div className="group relative my-3">
+          <pre className="overflow-x-auto rounded-md border border-border-subtle bg-secondary p-3 text-xs leading-5">
             {children}
           </pre>
-          <CopyButton text={codeContent} className="absolute top-2 right-2 opacity-0 group-hover:opacity-100" />
+          <CopyButton text={codeContent} className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100" />
         </div>
       );
     },
@@ -187,30 +200,8 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
     );
   }
 
-  if (isLoading) {
-    return (
-      <div className="flex-1 flex items-center justify-center gap-2 text-sm text-tertiary">
-        <Loader className="w-4 h-4 animate-spin" />
-        <span>Loading comments...</span>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6">
-        <span className="text-sm text-center text-tertiary">{error}</span>
-        <button
-          onClick={() => fetchData()}
-          className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-tertiary text-secondary hover:bg-hover"
-        >
-          Try again
-        </button>
-      </div>
-    );
-  }
-
   const comments = prDetails?.comments || [];
+  const issueComments = comments.filter(c => c.comment_type === 'issue');
 
   const reviews = comments.filter(
     (c) => c.comment_type === 'review' && (
@@ -234,9 +225,17 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
   }
 
   const sortedFiles = Array.from(commentsByFile.keys()).sort();
+  const description = prDetails?.body?.replace(/<!--[\s\S]*?-->/g, '').trim();
+  const activityCount = issueComments.length + reviews.length + threadComments.length;
 
   const handleCopyAll = async () => {
     let allText = "";
+    if (issueComments.length > 0) {
+      allText += "# Conversation\n\n";
+      issueComments.forEach(comment => {
+        allText += `## ${comment.author}\n${comment.body}\n\n`;
+      });
+    }
     if (reviews.length > 0) {
       allText += "# Reviews\n\n";
       reviews.forEach(review => {
@@ -273,34 +272,171 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
           onClose={() => setExpandedImage(null)}
         />
       )}
-      <div className="flex flex-col h-full overflow-auto bg-primary">
-        {(reviews.length > 0 || sortedFiles.length > 0) && (
-            <div className="p-2 border-b border-border bg-primary flex justify-end sticky top-0 z-20 backdrop-blur-md">
-                <button 
-                    onClick={handleCopyAll}
-                    className="flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium bg-tertiary text-secondary hover:bg-hover hover:scale-105 active:scale-95 transition-all duration-200"
-                >
-                    <Copy className="w-3 h-3" />
-                    Copy All Comments
-                </button>
+      <div className="flex h-full flex-col overflow-auto bg-primary">
+        {prStatus && (
+          <header className="px-5 pb-5 pt-6">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-tertiary">
+              <span
+                className={cn(
+                  "h-2 w-2 shrink-0 rounded-full",
+                  prStatus.merged
+                    ? "bg-semantic-merged"
+                    : prStatus.draft
+                      ? "bg-border-strong"
+                      : prStatus.state === "open"
+                        ? "bg-semantic-success"
+                        : "bg-border-strong",
+                )}
+                aria-hidden="true"
+              />
+              <span className="font-medium text-secondary">
+                {prStatus.merged ? "Merged" : prStatus.draft ? "Draft" : prStatus.state === "open" ? "Open" : "Closed"}
+              </span>
+              <span aria-hidden="true">·</span>
+              <span className="font-mono tabular-nums">#{prStatus.number}</span>
+              <span aria-hidden="true">·</span>
+              <span>{prStatus.author}</span>
+              <span aria-hidden="true">·</span>
+              <span>{formatDate(prStatus.created_at)}</span>
             </div>
+
+            <h1 className="mt-3 text-pretty text-[17px] font-semibold leading-6 tracking-[-0.018em] text-primary">
+              {prStatus.title}
+            </h1>
+
+            <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[11px] text-tertiary">
+              <span className="max-w-full truncate rounded-md bg-secondary px-2 py-1 font-mono text-secondary">
+                {prStatus.head_branch} → {prStatus.base_branch}
+              </span>
+              <span className="font-mono tabular-nums text-semantic-success">+{prStatus.additions}</span>
+              <span className="font-mono tabular-nums text-semantic-error">−{prStatus.deletions}</span>
+            </div>
+
+            {prStatus.labels.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Pull request labels">
+                {prStatus.labels.map((label) => (
+                  <span key={label} className="rounded-md border border-border-subtle px-2 py-0.5 text-[11px] text-tertiary">
+                    {label}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {(prStatus.review_decision || prStatus.requested_reviewers.length > 0) && (
+              <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px] text-tertiary">
+                {prStatus.review_decision && (
+                  <span className="rounded-md bg-secondary px-2 py-0.5 text-secondary">
+                    {prStatus.review_decision === "APPROVED"
+                      ? "Approved"
+                      : prStatus.review_decision === "CHANGES_REQUESTED"
+                        ? "Changes requested"
+                        : "Review required"}
+                  </span>
+                )}
+                {prStatus.requested_reviewers.map((reviewer) => (
+                  <span key={reviewer} className="rounded-md border border-border-subtle px-2 py-0.5">
+                    Review requested from {reviewer}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-5">
+              <h2 className="sr-only">Description</h2>
+              {isLoading && !prDetails ? (
+                <div className="space-y-2" aria-label="Loading pull request description">
+                  <div className="h-3 w-full rounded bg-hover" />
+                  <div className="h-3 w-5/6 rounded bg-hover" />
+                  <div className="h-3 w-2/3 rounded bg-hover" />
+                </div>
+              ) : error ? (
+                <div className="rounded-md border border-semantic-error/30 bg-semantic-error-muted p-3 text-xs text-semantic-error">
+                  <p>Couldn’t load the pull request description.</p>
+                  <button type="button" onClick={() => fetchData()} className="mt-2 font-medium underline underline-offset-2">
+                    Try again
+                  </button>
+                </div>
+              ) : description ? (
+                <article className="text-[13px] leading-5 text-primary select-text">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeRaw, rehypeSanitize]}
+                    components={markdownComponents}
+                  >
+                    {description}
+                  </ReactMarkdown>
+                </article>
+              ) : (
+                <p className="text-sm text-tertiary">No description provided.</p>
+              )}
+            </div>
+          </header>
+        )}
+
+        {children}
+
+        <section aria-labelledby="pr-activity-heading" className="border-t border-border-subtle">
+          <div className="flex min-h-14 items-center justify-between gap-3 px-5 py-3">
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-2">
+                <h2 id="pr-activity-heading" className="text-sm font-semibold text-primary">Activity</h2>
+                {activityCount > 0 && <span className="font-mono text-[11px] tabular-nums text-tertiary">{activityCount}</span>}
+              </div>
+              <p className="mt-0.5 text-xs text-tertiary">Conversation and review threads</p>
+            </div>
+            {activityCount > 0 && (
+              <button
+                type="button"
+                onClick={handleCopyAll}
+                className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[11px] text-tertiary transition-colors hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
+              >
+                <Copy className="h-3 w-3" />
+                Copy all
+              </button>
+            )}
+          </div>
+
+        {isLoading && !prDetails && (
+          <div className="flex items-center justify-center gap-2 px-4 py-8 text-sm text-tertiary">
+            <Loader className="h-4 w-4 animate-spin" />
+            <span>Loading activity…</span>
+          </div>
+        )}
+
+        {error && !prDetails && (
+          <p className="px-4 py-8 text-center text-sm text-tertiary">
+            Activity couldn’t be loaded.
+          </p>
+        )}
+
+        {issueComments.length > 0 && (
+          <div className="divide-y divide-border-subtle border-t border-border-subtle">
+            {issueComments.map((comment) => (
+              <CommentRow
+                key={getCommentKey(comment)}
+                comment={comment}
+                renderBody={renderCommentBody}
+                formatDate={formatDate}
+              />
+            ))}
+          </div>
         )}
 
         {reviews.length > 0 && (
-           <div className="border-b border-border bg-secondary/30">
+           <div className="divide-y divide-border-subtle border-t border-border-subtle">
              {reviews.map((review) => (
-               <div key={getCommentKey(review)} className="px-4 py-3 border-b border-border last:border-0 flex items-start gap-3 group relative">
+               <div key={getCommentKey(review)} className="group relative flex items-start gap-3 px-5 py-4">
                  <Avatar name={review.author} />
                  <div className="flex-1 min-w-0">
-                   <div className="flex items-center gap-2 mb-1">
-                     <span className="text-sm font-semibold text-primary">{review.author}</span>
+                   <div className="mb-1 flex flex-wrap items-center gap-2">
+                     <span className="text-[13px] font-medium text-primary">{review.author}</span>
                      <span className={cn(
-                       "text-xs font-medium px-2 py-0.5 rounded-full border",
+                       "rounded-md px-1.5 py-0.5 text-[10px] font-medium",
                        review.state === 'APPROVED'
-                         ? "bg-semantic-success/10 text-semantic-success border-semantic-success/20"
+                         ? "bg-semantic-success-muted text-semantic-success"
                          : review.state === 'CHANGES_REQUESTED'
-                           ? "bg-semantic-error/10 text-semantic-error border-semantic-error/20"
-                           : "bg-semantic-info/10 text-semantic-info border-semantic-info/20"
+                           ? "bg-semantic-error-muted text-semantic-error"
+                           : "bg-secondary text-secondary"
                      )}>
                        {review.state === 'APPROVED'
                          ? 'Approved'
@@ -308,13 +444,15 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
                            ? 'Requested Changes'
                            : 'Commented'}
                      </span>
-                     <span className="text-xs text-tertiary">{formatDate(review.created_at)}</span>
-                     <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
+                     {formatDate(review.created_at) && (
+                       <span className="text-[11px] text-tertiary">{formatDate(review.created_at)}</span>
+                     )}
+                     <div className="ml-auto opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                         <CopyButton text={`Review by ${review.author} (${review.state}):\n${review.body}`} className="bg-transparent hover:bg-hover" title="Copy review" />
                      </div>
                    </div>
                    {review.body && (
-                     <div className="text-sm text-secondary mt-2">
+                     <div className="mt-2 text-[13px] text-secondary">
                        {renderCommentBody(review.body)}
                      </div>
                    )}
@@ -324,22 +462,23 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
            </div>
         )}
 
-        <div className="divide-y divide-border">
+        <div>
           {sortedFiles.map(filePath => {
             const fileComments = commentsByFile.get(filePath) || [];
             fileComments.sort((a, b) => (a.line || 0) - (b.line || 0));
 
             return (
-              <div key={filePath} className="bg-primary group/file">
-                <div className="px-4 py-2 bg-secondary border-b border-border flex items-center gap-2 sticky top-[40px] z-10 backdrop-blur-sm justify-between">
+              <div key={filePath} className="group/file bg-primary">
+                <div className="flex min-h-9 items-center justify-between gap-2 border-y border-border-subtle bg-secondary/50 px-5 py-2">
                   <div className="flex items-center gap-2 overflow-hidden">
-                    <Code2 className="w-4 h-4 text-tertiary shrink-0" />
-                    <span className="text-xs font-medium text-secondary font-mono truncate" title={filePath}>{filePath}</span>
+                    <Code2 className="h-3.5 w-3.5 shrink-0 text-tertiary" />
+                    <span className="truncate font-mono text-[11px] text-secondary" title={filePath}>{filePath}</span>
                   </div>
                   <button 
                     onClick={() => handleCopyFileComments(filePath, fileComments)}
-                    className="p-1.5 rounded hover:bg-hover hover:scale-110 active:scale-95 text-tertiary opacity-0 group-hover/file:opacity-100 transition-all duration-200"
+                    className="rounded p-1.5 text-tertiary opacity-0 transition-[background-color,opacity] duration-150 hover:bg-hover hover:text-primary group-hover/file:opacity-100 group-focus-within/file:opacity-100"
                     title="Copy file comments"
+                    aria-label={`Copy comments for ${filePath}`}
                   >
                     <Copy className="w-3.5 h-3.5" />
                   </button>
@@ -360,13 +499,14 @@ export function CommentsTab({ repoPath, prNumber, prStatus }: CommentsTabProps) 
             );
           })}
           
-          {sortedFiles.length === 0 && reviews.length === 0 && (
+          {!isLoading && !error && sortedFiles.length === 0 && reviews.length === 0 && issueComments.length === 0 && (
              <div className="flex flex-col items-center justify-center py-12 text-tertiary">
                <MessageSquare className="w-8 h-8 mb-2 opacity-50" />
-               <p className="text-sm">No review comments</p>
+               <p className="text-sm">No activity yet</p>
              </div>
           )}
         </div>
+        </section>
       </div>
     </>
   );
@@ -379,59 +519,57 @@ function CommentRow({ comment, isResolved, renderBody, formatDate }: {
     formatDate: (date: string) => string;
 }) {
     const [isExpanded, setIsExpanded] = useState(!isResolved);
+    const formattedDate = formatDate(comment.created_at);
 
     if (isResolved && !isExpanded) {
         return (
-            <div 
-                className="px-4 py-2 flex items-center gap-3 cursor-pointer hover:bg-hover/50 transition-colors group"
+            <button
+                type="button"
+                className="group flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-hover/40 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-[-2px]"
                 onClick={() => setIsExpanded(true)}
             >
-                <div className="w-6 flex justify-center">
-                    <CheckCircle2 className="w-4 h-4 text-tertiary" />
+                <div className="flex w-6 justify-center">
+                    <CheckCircle2 className="h-3.5 w-3.5 text-tertiary" />
                 </div>
                 <div className="flex-1 flex items-center gap-2 overflow-hidden">
-                    <span className="text-xs text-tertiary font-medium">Resolved comment by {comment.author}</span>
-                    <span className="text-xs text-muted truncate">{comment.body.substring(0, 50)}...</span>
+                    <span className="text-xs font-medium text-tertiary">Resolved by {comment.author}</span>
+                    <span className="truncate text-xs text-muted">{comment.body.substring(0, 50)}…</span>
                 </div>
-                <div className="flex items-center gap-2">
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                        <CopyButton text={comment.body} className="bg-transparent hover:bg-hover p-1" title="Copy comment" />
-                    </div>
-                    <ChevronDown className="w-4 h-4 text-tertiary -rotate-90" />
-                </div>
-            </div>
+                <ChevronDown className="h-3.5 w-3.5 -rotate-90 text-tertiary" />
+            </button>
         );
     }
 
     return (
-        <div className={cn("px-4 py-3 hover:bg-hover/20 transition-colors group/comment relative", isResolved && "bg-secondary/10")}>
+        <div className={cn("group/comment relative px-5 py-4 transition-colors hover:bg-hover/20", isResolved && "bg-secondary/10")}>
             <div className="flex items-start gap-3">
                 <Avatar name={comment.author} />
                 <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm font-medium text-primary">{comment.author}</span>
-                        <span className="text-xs text-tertiary">{formatDate(comment.created_at)}</span>
+                    <div className="mb-1 flex items-center gap-2">
+                        <span className="text-[13px] font-medium text-primary">{comment.author}</span>
+                        {formattedDate && <span className="text-[11px] text-tertiary">{formattedDate}</span>}
                         <div className="ml-auto flex items-center gap-2">
                             {comment.line && (
-                                <span className="text-[10px] bg-tertiary px-1.5 py-0.5 rounded text-secondary font-mono">
+                                <span className="rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-tertiary">
                                     Line {comment.line}
                                 </span>
                             )}
                             {isResolved && (
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); setIsExpanded(false); }}
-                                    className="text-tertiary hover:text-primary p-1 hover:scale-110 active:scale-95 transition-transform"
+                                    className="rounded p-1 text-tertiary transition-colors hover:bg-hover hover:text-primary"
                                     title="Collapse resolved"
+                                    aria-label="Collapse resolved comment"
                                 >
                                     <CheckCircle2 className="w-4 h-4 text-semantic-success" />
                                 </button>
                             )}
-                            <div className="opacity-0 group-hover/comment:opacity-100 transition-opacity">
+                            <div className="opacity-0 transition-opacity group-hover/comment:opacity-100 group-focus-within/comment:opacity-100">
                                 <CopyButton text={comment.body} className="bg-transparent hover:bg-hover p-1" title="Copy comment" />
                             </div>
                         </div>
                     </div>
-                    <div className="text-sm text-secondary">
+                    <div className="text-[13px] text-secondary">
                         {renderBody(comment.body)}
                     </div>
                 </div>

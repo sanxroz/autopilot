@@ -153,6 +153,7 @@ pub fn run() {
             git::get_file_diff,
             git::get_uncommitted_files,
             git::get_uncommitted_diff,
+            git::save_worktree_file,
             git::get_file_content,
             git::get_git_status,
             git::git_stage_files,

@@ -227,13 +227,15 @@ export const WorktreeItem = memo(function WorktreeItem({
       tabIndex={0}
       aria-label={`${branch || name} workspace${prStatus ? `, PR #${prStatus.number}` : ""}${isActive ? ", currently selected" : ""}`}
       className={cn(
-        "group rounded-md pl-3 pr-1.5 py-2 cursor-pointer relative w-full transition-colors text-primary",
-        isActive ? "bg-active" : "bg-transparent hover:bg-hover",
+        "group relative w-full cursor-pointer rounded-lg py-1.5 pl-3 pr-1.5 text-primary transition-colors",
+        isActive
+          ? "bg-active shadow-[inset_0_0_0_1px_var(--color-border-strong)]"
+          : "bg-transparent hover:bg-hover",
         className
       )}
     >
       <div className="flex flex-col gap-0.5 w-full relative min-w-0">
-        <div className="flex items-center gap-2 w-full min-w-0">
+        <div className="flex items-center gap-1.5 w-full min-w-0">
           <div className="flex items-center justify-center flex-shrink-0">
             <GitBranch className={cn("w-3.5 h-3.5", statusInfo?.colorClass || "text-tertiary")} />
           </div>

@@ -5,28 +5,28 @@
 /* Theme CSS Variables */
 :root {
   /* Background colors - Dark theme (default) */
-  --color-bg-primary: #000;
-  --color-bg-secondary: rgba(20, 20, 20, 0.9);
-  --color-bg-tertiary: rgba(26, 26, 26, 0.95);
-  --color-bg-hover: rgba(31, 31, 31, 0.95);
-  --color-bg-active: rgba(37, 37, 37, 0.95);
-  --color-bg-solid: #0D0D0D;
+  --color-bg-primary: #000000;
+  --color-bg-secondary: #131515;
+  --color-bg-tertiary: #1b1c1e;
+  --color-bg-hover: #202124;
+  --color-bg-active: #292a2d;
+  --color-bg-solid: #131515;
 
   /* Border colors */
-  --color-border-subtle: rgba(31, 31, 31, 0.8);
-  --color-border-default: rgba(42, 42, 42, 0.8);
-  --color-border-strong: rgba(51, 51, 51, 0.9);
+  --color-border-subtle: rgba(255, 255, 255, 0.055);
+  --color-border-default: rgba(255, 255, 255, 0.08);
+  --color-border-strong: rgba(255, 255, 255, 0.12);
 
   /* Text colors */
-  --color-text-primary: #E8E2D9;
-  --color-text-secondary: #A89F91;
-  --color-text-tertiary: #6B6358;
-  --color-text-muted: #4A453D;
+  --color-text-primary: #e7e7e8;
+  --color-text-secondary: #a2a3a7;
+  --color-text-tertiary: #707176;
+  --color-text-muted: #4b4c50;
 
   /* Accent colors */
-  --color-accent-primary: #D4A574;
-  --color-accent-secondary: #C9956B;
-  --color-accent-hover: #E0B585;
+  --color-accent-primary: #7AA2F7;
+  --color-accent-secondary: #6B8FE0;
+  --color-accent-hover: #8FB3FF;
 
   /* Semantic colors */
   --color-semantic-error: #DC2626;
@@ -43,8 +43,14 @@
   --color-semantic-merged-muted: rgba(107, 33, 168, 0.5);
 
   /* Scrollbar */
-  --color-scrollbar-thumb: rgba(168, 159, 145, 0.2);
-  --color-scrollbar-thumb-hover: rgba(168, 159, 145, 0.35);
+  --color-scrollbar-thumb: rgba(255, 255, 255, 0.14);
+  --color-scrollbar-thumb-hover: rgba(255, 255, 255, 0.24);
+
+  /* Elevation */
+  --shadow-panel:
+    0 0 0 1px rgba(255, 255, 255, 0.018),
+    0 1px 2px rgba(0, 0, 0, 0.28),
+    0 12px 32px rgba(0, 0, 0, 0.2);
 }
 
 [data-theme="light"] {
@@ -68,9 +74,9 @@
   --color-text-muted: rgba(38, 37, 33, 0.38);
 
   /* Accent colors */
-  --color-accent-primary: #262521;
-  --color-accent-secondary: rgba(38, 37, 33, 0.85);
-  --color-accent-hover: #000000;
+  --color-accent-primary: #2563EB;
+  --color-accent-secondary: #1D4ED8;
+  --color-accent-hover: #1E40AF;
 
   /* Semantic colors - muted variants differ */
   --color-semantic-error: #DC2626;
@@ -89,6 +95,16 @@
   /* Scrollbar */
   --color-scrollbar-thumb: rgba(38, 37, 33, 0.15);
   --color-scrollbar-thumb-hover: rgba(38, 37, 33, 0.25);
+
+  /* Elevation */
+  --shadow-panel:
+    0 0 0 1px rgba(38, 37, 33, 0.025),
+    0 1px 2px rgba(38, 37, 33, 0.055),
+    0 8px 24px rgba(38, 37, 33, 0.055);
+}
+
+.app-panel {
+  box-shadow: var(--shadow-panel);
 }
 
 /* Position native Tauri window controls at top-left */
@@ -203,46 +219,57 @@ body {
   overflow-y: auto !important;
 }
 
-.diff-overlay [class*="diff-view"] {
-  --diff-font-size--: 12px;
-  --diff-font-family--:
+.diff-overlay,
+.agent-diff-wrapper {
+  color-scheme: dark;
+  --diffs-font-size: 12px;
+  --diffs-font-family:
     ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  --diff-line-height--: 1.5;
-  --diff-hunk-line-height--: 28px;
-  --diff-background-color--: transparent;
-  --diff-add-background-color--: rgba(46, 160, 67, 0.15);
-  --diff-del-background-color--: rgba(248, 81, 73, 0.15);
-  --diff-add-widget-background-color--: rgba(46, 160, 67, 0.3);
-  --diff-del-widget-background-color--: rgba(248, 81, 73, 0.3);
-  --diff-hunk-background-color--: rgba(56, 139, 253, 0.1);
-  --diff-hunk-hover-background-color--: rgba(56, 139, 253, 0.2);
-  --diff-line-number-color--: #6e7681;
-  --diff-content-color--: #e6edf3;
-  --diff-expand-content-color--: #6e7681;
-  --diff-add-line-number-background-color--: rgba(46, 160, 67, 0.2);
-  --diff-del-line-number-background-color--: rgba(248, 81, 73, 0.2);
-  --diff-border-color--: #30363d;
+  --diffs-line-height: 1.5;
+  --diffs-dark-bg: #000;
+  --diffs-dark: #e6edf3;
+  --diffs-addition-color: #3fb950;
+  --diffs-deletion-color: #f85149;
+  --diffs-modified-color: #58a6ff;
+  --diffs-bg-addition-override: #238636;
+  --diffs-bg-deletion-override: #da3633;
+  --diffs-bg-addition-emphasis-override: rgba(46, 160, 67, 0.28);
+  --diffs-bg-deletion-emphasis-override: rgba(248, 81, 73, 0.28);
+  --diffs-bg-context-override: rgba(255, 255, 255, 0.025);
+  --diffs-bg-context-gutter-override: rgba(255, 255, 255, 0.045);
+  --diffs-bg-separator-override: rgba(56, 139, 253, 0.12);
+  --diffs-fg-number-override: #6e7681;
 }
 
-.diff-overlay.light-mode [class*="diff-view"] {
-  --diff-background-color--: transparent;
-  --diff-add-background-color--: rgba(46, 160, 67, 0.12);
-  --diff-del-background-color--: rgba(248, 81, 73, 0.12);
-  --diff-add-widget-background-color--: rgba(46, 160, 67, 0.25);
-  --diff-del-widget-background-color--: rgba(248, 81, 73, 0.25);
-  --diff-hunk-background-color--: rgba(56, 139, 253, 0.08);
-  --diff-hunk-hover-background-color--: rgba(56, 139, 253, 0.15);
-  --diff-line-number-color--: #57606a;
-  --diff-content-color--: #1f2328;
-  --diff-expand-content-color--: #57606a;
-  --diff-add-line-number-background-color--: rgba(46, 160, 67, 0.15);
-  --diff-del-line-number-background-color--: rgba(248, 81, 73, 0.15);
-  --diff-border-color--: #d0d7de;
+.diff-overlay.light-mode,
+[data-theme="light"] .agent-diff-wrapper {
+  color-scheme: light;
+  --diffs-light-bg: #fff;
+  --diffs-light: #1f2328;
+  --diffs-addition-color: #1a7f37;
+  --diffs-deletion-color: #cf222e;
+  --diffs-modified-color: #0969da;
+  --diffs-bg-addition-override: #1a7f37;
+  --diffs-bg-deletion-override: #cf222e;
+  --diffs-bg-addition-emphasis-override: rgba(26, 127, 55, 0.2);
+  --diffs-bg-deletion-emphasis-override: rgba(207, 34, 46, 0.2);
+  --diffs-bg-context-override: rgba(31, 35, 40, 0.025);
+  --diffs-bg-context-gutter-override: rgba(31, 35, 40, 0.045);
+  --diffs-bg-separator-override: rgba(56, 139, 253, 0.09);
+  --diffs-fg-number-override: #57606a;
+}
+
+.diff-overlay diffs-container,
+.agent-diff-wrapper diffs-container {
+  color-scheme: dark;
+}
+
+.diff-overlay.light-mode diffs-container,
+[data-theme="light"] .agent-diff-wrapper diffs-container {
+  color-scheme: light;
 }
 
 .agent-diff-wrapper {
-  --diff-font-size--: 12px;
-  --diff-line-height--: 1.5;
   font-size: 12px;
   line-height: 1.5;
   width: 100%;

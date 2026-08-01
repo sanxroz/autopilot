@@ -3,8 +3,10 @@ use chrono::{DateTime, Utc};
 use git2::{BranchType, Delta, DiffOptions, Repository, WorktreeAddOptions};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::io::Write;
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Output, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use tauri::State;
 
 #[cfg(unix)]
@@ -62,16 +64,55 @@ pub struct FileDiffData {
     pub path: String,
     pub old_content: Option<String>,
     pub new_content: Option<String>,
+    pub worktree_content: Option<String>,
     pub patch: String,
+    pub is_binary: bool,
 }
 
-fn build_synthetic_new_file_patch(_file_path: &str, content: &str) -> String {
+fn diff_contains_binary(diff: &git2::Diff<'_>) -> bool {
+    let mut is_binary = false;
+    let mut file_callback = |_delta: git2::DiffDelta<'_>, _progress: f32| true;
+    let mut binary_callback = |_delta: git2::DiffDelta<'_>, _binary: git2::DiffBinary<'_>| {
+        is_binary = true;
+        true
+    };
+    let _ = diff.foreach(&mut file_callback, Some(&mut binary_callback), None, None);
+    is_binary
+}
+
+fn canonical_repository_workdir(repo: &Repository) -> Result<PathBuf, String> {
+    if !repo.is_worktree() {
+        return repo
+            .workdir()
+            .ok_or_else(|| "Not a regular repository".to_string())?
+            .canonicalize()
+            .map_err(|error| error.to_string());
+    }
+
+    let common_dir = std::fs::read_to_string(repo.path().join("commondir"))
+        .map_err(|error| error.to_string())?;
+    let common_dir = repo
+        .path()
+        .join(common_dir.trim())
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let main_repo = Repository::open(common_dir).map_err(|error| error.message().to_string())?;
+
+    main_repo
+        .workdir()
+        .ok_or_else(|| "Not a regular repository".to_string())?
+        .canonicalize()
+        .map_err(|error| error.to_string())
+}
+
+fn build_synthetic_new_file_patch(file_path: &str, content: &str) -> String {
     let lines: Vec<&str> = content.lines().collect();
     let line_count = lines.len();
 
     let mut patch = String::new();
 
     if line_count > 0 {
+        patch.push_str(&format!("--- /dev/null\n+++ b/{file_path}\n"));
         patch.push_str(&format!("@@ -0,0 +1,{} @@\n", line_count));
         for line in lines {
             patch.push('+');
@@ -306,69 +347,73 @@ fn get_diff_stats_vs_origin_default(repo_path: &std::path::Path) -> Option<DiffS
 }
 
 #[tauri::command]
-pub fn discover_repository(path: String) -> Result<RepoInfo, String> {
-    let path_buf = PathBuf::from(&path);
-    let repo = Repository::discover(&path_buf).map_err(|e| e.message().to_string())?;
+pub async fn discover_repository(path: String) -> Result<RepoInfo, String> {
+    tokio::task::spawn_blocking(move || {
+        let path_buf = PathBuf::from(&path);
+        let repo = Repository::discover(&path_buf).map_err(|e| e.message().to_string())?;
 
-    let workdir = repo
-        .workdir()
-        .ok_or("Not a regular repository")?
-        .to_path_buf();
+        let workdir = canonical_repository_workdir(&repo)?;
 
-    let name = workdir
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("unknown")
-        .to_string();
+        let name = workdir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
 
-    Ok(RepoInfo {
-        path: workdir.to_string_lossy().to_string(),
-        name,
+        Ok(RepoInfo {
+            path: workdir.to_string_lossy().to_string(),
+            name,
+        })
     })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-pub fn list_worktrees(repo_path: String) -> Result<Vec<WorktreeInfo>, String> {
-    let repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
-    let worktrees = repo.worktrees().map_err(|e| e.message().to_string())?;
+pub async fn list_worktrees(repo_path: String) -> Result<Vec<WorktreeInfo>, String> {
+    tokio::task::spawn_blocking(move || {
+        let repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
+        let worktrees = repo.worktrees().map_err(|e| e.message().to_string())?;
+        let mut result = Vec::new();
 
-    let mut result = Vec::new();
-
-    let main_workdir = repo.workdir().map(|p| p.to_path_buf());
-    if let Some(main_path) = main_workdir {
-        let branch = get_worktree_branch(&main_path);
-        let head_oid = get_worktree_head_oid(&main_path);
-        let last_modified = get_last_modified(&main_path);
-
-        result.push(WorktreeInfo {
-            name: "main".to_string(),
-            path: main_path.to_string_lossy().to_string(),
-            branch,
-            head_oid,
-            last_modified,
-            diff_stats: None,
-        });
-    }
-
-    for wt_name in worktrees.iter().flatten() {
-        if let Ok(wt) = repo.find_worktree(wt_name) {
-            let wt_path = wt.path().to_path_buf();
-            let branch = get_worktree_branch(&wt_path);
-            let head_oid = get_worktree_head_oid(&wt_path);
-            let last_modified = get_last_modified(&wt_path);
+        let main_workdir = repo.workdir().map(|p| p.to_path_buf());
+        if let Some(main_path) = main_workdir {
+            let branch = get_worktree_branch(&main_path);
+            let head_oid = get_worktree_head_oid(&main_path);
+            let last_modified = get_last_modified(&main_path);
 
             result.push(WorktreeInfo {
-                name: wt_name.to_string(),
-                path: wt_path.to_string_lossy().to_string(),
+                name: "main".to_string(),
+                path: main_path.to_string_lossy().to_string(),
                 branch,
                 head_oid,
                 last_modified,
                 diff_stats: None,
             });
         }
-    }
 
-    Ok(result)
+        for wt_name in worktrees.iter().flatten() {
+            if let Ok(wt) = repo.find_worktree(wt_name) {
+                let wt_path = wt.path().to_path_buf();
+                let branch = get_worktree_branch(&wt_path);
+                let head_oid = get_worktree_head_oid(&wt_path);
+                let last_modified = get_last_modified(&wt_path);
+
+                result.push(WorktreeInfo {
+                    name: wt_name.to_string(),
+                    path: wt_path.to_string_lossy().to_string(),
+                    branch,
+                    head_oid,
+                    last_modified,
+                    diff_stats: None,
+                });
+            }
+        }
+
+        Ok(result)
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -444,34 +489,32 @@ pub fn list_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
         .ok()
         .and_then(|h| h.shorthand().map(String::from));
 
-    for branch_result in repo
+    for (branch, _) in repo
         .branches(Some(BranchType::Local))
         .map_err(|e| e.message().to_string())?
+        .flatten()
     {
-        if let Ok((branch, _)) = branch_result {
-            if let Some(name) = branch.name().ok().flatten() {
-                branches.push(BranchInfo {
-                    name: name.to_string(),
-                    is_remote: false,
-                    is_head: head_name.as_deref() == Some(name),
-                });
-            }
+        if let Some(name) = branch.name().ok().flatten() {
+            branches.push(BranchInfo {
+                name: name.to_string(),
+                is_remote: false,
+                is_head: head_name.as_deref() == Some(name),
+            });
         }
     }
 
-    for branch_result in repo
+    for (branch, _) in repo
         .branches(Some(BranchType::Remote))
         .map_err(|e| e.message().to_string())?
+        .flatten()
     {
-        if let Ok((branch, _)) = branch_result {
-            if let Some(name) = branch.name().ok().flatten() {
-                if !name.contains("HEAD") {
-                    branches.push(BranchInfo {
-                        name: name.to_string(),
-                        is_remote: true,
-                        is_head: false,
-                    });
-                }
+        if let Some(name) = branch.name().ok().flatten() {
+            if !name.contains("HEAD") {
+                branches.push(BranchInfo {
+                    name: name.to_string(),
+                    is_remote: true,
+                    is_head: false,
+                });
             }
         }
     }
@@ -756,6 +799,117 @@ mod tests {
         ))
     }
 
+    #[test]
+    fn detects_binary_file_diffs() {
+        let _guard = TEST_MUTEX.lock();
+        let repo_path = unique_temp_dir("binary-diff");
+        fs::create_dir_all(&repo_path).expect("create repo temp dir");
+        let repo = Repository::init(&repo_path).expect("initialize repository");
+        let file_path = repo_path.join("model.pt");
+
+        fs::write(&file_path, [0, 1, 2, 3]).expect("write original binary file");
+        let mut index = repo.index().expect("open repository index");
+        index
+            .add_path(std::path::Path::new("model.pt"))
+            .expect("add binary file");
+        index.write().expect("write repository index");
+        let tree_id = index.write_tree().expect("write initial tree");
+        {
+            let tree = repo.find_tree(tree_id).expect("find initial tree");
+            let signature = git2::Signature::now("Autopilot Test", "test@autopilot.local")
+                .expect("create signature");
+            repo.commit(
+                Some("HEAD"),
+                &signature,
+                &signature,
+                "initial binary",
+                &tree,
+                &[],
+            )
+            .expect("commit initial binary");
+        }
+
+        fs::write(&file_path, [0, 4, 5, 6]).expect("modify binary file");
+        {
+            let head_tree = repo
+                .head()
+                .expect("read HEAD")
+                .peel_to_tree()
+                .expect("read HEAD tree");
+            let diff = repo
+                .diff_tree_to_workdir_with_index(Some(&head_tree), None)
+                .expect("create workdir diff");
+            assert!(diff_contains_binary(&diff));
+        }
+
+        drop(repo);
+        fs::remove_dir_all(&repo_path).expect("remove repo temp dir");
+    }
+
+    #[test]
+    fn synthetic_new_file_patch_includes_file_headers() {
+        let patch = build_synthetic_new_file_patch("src/new file.ts", "const ready = true;\n");
+
+        assert!(patch.starts_with("--- /dev/null\n+++ b/src/new file.ts\n"));
+        assert!(patch.contains("@@ -0,0 +1,1 @@\n+const ready = true;\n"));
+    }
+
+    #[test]
+    fn resolves_linked_worktree_to_main_repository() {
+        let _guard = TEST_MUTEX.lock();
+        let repo_path = unique_temp_dir("main-repo");
+        let worktree_path = unique_temp_dir("linked-worktree");
+        fs::create_dir_all(&repo_path).expect("create repo temp dir");
+        let repo = Repository::init(&repo_path).expect("initialize repository");
+
+        fs::write(repo_path.join("README.md"), "main\n").expect("write tracked file");
+        let mut index = repo.index().expect("open repository index");
+        index
+            .add_path(std::path::Path::new("README.md"))
+            .expect("add tracked file");
+        index.write().expect("write repository index");
+        let tree_id = index.write_tree().expect("write initial tree");
+        let commit_id = {
+            let tree = repo.find_tree(tree_id).expect("find initial tree");
+            let signature = git2::Signature::now("Autopilot Test", "test@autopilot.local")
+                .expect("create signature");
+            repo.commit(
+                Some("HEAD"),
+                &signature,
+                &signature,
+                "initial commit",
+                &tree,
+                &[],
+            )
+            .expect("commit initial tree")
+        };
+
+        {
+            let commit = repo.find_commit(commit_id).expect("find initial commit");
+            let branch = repo
+                .branch("linked", &commit, false)
+                .expect("create worktree branch");
+            let branch_ref = branch.into_reference();
+            let mut options = WorktreeAddOptions::new();
+            options.reference(Some(&branch_ref));
+            repo.worktree("linked", &worktree_path, Some(&options))
+                .expect("create linked worktree");
+        }
+
+        let linked_repo = Repository::discover(&worktree_path).expect("discover linked worktree");
+        assert_eq!(
+            canonical_repository_workdir(&linked_repo).expect("resolve main repository"),
+            repo_path
+                .canonicalize()
+                .expect("canonicalize main repository"),
+        );
+
+        drop(linked_repo);
+        drop(repo);
+        fs::remove_dir_all(&worktree_path).expect("remove linked worktree");
+        fs::remove_dir_all(&repo_path).expect("remove repo temp dir");
+    }
+
     #[cfg(not(target_os = "windows"))]
     #[tokio::test]
     async fn run_worktree_setup_script_executes_in_worktree_and_exports_env() {
@@ -889,6 +1043,56 @@ mod tests {
         assert!(started_with_pid);
         assert!(result.success);
         assert!(!setup_processes.lock().contains_key(&worktree_key));
+    }
+
+    #[test]
+    fn saves_worktree_file_without_leaving_the_worktree() {
+        let _guard = TEST_MUTEX.lock();
+        let worktree_path = unique_temp_dir("inline-edit");
+        fs::create_dir_all(worktree_path.join("src")).expect("create worktree temp dir");
+        Repository::init(&worktree_path).expect("initialize worktree repository");
+        fs::write(worktree_path.join("src/app.ts"), "before\n").expect("write source file");
+
+        save_worktree_file_inner(
+            worktree_path.to_str().expect("utf-8 worktree path"),
+            "src/app.ts",
+            "after\n",
+        )
+        .expect("save source file");
+
+        assert_eq!(
+            fs::read_to_string(worktree_path.join("src/app.ts")).expect("read source file"),
+            "after\n",
+        );
+        assert!(save_worktree_file_inner(
+            worktree_path.to_str().expect("utf-8 worktree path"),
+            "../outside.ts",
+            "blocked\n",
+        )
+        .is_err());
+
+        fs::remove_dir_all(&worktree_path).expect("remove worktree temp dir");
+    }
+
+    #[test]
+    fn save_worktree_file_rejects_non_repository_directory() {
+        let _guard = TEST_MUTEX.lock();
+        let directory = unique_temp_dir("inline-edit-non-repo");
+        fs::create_dir_all(&directory).expect("create temp dir");
+        fs::write(directory.join("victim.txt"), "unchanged\n").expect("write victim file");
+
+        assert!(save_worktree_file_inner(
+            directory.to_str().expect("utf-8 directory path"),
+            "victim.txt",
+            "overwritten\n",
+        )
+        .is_err());
+        assert_eq!(
+            fs::read_to_string(directory.join("victim.txt")).expect("read victim file"),
+            "unchanged\n",
+        );
+
+        fs::remove_dir_all(&directory).expect("remove temp dir");
     }
 }
 
@@ -1111,6 +1315,7 @@ pub async fn get_file_diff(
         let diff = repo
             .diff_tree_to_tree(Some(&base_tree), Some(&head_tree), Some(&mut diff_opts))
             .map_err(|e| e.message().to_string())?;
+        let is_binary = diff_contains_binary(&diff);
 
         let mut patch = String::new();
         diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
@@ -1139,7 +1344,9 @@ pub async fn get_file_diff(
             path: file_path,
             old_content,
             new_content,
+            worktree_content: None,
             patch,
+            is_binary,
         })
     })
     .await
@@ -1274,13 +1481,13 @@ pub async fn get_uncommitted_diff(
         let index_exists = index_entry_id.is_some();
 
         let head_content = if include_content {
-            head_entry_id.and_then(|oid| read_blob_content(oid))
+            head_entry_id.and_then(&read_blob_content)
         } else {
             None
         };
 
         let index_content = if include_content {
-            index_entry_id.and_then(|oid| read_blob_content(oid))
+            index_entry_id.and_then(&read_blob_content)
         } else {
             None
         };
@@ -1291,6 +1498,7 @@ pub async fn get_uncommitted_diff(
             None
         };
 
+        let worktree_content = workdir_content.clone();
         let (old_content, new_content, diff, is_new_file) = match is_staged {
             Some(true) => {
                 let old_content = head_content;
@@ -1332,6 +1540,7 @@ pub async fn get_uncommitted_diff(
                 (old_content, new_content, diff, !head_exists)
             }
         };
+        let is_binary = diff_contains_binary(&diff);
 
         let mut patch = String::new();
         diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
@@ -1351,7 +1560,7 @@ pub async fn get_uncommitted_diff(
                 Some(content.clone())
             } else {
                 match is_staged {
-                    Some(true) => index_entry_id.and_then(|oid| read_blob_content(oid)),
+                    Some(true) => index_entry_id.and_then(&read_blob_content),
                     _ => read_workdir_content(),
                 }
             };
@@ -1369,8 +1578,97 @@ pub async fn get_uncommitted_diff(
             path: file_path,
             old_content,
             new_content,
+            worktree_content,
             patch,
+            is_binary,
         })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+static SAVE_TEMP_ID: AtomicU64 = AtomicU64::new(0);
+
+fn save_worktree_file_inner(
+    worktree_path: &str,
+    file_path: &str,
+    content: &str,
+) -> Result<(), String> {
+    let relative_path = Path::new(file_path);
+    if relative_path.as_os_str().is_empty()
+        || relative_path
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return Err("File path must stay inside the worktree".to_string());
+    }
+
+    let worktree = std::fs::canonicalize(worktree_path).map_err(|e| e.to_string())?;
+    let repository = Repository::open(&worktree)
+        .map_err(|_| "Worktree path must be a Git repository".to_string())?;
+    let repository_workdir = repository
+        .workdir()
+        .ok_or_else(|| "Worktree path must be a non-bare Git worktree".to_string())?
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    if repository_workdir != worktree {
+        return Err("Worktree path must be a Git worktree root".to_string());
+    }
+    let requested_path = worktree.join(relative_path);
+    let parent = requested_path
+        .parent()
+        .ok_or_else(|| "File path has no parent directory".to_string())?;
+    let parent = std::fs::canonicalize(parent).map_err(|e| e.to_string())?;
+    if !parent.starts_with(&worktree) {
+        return Err("File path must stay inside the worktree".to_string());
+    }
+
+    let file_name = requested_path
+        .file_name()
+        .ok_or_else(|| "File path has no file name".to_string())?;
+    let target = parent.join(file_name);
+    let metadata = std::fs::symlink_metadata(&target).map_err(|e| e.to_string())?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err("Only regular worktree files can be edited".to_string());
+    }
+
+    let temp_name = format!(
+        ".{}.autopilot-{}-{}.tmp",
+        file_name.to_string_lossy(),
+        std::process::id(),
+        SAVE_TEMP_ID.fetch_add(1, Ordering::Relaxed),
+    );
+    let temp_path = parent.join(temp_name);
+    let result = (|| {
+        let mut temp_file = std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temp_path)
+            .map_err(|e| e.to_string())?;
+        temp_file
+            .set_permissions(metadata.permissions())
+            .map_err(|e| e.to_string())?;
+        temp_file
+            .write_all(content.as_bytes())
+            .map_err(|e| e.to_string())?;
+        temp_file.sync_all().map_err(|e| e.to_string())?;
+        std::fs::rename(&temp_path, &target).map_err(|e| e.to_string())
+    })();
+
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp_path);
+    }
+    result
+}
+
+#[tauri::command]
+pub async fn save_worktree_file(
+    worktree_path: String,
+    file_path: String,
+    content: String,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || {
+        save_worktree_file_inner(&worktree_path, &file_path, &content)
     })
     .await
     .map_err(|e| e.to_string())?

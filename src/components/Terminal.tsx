@@ -9,6 +9,10 @@ import "@xterm/xterm/css/xterm.css";
 import { useTheme } from "../hooks/useTheme";
 import { getTheme, subscribeTheme } from "../theme";
 import { observeResize } from "../utils/sharedResizeObserver";
+import {
+  isPanelResizing,
+  PANEL_RESIZE_END_EVENT,
+} from "../utils/panelResize";
 
 const TERMINAL_SCROLLBACK_LINES = 2000;
 
@@ -45,6 +49,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
   const searchAddonRef = useRef<SearchAddon | null>(null);
   const terminalDimensionsRef = useRef<TerminalDimensions | null>(null);
   const themeFrameRef = useRef<number | null>(null);
+  const resizeFrameRef = useRef<number | null>(null);
   const theme = useTheme();
 
   useImperativeHandle(ref, () => ({
@@ -291,11 +296,17 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       term.write("\r\n\x1b[31m[Process exited]\x1b[0m\r\n");
     });
 
-    const unobserve = observeResize(containerRef.current, () => {
-      requestAnimationFrame(() => {
+    const scheduleResize = () => {
+      if (resizeFrameRef.current !== null) return;
+      resizeFrameRef.current = requestAnimationFrame(() => {
+        resizeFrameRef.current = null;
         void resizeTerminal();
       });
+    };
+    const unobserve = observeResize(containerRef.current, () => {
+      if (!isPanelResizing()) scheduleResize();
     });
+    window.addEventListener(PANEL_RESIZE_END_EVENT, scheduleResize);
 
     return () => {
       disposed = true;
@@ -304,6 +315,11 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       unlistenClose.then((fn) => fn());
       outputQueue.length = 0;
       unobserve();
+      window.removeEventListener(PANEL_RESIZE_END_EVENT, scheduleResize);
+      if (resizeFrameRef.current !== null) {
+        cancelAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
+      }
       term.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
@@ -383,14 +399,6 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       className="w-full h-full min-w-0 min-h-0 overflow-hidden bg-transparent relative"
       style={{ padding: "4px", background: theme.terminal.surfaceBackground }}
     >
-      {isActive && (
-        <div
-          className="absolute top-0 left-0 w-1 h-4 rounded-br"
-          style={{
-            background: theme.semantic.info,
-          }}
-        />
-      )}
     </div>
   );
 });

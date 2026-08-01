@@ -2,10 +2,10 @@ export type ThemeMode = "dark" | "light";
 
 const darkTerminalTheme = {
   background: "rgba(0, 0, 0, 0)",
-  foreground: "#FFFFFF",
-  cursor: "#D4A574",
-  cursorAccent: "#0D0D0D",
-  selectionBackground: "rgba(212, 165, 116, 0.25)",
+  foreground: "#E7E7E8",
+  cursor: "#7AA2F7",
+  cursorAccent: "#0D0E0F",
+  selectionBackground: "rgba(122, 162, 247, 0.25)",
   black: "#616161",
   red: "#FF8272",
   green: "#B4FA72",
@@ -52,28 +52,28 @@ const lightTerminalTheme = {
 
 const darkTheme = {
   bg: {
-    primary: "#000",
-    secondary: "rgba(20, 20, 20, 0.9)",
-    tertiary: "rgba(26, 26, 26, 0.95)",
-    hover: "rgba(31, 31, 31, 0.95)",
-    active: "rgba(37, 37, 37, 0.95)",
-    solid: "#0D0D0D",
+    primary: "#000000",
+    secondary: "#131515",
+    tertiary: "#1B1C1E",
+    hover: "#202124",
+    active: "#292A2D",
+    solid: "#131515",
   },
   border: {
-    subtle: "rgba(31, 31, 31, 0.8)",
-    default: "rgba(42, 42, 42, 0.8)",
-    strong: "rgba(51, 51, 51, 0.9)",
+    subtle: "rgba(255, 255, 255, 0.055)",
+    default: "rgba(255, 255, 255, 0.08)",
+    strong: "rgba(255, 255, 255, 0.12)",
   },
   text: {
-    primary: "#E8E2D9",
-    secondary: "#A89F91",
-    tertiary: "#6B6358",
-    muted: "#4A453D",
+    primary: "#E7E7E8",
+    secondary: "#A2A3A7",
+    tertiary: "#707176",
+    muted: "#4B4C50",
   },
   accent: {
-    primary: "#D4A574",
-    secondary: "#C9956B",
-    hover: "#E0B585",
+    primary: "#7AA2F7",
+    secondary: "#6B8FE0",
+    hover: "#8FB3FF",
   },
   semantic: {
     error: "#DC2626",
@@ -97,8 +97,8 @@ const darkTheme = {
     activeMatchColorOverviewRuler: "#FBBF24",
   },
   ui: {
-    scrollbarThumb: "rgba(168, 159, 145, 0.2)",
-    scrollbarThumbHover: "rgba(168, 159, 145, 0.35)",
+    scrollbarThumb: "rgba(255, 255, 255, 0.14)",
+    scrollbarThumbHover: "rgba(255, 255, 255, 0.24)",
     backdrop: "backdrop-blur-md",
   },
 } as const;
@@ -124,9 +124,9 @@ const lightTheme = {
     muted: "rgba(38, 37, 33, 0.38)",
   },
   accent: {
-    primary: "#262521",
-    secondary: "rgba(38, 37, 33, 0.85)",
-    hover: "#000000",
+    primary: "#2563EB",
+    secondary: "#1D4ED8",
+    hover: "#1E40AF",
   },
   semantic: {
     error: "#DC2626",

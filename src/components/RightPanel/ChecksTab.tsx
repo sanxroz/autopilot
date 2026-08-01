@@ -17,6 +17,7 @@ interface ChecksTabProps {
   repoPath: string | null;
   prNumber: number | null;
   prStatus: PRStatus | null;
+  embedded?: boolean;
 }
 
 type DetailState = Record<string, PRCheckDetail | null>;
@@ -44,9 +45,9 @@ function CheckSection({
   if (checks.length === 0) return null;
 
   return (
-    <section className="px-4 pb-3">
-      <div className="flex items-center justify-between pb-2 text-[11px] text-tertiary">
-        <span className="uppercase tracking-[0.08em]">{title}</span>
+    <section className="px-5 pb-4">
+      <div className="flex items-center justify-between pb-1.5 text-[11px] text-tertiary">
+        <span className="font-medium">{title}</span>
         <span className="font-mono tabular-nums">{checks.length}</span>
       </div>
       <div className="space-y-1">
@@ -69,7 +70,12 @@ function CheckSection({
   );
 }
 
-export function ChecksTab({ repoPath, prNumber, prStatus }: ChecksTabProps) {
+export function ChecksTab({
+  repoPath,
+  prNumber,
+  prStatus,
+  embedded = false,
+}: ChecksTabProps) {
   const { checksResult, isLoading, error, fetchData } = useCachedPRData({
     repoPath,
     prNumber,
@@ -156,11 +162,11 @@ export function ChecksTab({ repoPath, prNumber, prStatus }: ChecksTabProps) {
 
   if (error) {
     return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-sm text-semantic-error">
-        <span className="text-center">{error}</span>
+      <div className="flex flex-col items-start gap-2 px-5 py-4 text-xs text-tertiary">
+        <span>Checks couldn’t be loaded.</span>
         <button
           onClick={() => fetchData()}
-          className="rounded bg-tertiary px-3 py-1 text-xs text-primary"
+          className="rounded-md bg-secondary px-2 py-1 font-medium text-secondary transition-colors hover:bg-hover hover:text-primary"
           type="button"
         >
           Retry
@@ -181,34 +187,48 @@ export function ChecksTab({ repoPath, prNumber, prStatus }: ChecksTabProps) {
     overallStatus ? getCheckLabel(overallBucket) : "Loading checks";
 
   return (
-    <div className="flex h-full flex-col overflow-auto bg-primary">
+    <div
+      className={cn(
+        "flex flex-col bg-primary",
+        !embedded && "h-full overflow-auto",
+      )}
+    >
       {prStatus && (
-        <section className="px-4 py-4">
-          <div className="rounded-xl border border-border-subtle bg-secondary/20 px-4 py-3">
+        <section className={embedded ? "px-5 py-3" : "px-4 py-4"}>
+          <div className={cn(embedded ? "" : "rounded-lg border border-border-subtle bg-secondary/20 px-4 py-3")}>
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2">
                 <Circle
                   className={cn(
-                    "h-3.5 w-3.5 flex-shrink-0",
+                    "h-3 w-3 flex-shrink-0",
                     getCheckColorClass(overallBucket),
                   )}
                 />
-                <div className="text-sm font-medium text-primary">
+                <div className="text-[13px] font-medium text-primary">
                   {overallLabel}
                 </div>
+                </div>
+                {checksResult && checksResult.summary.total > 0 && (
+                  <span className="shrink-0 font-mono text-[11px] tabular-nums text-tertiary">
+                    {checksResult.summary.passing}/{checksResult.summary.total} passed
+                  </span>
+                )}
               </div>
-              <div className="mt-1 truncate text-[12px] text-tertiary">
-                #{prStatus.number} {prStatus.title}
-              </div>
+              {!embedded && (
+                <div className="mt-1 truncate text-[12px] text-tertiary">
+                  #{prStatus.number} {prStatus.title}
+                </div>
+              )}
             </div>
           </div>
         </section>
       )}
 
       {isLoading && !checksResult && (
-        <div className="flex flex-1 items-center justify-center text-sm text-secondary">
+        <div className="flex items-center px-5 py-6 text-[13px] text-secondary">
           <Loader className="mr-2 h-3.5 w-3.5 animate-spin" />
-          Loading checks...
+          Loading checks…
         </div>
       )}
 
@@ -232,7 +252,7 @@ export function ChecksTab({ repoPath, prNumber, prStatus }: ChecksTabProps) {
       />}
 
       {!isLoading && (!checksResult || checksResult.checks.length === 0) && (
-        <div className="flex flex-1 items-center justify-center text-sm text-secondary">
+        <div className="px-5 py-6 text-[13px] text-tertiary">
           No checks reported by GitHub
         </div>
       )}

@@ -94,12 +94,11 @@ export interface AgentStatusEvent {
   message?: string;
 }
 
-export type DiffViewMode = 'overlay' | 'sidebar';
-
 export type FileStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'untracked';
 
 export interface ChangedFile {
   path: string;
+  old_path?: string | null;
   status: FileStatus;
   additions: number;
   deletions: number;
@@ -110,6 +109,8 @@ export interface FileDiffData {
   patch: string;
   old_content?: string | null;
   new_content?: string | null;
+  worktree_content?: string | null;
+  is_binary: boolean;
 }
 
 export interface GitStatusFile {

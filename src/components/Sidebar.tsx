@@ -1,13 +1,9 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import { useReducedMotion } from "framer-motion";
 import {
   Plus,
-  PackagePlus,
   Sun,
   Moon,
-  ChevronDown,
-  ChevronRight,
   Archive,
   Ellipsis,
   User,
@@ -23,6 +19,7 @@ import { SidebarWorktreeGroup } from "./SidebarWorktreeGroup";
 import { detectStacks, getStackLabel } from "../lib/pr-stacks";
 import { useThemeMode } from "../hooks/useTheme";
 import { cn } from "../utils/cn";
+import { beginPanelResize, endPanelResize } from "../utils/panelResize";
 import { isWorktreeSettingUp } from "../store/worktreeSetup";
 import type { SidebarWorktreeGroup as SidebarWorktreeGroupModel } from "../lib/sidebar-groups";
 import {
@@ -31,10 +28,16 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
+import {
+  findSpaceForWorktree,
+  loadActiveSpace,
+  resolveActiveSpace,
+  saveActiveSpace,
+} from "../lib/spaces";
 
-const MIN_WIDTH = 200;
-const MAX_WIDTH = 480;
-const DEFAULT_WIDTH = 288;
+const MIN_WIDTH = 240;
+const MAX_WIDTH = 520;
+const DEFAULT_WIDTH = 312;
 const DRAG_START_THRESHOLD_PX = 10;
 const GROUP_HOLD_DELAY_MS = 1200;
 
@@ -63,8 +66,6 @@ export function Sidebar({
     selectedWorktree,
     createWorktreeAuto,
     deleteWorktree,
-    collapsedRepos,
-    toggleRepoCollapsed,
     createSidebarGroup,
     moveWorktreeInSidebar,
     renameSidebarGroup,
@@ -80,7 +81,6 @@ export function Sidebar({
     sidebarGroupsByRepo,
   } = useAppStore();
   const themeMode = useThemeMode();
-  const reducedMotion = useReducedMotion();
   const [showWorktreeDialog, setShowWorktreeDialog] = useState<string | null>(
     null
   );
@@ -88,9 +88,14 @@ export function Sidebar({
   const [error, setError] = useState<string | null>(null);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
+  const [activeSpacePath, setActiveSpacePath] = useState<string | null>(
+    loadActiveSpace,
+  );
   const containerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const widthRef = useRef(DEFAULT_WIDTH);
+  const pendingWidthRef = useRef(DEFAULT_WIDTH);
+  const resizeFrameRef = useRef<number | null>(null);
   const [draggedWorktree, setDraggedWorktree] = useState<{
     repoPath: string;
     worktreePath: string;
@@ -166,24 +171,45 @@ export function Sidebar({
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     widthRef.current = width;
+    pendingWidthRef.current = width;
+    beginPanelResize();
     setIsResizing(true);
   }, [width]);
 
+  const applyResizeWidth = useCallback((newWidth: number) => {
+    widthRef.current = newWidth;
+    if (containerRef.current) {
+      containerRef.current.style.width = `${newWidth}px`;
+    }
+    if (innerRef.current) {
+      innerRef.current.style.width = `${newWidth}px`;
+    }
+  }, []);
+
   useEffect(() => {
     if (!isResizing) return;
+    let ended = false;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, e.clientX));
-      widthRef.current = newWidth;
-      if (containerRef.current) {
-        containerRef.current.style.width = `${newWidth}px`;
-      }
-      if (innerRef.current) {
-        innerRef.current.style.width = `${newWidth}px`;
-      }
+      pendingWidthRef.current = Math.min(
+        MAX_WIDTH,
+        Math.max(MIN_WIDTH, e.clientX),
+      );
+      if (resizeFrameRef.current !== null) return;
+      resizeFrameRef.current = requestAnimationFrame(() => {
+        resizeFrameRef.current = null;
+        applyResizeWidth(pendingWidthRef.current);
+      });
     };
 
     const handleMouseUp = () => {
+      if (resizeFrameRef.current !== null) {
+        cancelAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
+      }
+      applyResizeWidth(pendingWidthRef.current);
+      ended = true;
+      endPanelResize();
       setIsResizing(false);
       setWidth(widthRef.current);
     };
@@ -194,8 +220,13 @@ export function Sidebar({
     return () => {
       document.removeEventListener("mousemove", handleMouseMove);
       document.removeEventListener("mouseup", handleMouseUp);
+      if (resizeFrameRef.current !== null) {
+        cancelAnimationFrame(resizeFrameRef.current);
+        resizeFrameRef.current = null;
+      }
+      if (!ended) endPanelResize();
     };
-  }, [isResizing]);
+  }, [applyResizeWidth, isResizing]);
 
   const repoGroups = useMemo(() => {
     return repositories.map((repo) => ({
@@ -205,6 +236,44 @@ export function Sidebar({
       worktrees: repo.worktrees.filter((wt) => wt.name !== "main"),
     }));
   }, [repositories]);
+  const selectedWorktreeSpace = useMemo(
+    () => findSpaceForWorktree(repositories, selectedWorktree),
+    [repositories, selectedWorktree],
+  );
+  const resolvedSpacePath = resolveActiveSpace(
+    repositories,
+    null,
+    activeSpacePath,
+  );
+  const activeRepoGroups = repoGroups.filter(
+    (group) => group.repoPath === resolvedSpacePath,
+  );
+
+  useEffect(() => {
+    if (!selectedWorktreeSpace) {
+      return;
+    }
+
+    setActiveSpacePath((current) => {
+      if (current === selectedWorktreeSpace) return current;
+      saveActiveSpace(selectedWorktreeSpace);
+      return selectedWorktreeSpace;
+    });
+  }, [selectedWorktree?.path, selectedWorktreeSpace]);
+
+  useEffect(() => {
+    if (!resolvedSpacePath || resolvedSpacePath === activeSpacePath) {
+      return;
+    }
+
+    setActiveSpacePath(resolvedSpacePath);
+    saveActiveSpace(resolvedSpacePath);
+  }, [activeSpacePath, resolvedSpacePath]);
+
+  const handleSpaceSelect = (repoPath: string) => {
+    setActiveSpacePath(repoPath);
+    saveActiveSpace(repoPath);
+  };
 
   const handleAddRepository = async () => {
     setError(null);
@@ -538,12 +607,12 @@ export function Sidebar({
         width: isOpen ? `${width}px` : 0,
         minWidth: isOpen ? `${MIN_WIDTH}px` : 0,
         maxWidth: `${MAX_WIDTH}px`,
-        transition: reducedMotion || isResizing ? "none" : "width 0.2s cubic-bezier(0.4, 0, 0.2, 1), min-width 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+        transition: "none",
       }}
     >
       <div
         ref={innerRef}
-        className="flex flex-col h-full pt-8 select-none bg-secondary border-r border-border"
+        className="flex h-full flex-col border-r border-border bg-secondary pt-8 select-none"
         style={{
           width: `${width}px`,
           minWidth: `${MIN_WIDTH}px`,
@@ -558,121 +627,157 @@ export function Sidebar({
         )}
       />
 
-      <div
-        className="flex-1 overflow-y-auto scrollbar-hide px-2 pb-4"
-        style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
-      >
-        <div className="flex flex-col gap-1">
-          {repoGroups.map((group, groupIndex) => {
-            const isCollapsed = collapsedRepos.has(group.repoPath);
-            const avatarUrl = group.avatarUrl;
-            const showAvatar = avatarUrl !== undefined && !failedAvatarUrls.has(avatarUrl);
+      <div className="flex min-h-0 flex-1 flex-col px-1.5 pb-1.5">
+        <section className="shrink-0 pb-1.5" aria-labelledby="spaces-heading">
+          <div className="flex h-8 items-center px-1.5">
+            <h2
+              id="spaces-heading"
+              className="text-xs font-semibold tracking-wide text-tertiary"
+            >
+              Spaces
+            </h2>
+          </div>
+          <div
+            className="max-h-40 space-y-0.5 overflow-y-auto scrollbar-hide"
+            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+          >
+            {repoGroups.map((space) => {
+              const avatarUrl = space.avatarUrl;
+              const showAvatar =
+                avatarUrl !== undefined && !failedAvatarUrls.has(avatarUrl);
+              const isActive = space.repoPath === resolvedSpacePath;
 
+              return (
+                <div
+                  key={space.repoPath}
+                  className={cn(
+                    "group/space flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left transition-colors motion-reduce:transition-none",
+                    isActive
+                      ? "bg-active text-primary"
+                      : "text-secondary hover:bg-hover hover:text-primary",
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleSpaceSelect(space.repoPath)}
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    aria-pressed={isActive}
+                    aria-label={`Show ${space.repoName} sessions`}
+                  >
+                    <span
+                      className={cn(
+                        "h-1.5 w-1.5 shrink-0 rounded-full",
+                        isActive ? "bg-accent-primary" : "bg-border-strong",
+                      )}
+                    />
+                    {showAvatar ? (
+                      <img
+                        src={avatarUrl}
+                        alt=""
+                        className="h-4 w-4 shrink-0 rounded"
+                        onError={() => {
+                          setFailedAvatarUrls((current) => {
+                            if (!avatarUrl) return current;
+                            const next = new Set(current);
+                            next.add(avatarUrl);
+                            return next;
+                          });
+                        }}
+                      />
+                    ) : (
+                      <Folder className="h-4 w-4 shrink-0 text-tertiary" />
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                      {space.repoName}
+                    </span>
+                  </button>
+                  <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover/space:opacity-100 focus-within:opacity-100">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          onClick={(event) => event.stopPropagation()}
+                          className="rounded-md p-1 text-tertiary hover:bg-hover hover:text-primary"
+                          title="Space actions"
+                          aria-label={`${space.repoName} space actions`}
+                        >
+                          <Ellipsis className="h-3.5 w-3.5" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={handleAddRepository}>
+                          <Plus />
+                          Add Space
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => handleRemoveRepository(space.repoPath)}
+                          className="text-red-500 focus:text-red-500"
+                        >
+                          <Archive />
+                          Archive repository
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleCreateWorktree(space.repoPath);
+                      }}
+                      className="rounded-md p-1 text-tertiary hover:bg-hover hover:text-primary"
+                      title="New session"
+                      aria-label={`Create a new ${space.repoName} session`}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onToggleCaptainTerminal(space.repoPath);
+                      }}
+                      className={cn(
+                        "rounded-md p-1 hover:bg-hover",
+                        captainTerminalRepoPath === space.repoPath
+                          ? "text-accent-primary"
+                          : "text-tertiary hover:text-primary",
+                      )}
+                      title={`Open ${space.repoName} captain terminal`}
+                      aria-label={`Open ${space.repoName} captain terminal`}
+                      aria-pressed={captainTerminalRepoPath === space.repoPath}
+                    >
+                      <SquareTerminal className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            {repositories.length === 0 && (
+              <button
+                type="button"
+                onClick={handleAddRepository}
+                className="w-full rounded-md px-2.5 py-2 text-left text-xs text-tertiary hover:bg-hover hover:text-primary"
+              >
+                Add a repository to create your first Space.
+              </button>
+            )}
+          </div>
+        </section>
+
+        <div className="-mx-1.5 h-px shrink-0 bg-border-subtle" />
+
+        <div className="flex h-8 shrink-0 items-center px-1.5">
+          <h2 className="text-xs font-semibold tracking-wide text-tertiary">
+            Sessions
+          </h2>
+        </div>
+
+        <div
+          className="min-h-0 flex-1 overflow-y-auto scrollbar-hide"
+          style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
+        >
+          <div className="flex flex-col gap-0.5">
+          {activeRepoGroups.map((group) => {
             return (
               <div key={group.repoPath} className="w-full min-w-0">
-                {groupIndex > 0 && (
-                  <div className="h-px -mx-2 w-[calc(100%+1rem)] mt-1.5 mb-1 bg-border-subtle" />
-                )}
-
-<div
-                    className="flex items-center justify-between px-3 py-1.5 mt-0.5 mb-1 group w-full min-w-0 rounded-md cursor-pointer bg-secondary hover:bg-hover transition-colors duration-200"
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => toggleRepoCollapsed(group.repoPath)}
-                    onKeyDown={(e) => {
-                      if (e.target !== e.currentTarget) return;
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        toggleRepoCollapsed(group.repoPath);
-                      }
-                    }}
-                     aria-expanded={!isCollapsed}
-                     aria-label={`${group.repoName} repository, ${isCollapsed ? "collapsed" : "expanded"}`}
-                   >
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      {showAvatar ? (
-                        <img
-                          src={avatarUrl}
-                          alt={group.repoName}
-                          className="h-3.5 w-3.5 rounded-sm flex-shrink-0"
-                          onError={() => {
-                            setFailedAvatarUrls((prev) => {
-                              if (!avatarUrl) return prev;
-                              const next = new Set(prev);
-                              next.add(avatarUrl);
-                              return next;
-                            });
-                          }}
-                        />
-                      ) : (
-                        <Folder className="h-3.5 w-3.5 text-tertiary flex-shrink-0" />
-                      )}
-                      <span className="font-medium text-sm truncate min-w-0 text-primary">
-                        {group.repoName}
-                      </span>
-                     <span className="opacity-0 group-hover:opacity-100 transition-opacity">
-                       {isCollapsed ? (
-                         <ChevronRight className="h-3.5 w-3.5 text-tertiary" />
-                       ) : (
-                         <ChevronDown className="h-3.5 w-3.5 text-tertiary" />
-                       )}
-                     </span>
-                   </div>
-                   <div className="flex items-center gap-2.5 flex-shrink-0 opacity-100">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <button
-                            onClick={(e) => e.stopPropagation()}
-                            className="p-1 -m-1 rounded-sm transition-colors text-tertiary hover:bg-hover hover:text-primary"
-                            title="Repository actions"
-                            aria-label={`${group.repoName} repository actions`}
-                          >
-                            <Ellipsis className="h-3.5 w-3.5" />
-                          </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start">
-                          <DropdownMenuItem
-                            onSelect={() => handleRemoveRepository(group.repoPath)}
-                            className="text-red-500 focus:text-red-500"
-                          >
-                            <Archive />
-                            Archive repository
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCreateWorktree(group.repoPath);
-                        }}
-                        className="p-1 -m-1 rounded-sm transition-colors text-tertiary hover:text-primary hover:bg-hover"
-                        title="New workspace"
-                        aria-label="Create new workspace"
-                      >
-                       <Plus className="h-3.5 w-3.5" />
-                     </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleCaptainTerminal(group.repoPath);
-                        }}
-                        className={cn(
-                          "p-1 -m-1 rounded-sm transition-colors hover:bg-hover",
-                          captainTerminalRepoPath === group.repoPath
-                            ? "text-accent-primary"
-                            : "text-tertiary hover:text-primary"
-                        )}
-                        title={`Open ${group.repoName} captain terminal`}
-                        aria-label={`Open ${group.repoName} captain terminal`}
-                        aria-pressed={captainTerminalRepoPath === group.repoPath}
-                      >
-                        <SquareTerminal className="h-3.5 w-3.5" />
-                      </button>
-                   </div>
-                 </div>
-
-                {!isCollapsed && (
-                   <div className="w-full min-w-0 space-y-1">
+                   <div className="w-full min-w-0 space-y-0.5">
                      {(() => {
                        const repoPrs = prStatusByBranch[group.repoPath] ?? {};
                        const repoSidebarGroups = sidebarGroupsByRepo[group.repoPath] ?? [];
@@ -869,16 +974,21 @@ export function Sidebar({
                         return elements;
                      })()}
                    </div>
-                )}
               </div>
             );
           })}
 
           {repositories.length === 0 && (
-            <div className="px-4 py-8 text-center text-sm text-secondary">
-              No repositories added yet
+            <div className="px-3 py-6 text-center text-sm text-secondary">
+              No sessions yet
             </div>
           )}
+          {repositories.length > 0 && activeRepoGroups.length === 0 && (
+            <div className="px-3 py-6 text-center text-sm text-secondary">
+              Select a Space to see its sessions
+            </div>
+          )}
+          </div>
         </div>
       </div>
 
@@ -888,8 +998,8 @@ export function Sidebar({
         </div>
       )}
 
-      <div className="px-3 pb-3">
-        <div className="flex items-center gap-0.5 mb-3">
+      <div className="px-1.5 pb-1.5">
+        <div className="flex items-center justify-between">
           <button
             onClick={toggleSettings}
             className="p-0.5 rounded-full transition-colors bg-transparent hover:bg-hover"
@@ -909,28 +1019,20 @@ export function Sidebar({
             )}
           </button>
 
-        <div className="flex items-center gap-1">
-          <button
-            onClick={handleToggleTheme}
-            className="p-2 transition-colors rounded-md bg-transparent text-tertiary hover:bg-hover hover:text-primary"
-            aria-label={themeMode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          >
-            {themeMode === "dark" ? (
-              <Sun className="w-3.5 h-3.5" />
-            ) : (
-              <Moon className="w-3.5 h-3.5" />
-            )}
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={handleToggleTheme}
+              className="p-2 transition-colors rounded-md bg-transparent text-tertiary hover:bg-hover hover:text-primary"
+              aria-label={themeMode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {themeMode === "dark" ? (
+                <Sun className="w-3.5 h-3.5" />
+              ) : (
+                <Moon className="w-3.5 h-3.5" />
+              )}
+            </button>
+          </div>
         </div>
-
-        </div>
-        <button
-          onClick={handleAddRepository}
-          className="px-2 py-1.5 text-sm transition-colors flex items-center gap-2 rounded-md bg-transparent text-secondary hover:bg-hover hover:text-primary"
-        >
-          <PackagePlus className="w-3.5 h-3.5" />
-          <span className='font-medium'>Add repository</span>
-        </button>
       </div>
 
       {showWorktreeDialog && (

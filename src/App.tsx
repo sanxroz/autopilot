@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Navbar } from "./components/Navbar";
+import { WorkspaceHeader } from "./components/WorkspaceHeader";
+import type { RightPanelTabId } from "./components/RightPanelToolbar";
 import { Sidebar } from "./components/Sidebar";
 import { TerminalGrid } from "./components/TerminalGrid";
 import { CaptainTerminalGrid } from "./components/CaptainTerminalGrid";
 import { RightPanel } from "./components/RightPanel";
-import { DiffOverlay } from "./components/DiffOverlay";
 import { GitFileDiffOverlay } from "./components/GitFileDiffOverlay";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { CommandMenu } from "./components/CommandMenu";
@@ -13,25 +13,21 @@ import { Toaster } from "sonner";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { exit } from "@tauri-apps/plugin-process";
 import { useAppStore } from "./store";
 import { usePRStatusPolling } from "./hooks/usePRStatus";
 import { useGitWatcher } from "./hooks/useGitWatcher";
 import { useUpdater } from "./hooks/useUpdater";
 import { useDiffStatsLoader } from "./hooks/useDiffStats";
 import { useProcessStatusPolling } from "./hooks/useProcessStatus";
-import { preloadOpenWithIcons } from "./lib/open-with";
 import type { AgentStatusEvent } from "./types";
 
 function App() {
   const autoFetchInFlightRef = useRef(false);
   const initialize = useAppStore((state) => state.initialize);
   const preloadInstalledIdes = useAppStore((state) => state.preloadInstalledIdes);
-  const installedIdes = useAppStore((state) => state.installedIdes);
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
   const codeReviewOpen = useAppStore((state) => state.codeReviewOpen);
-  const diffOverlayOpen = useAppStore((state) => state.diffOverlayOpen);
-  const setDiffOverlayOpen = useAppStore((state) => state.setDiffOverlayOpen);
-  const diffViewMode = useAppStore((state) => state.diffViewMode);
   const settingsOpen = useAppStore((state) => state.settingsOpen);
   const toggleSettings = useAppStore((state) => state.toggleSettings);
   const setAgentRunState = useAppStore((state) => state.setAgentRunState);
@@ -42,6 +38,7 @@ function App() {
   const refreshWorktrees = useAppStore((state) => state.refreshWorktrees);
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTabId>("git");
   const [captainTerminalRepoPath, setCaptainTerminalRepoPath] = useState<string | null>(null);
 
   useEffect(() => {
@@ -51,10 +48,6 @@ function App() {
   useEffect(() => {
     void preloadInstalledIdes();
   }, [preloadInstalledIdes]);
-
-  useEffect(() => {
-    preloadOpenWithIcons(installedIdes);
-  }, [installedIdes]);
 
   useEffect(() => {
     const appWindow = getCurrentWindow();
@@ -82,7 +75,7 @@ function App() {
       }
 
       isClosing = true;
-      await appWindow.destroy();
+      await exit(0);
     })
       .then((fn) => {
         if (isMounted) {
@@ -217,8 +210,8 @@ function App() {
     : null;
 
   return (
-    <div className="h-dvh overflow-hidden rounded-lg flex flex-col bg-transparent">
-      <div className="overflow-hidden flex h-full bg-primary text-primary ring-1 ring-inset ring-border-subtle">
+    <div className="flex h-dvh flex-col overflow-hidden rounded-xl bg-solid">
+      <div className="flex h-full min-h-0 overflow-hidden text-primary">
         <Sidebar
           isOpen={sidebarOpen}
           captainTerminalRepoPath={captainTerminalRepoPath}
@@ -228,34 +221,35 @@ function App() {
             );
           }}
         />
-        <div className="flex flex-col flex-1 overflow-hidden relative">
-          <Navbar
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden px-1.5">
+          <WorkspaceHeader
             sidebarOpen={sidebarOpen}
             onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
             headerWorktree={captainHeaderWorktree}
+            rightPanelTab={rightPanelTab}
+            onRightPanelTabChange={setRightPanelTab}
           />
-          <TerminalGrid />
-          {repositories.map((repository) => (
-            <CaptainTerminalGrid
-              key={repository.info.path}
-              open={captainTerminalRepoPath === repository.info.path}
-              repositoryRoot={repository.info.path}
-              onClose={() => setCaptainTerminalRepoPath(null)}
-            />
-          ))}
-          {diffOverlayOpen && diffViewMode === 'overlay' && (
-            <DiffOverlay
-              worktreePath={selectedWorktree?.path ?? null}
-              onClose={() => setDiffOverlayOpen(false)}
-            />
-          )}
-          <GitFileDiffOverlay />
+          <div className="flex min-h-0 flex-1 gap-1.5 pb-1.5">
+            <main className="app-panel relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border-subtle bg-primary">
+              <TerminalGrid />
+              {repositories.map((repository) => (
+                <CaptainTerminalGrid
+                  key={repository.info.path}
+                  open={captainTerminalRepoPath === repository.info.path}
+                  repositoryRoot={repository.info.path}
+                  onClose={() => setCaptainTerminalRepoPath(null)}
+                />
+              ))}
+              <GitFileDiffOverlay />
+            </main>
+            {codeReviewOpen && (
+              <RightPanel
+                worktreePath={selectedWorktree?.path ?? null}
+                activeTab={rightPanelTab}
+              />
+            )}
+          </div>
         </div>
-        {codeReviewOpen && (
-          <RightPanel
-            worktreePath={selectedWorktree?.path ?? null}
-          />
-        )}
       </div>
 
       {settingsOpen && <SettingsPanel onClose={toggleSettings} />}

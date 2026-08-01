@@ -102,7 +102,7 @@ export function CaptainTerminalGrid({
   if (!open) return null;
 
   return (
-    <div className="absolute inset-x-0 bottom-0 top-[35px] z-20 min-h-0 bg-primary">
+    <div className="absolute inset-0 z-20 min-h-0 bg-primary">
       <div className="relative h-full min-h-0">
         {terminalIds.length > 0 ? (
           <div

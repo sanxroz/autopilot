@@ -42,14 +42,12 @@ fn is_dev_server_process(cmd: &[String]) -> bool {
 
 fn cmd_has_executable(cmd: &[String], executable: &str) -> bool {
     cmd.iter().any(|part| {
-        part.rsplit(['/', '\\'])
-            .next()
-            .is_some_and(|name| {
-                name.eq_ignore_ascii_case(executable)
-                    || name
-                        .strip_suffix(".exe")
-                        .is_some_and(|stem| stem.eq_ignore_ascii_case(executable))
-            })
+        part.rsplit(['/', '\\']).next().is_some_and(|name| {
+            name.eq_ignore_ascii_case(executable)
+                || name
+                    .strip_suffix(".exe")
+                    .is_some_and(|stem| stem.eq_ignore_ascii_case(executable))
+        })
     })
 }
 
