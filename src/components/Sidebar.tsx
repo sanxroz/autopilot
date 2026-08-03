@@ -629,13 +629,22 @@ export function Sidebar({
 
       <div className="flex min-h-0 flex-1 flex-col px-1.5 pb-1.5">
         <section className="shrink-0 pb-1.5" aria-labelledby="spaces-heading">
-          <div className="flex h-8 items-center px-1.5">
+          <div className="flex h-8 items-center justify-between px-1.5">
             <h2
               id="spaces-heading"
               className="text-xs font-semibold tracking-wide text-tertiary"
             >
               Spaces
             </h2>
+            <button
+              type="button"
+              onClick={handleAddRepository}
+              className="rounded-md p-1 text-tertiary transition-colors hover:bg-hover hover:text-primary motion-reduce:transition-none"
+              title="Add Space"
+              aria-label="Add Space"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
           </div>
           <div
             className="max-h-40 space-y-0.5 overflow-y-auto scrollbar-hide"
