@@ -272,13 +272,14 @@ export const WorktreeItem = memo(function WorktreeItem({
               </div>
             )}
             <button
+              type="button"
               onClick={onDelete}
               className={cn(
-                "invisible absolute inset-y-0 right-0 z-10 rounded-md p-1 transition-colors hover:text-semantic-error group-hover:visible group-focus:visible focus-visible:visible focus-visible:text-semantic-error",
+                "invisible absolute inset-y-0 right-0 z-10 rounded-md p-1 text-tertiary transition-colors hover:bg-semantic-error/10 hover:text-semantic-error focus-visible:visible focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:text-semantic-error group-hover:visible group-focus-within:visible",
                 isActive ? "bg-active" : "bg-hover"
               )}
-              title="Delete worktree"
-              aria-label="Delete worktree"
+              title={`Delete ${branch || name} workspace`}
+              aria-label={`Delete ${branch || name} workspace`}
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>

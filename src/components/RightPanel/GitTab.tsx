@@ -226,7 +226,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
     if (prefetchTimerRef.current) clearTimeout(prefetchTimerRef.current);
     prefetchTimerRef.current = setTimeout(() => {
       prefetchTimerRef.current = null;
-      void loadGitFileDiff(worktreePath, file.path, isStaged).catch(() => {});
+      void loadGitFileDiff(worktreePath, file.path, isStaged, false).catch(() => {});
     }, 100);
   }, [worktreePath]);
 
