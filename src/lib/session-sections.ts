@@ -36,7 +36,13 @@ export function getPrSessionSection(
   ) {
     return "pr:attention";
   }
-  if (prStatus.review_decision === "APPROVED") return "pr:ready";
+  if (
+    prStatus.review_decision === "APPROVED" &&
+    !prStatus.draft &&
+    prStatus.checks_status === "success"
+  ) {
+    return "pr:ready";
+  }
   return "pr:review";
 }
 

@@ -56,6 +56,27 @@ describe("session sections", () => {
     expect(
       getPrSessionSection({ ...openPr, review_decision: "APPROVED" }),
     ).toBe("pr:ready");
+    expect(
+      getPrSessionSection({
+        ...openPr,
+        draft: true,
+        review_decision: "APPROVED",
+      }),
+    ).toBe("pr:review");
+    expect(
+      getPrSessionSection({
+        ...openPr,
+        checks_status: "pending",
+        review_decision: "APPROVED",
+      }),
+    ).toBe("pr:review");
+    expect(
+      getPrSessionSection({
+        ...openPr,
+        checks_status: null,
+        review_decision: "APPROVED",
+      }),
+    ).toBe("pr:review");
     expect(getPrSessionSection({ ...openPr, merged: true })).toBe("pr:closed");
     expect(getPrSessionSection({ ...openPr, state: "closed" })).toBe("pr:closed");
   });

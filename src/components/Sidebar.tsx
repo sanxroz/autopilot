@@ -98,6 +98,7 @@ export function Sidebar({
     prStatusByWorktreePath,
     processStatusByPath,
     agentRunByWorktreePath,
+    clearAgentRunState,
     agentSidebarLifecycleEnabled,
     worktreeSetupByRepoPath,
     sidebarGroupsByRepo,
@@ -320,6 +321,15 @@ export function Sidebar({
     if (suppressNextWorktreeClickRef.current) {
       suppressNextWorktreeClickRef.current = false;
       return;
+    }
+
+    const agentRunState = agentRunByWorktreePath[worktree.path];
+    if (
+      sessionMode === "agent" &&
+      (agentRunState?.status === "completed" ||
+        agentRunState?.status === "error")
+    ) {
+      clearAgentRunState(worktree.path);
     }
 
     await selectWorktree(worktree);
@@ -939,7 +949,7 @@ export function Sidebar({
                                    worktree !== undefined && includedPaths.has(worktree.path),
                                );
 
-                             if (groupedWorktrees.length > 1) {
+                             if (groupedWorktrees.length > 0) {
                                const isEditingGroup =
                                  editingGroup?.repoPath === group.repoPath &&
                                  editingGroup.groupId === sidebarGroup.id;
