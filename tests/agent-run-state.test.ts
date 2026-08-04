@@ -58,4 +58,19 @@ describe("agent run state reconciliation", () => {
       label: "Agent process detected",
     });
   });
+
+  test("keeps a finished run visible until it is acknowledged", () => {
+    const completed: AgentRunState = {
+      worktreePath: "/repo/worktree",
+      sessionId: "terminal-1",
+      status: "completed",
+      startedAt: 1000,
+      lastEventAt: 1500,
+      endedAt: 1500,
+    };
+
+    expect(
+      reconcileAgentRunState("/repo/worktree", "none", completed, 60_000),
+    ).toBe(completed);
+  });
 });
