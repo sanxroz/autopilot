@@ -323,6 +323,11 @@ export function Sidebar({
     worktreeName: string
   ) => {
     e.stopPropagation();
+    const confirmed = window.confirm(
+      `Delete workspace "${worktreeName}"?\n\nThis permanently deletes its worktree files, including uncommitted changes. The Git branch will remain.`,
+    );
+    if (!confirmed) return;
+
     setError(null);
     try {
       await deleteWorktree(repoPath, worktreeName);

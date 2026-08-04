@@ -13,8 +13,9 @@ export function getGitFileDiffKey(
   worktreePath: string,
   filePath: string,
   isStaged: boolean,
+  includeContent: boolean,
 ): string {
-  return `${worktreePath}\0${isStaged}\0${filePath}`;
+  return `${worktreePath}\0${isStaged}\0${includeContent}\0${filePath}`;
 }
 
 export function getCachedGitFileDiff(key: string): FileDiffData | null {
@@ -53,8 +54,14 @@ export function loadGitFileDiff(
   worktreePath: string,
   filePath: string,
   isStaged: boolean,
+  includeContent: boolean,
 ): Promise<FileDiffData> {
-  const key = getGitFileDiffKey(worktreePath, filePath, isStaged);
+  const key = getGitFileDiffKey(
+    worktreePath,
+    filePath,
+    isStaged,
+    includeContent,
+  );
   const cached = cache.get(key);
   if (cached) {
     cache.delete(key);
@@ -71,7 +78,7 @@ export function loadGitFileDiff(
     worktreePath,
     filePath,
     isStaged,
-    includeContent: true,
+    includeContent,
   })
     .then((data) => {
       if ((generations.get(worktreePath) ?? 0) === generation) {

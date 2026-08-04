@@ -4,6 +4,7 @@ import {
   X,
   Eye,
   Code2,
+  Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
@@ -52,6 +53,7 @@ export function GitFileDiffOverlay() {
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"diff" | "preview">("diff");
+  const [editingTargetKey, setEditingTargetKey] = useState<string | null>(null);
   const lastSavedContentRef = useRef<string | null>(null);
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSaveRef = useRef<{
@@ -68,9 +70,19 @@ export function GitFileDiffOverlay() {
 
   activeTargetRef.current = { worktreePath, filePath };
 
+  const previewTargetKey =
+    worktreePath && filePath
+      ? `${worktreePath}\0${isStaged}\0${filePath}`
+      : "";
+  const isEditing = editingTargetKey === previewTargetKey;
   const requestKey =
     worktreePath && filePath
-      ? getGitFileDiffKey(worktreePath, filePath, isStaged)
+      ? getGitFileDiffKey(
+          worktreePath,
+          filePath,
+          isStaged,
+          isMd || isEditing,
+        )
       : "";
   const diffData =
     loadedDiff?.key === requestKey
@@ -131,6 +143,7 @@ export function GitFileDiffOverlay() {
     void flushAutosave();
     editVersionRef.current += 1;
     setViewMode("diff");
+    setEditingTargetKey(null);
     lastSavedContentRef.current = null;
     setIsDirty(false);
   }, [filePath, worktreePath, flushAutosave]);
@@ -158,7 +171,12 @@ export function GitFileDiffOverlay() {
     const loadDiff = async () => {
       setError(null);
       try {
-        const diff = await loadGitFileDiff(worktreePath, filePath, isStaged);
+        const diff = await loadGitFileDiff(
+          worktreePath,
+          filePath,
+          isStaged,
+          isMd || isEditing,
+        );
         if (!cancelled) {
           setLoadedDiff({ key: requestKey, data: diff });
           lastSavedContentRef.current =
@@ -180,7 +198,7 @@ export function GitFileDiffOverlay() {
     return () => {
       cancelled = true;
     };
-  }, [filePath, worktreePath, isStaged, requestKey]);
+  }, [filePath, worktreePath, isStaged, isEditing, isMd, requestKey]);
 
   const stats = useMemo(() => {
     let added = 0;
@@ -301,6 +319,24 @@ export function GitFileDiffOverlay() {
             {isSaving ? "Saving…" : ""}
           </span>
           <div className="flex items-center gap-0.5">
+            {(isEditing || (diffData != null && !diffData.is_binary)) &&
+              viewMode === "diff" && (
+                <button
+                  onClick={() => setEditingTargetKey(previewTargetKey)}
+                  disabled={isEditing}
+                  className={cn(
+                    "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
+                    isEditing
+                      ? "text-primary"
+                      : "text-tertiary hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1",
+                  )}
+                  aria-label={isEditing ? "Editing file" : "Edit file"}
+                  aria-pressed={isEditing}
+                  title={isEditing ? "Editing file" : "Edit file"}
+                >
+                  <Pencil className="h-3.5 w-3.5" strokeWidth={1.5} />
+                </button>
+              )}
             {isMd && (
               <button
                 onClick={() =>
@@ -381,8 +417,8 @@ export function GitFileDiffOverlay() {
                 filePath={preview.filePath}
                 oldContent={diffData.old_content}
                 newContent={editContent}
-                edit={isEditable}
-                onEditChange={isEditable ? handleEditChange : undefined}
+                edit={isEditing && isEditable}
+                onEditChange={isEditing && isEditable ? handleEditChange : undefined}
               />
             </DiffErrorBoundary>
           ) : (
