@@ -89,12 +89,6 @@ interface WorktreeItemProps {
 function getAgentStatusDisplay(agentRunState: AgentRunState | undefined): AgentStatusDisplay | null {
   if (!agentRunState) return null;
 
-  if (agentRunState.status === 'completed' && agentRunState.endedAt) {
-    if (Date.now() - agentRunState.endedAt > 5000) {
-      return null;
-    }
-  }
-
   switch (agentRunState.status) {
     case 'starting':
     case 'running':

@@ -9,6 +9,8 @@ import {
   User,
   Folder,
   SquareTerminal,
+  Bot,
+  GitPullRequest,
 } from "lucide-react";
 import { useAppStore } from "../store";
 import type { WorktreeInfo } from "../types";
@@ -34,12 +36,32 @@ import {
   resolveActiveSpace,
   saveActiveSpace,
 } from "../lib/spaces";
+import {
+  getAgentSessionSection,
+  getPrSessionSection,
+  type SessionMode,
+  type SessionSection,
+} from "../lib/session-sections";
 
 const MIN_WIDTH = 240;
 const MAX_WIDTH = 520;
 const DEFAULT_WIDTH = 312;
 const DRAG_START_THRESHOLD_PX = 10;
 const GROUP_HOLD_DELAY_MS = 1200;
+
+const PR_SESSION_SECTIONS = [
+  { id: "pr:attention", label: "Needs attention", dot: "bg-semantic-error" },
+  { id: "pr:ready", label: "Ready to merge", dot: "bg-semantic-success" },
+  { id: "pr:review", label: "In review", dot: "bg-semantic-info" },
+  { id: "pr:none", label: "No pull request", dot: "bg-border-strong" },
+  { id: "pr:closed", label: "Closed", dot: "bg-tertiary" },
+] as const;
+
+const AGENT_SESSION_SECTIONS = [
+  { id: "agent:attention", label: "Needs attention", dot: "bg-semantic-warning" },
+  { id: "agent:running", label: "Agent running", dot: "bg-semantic-success" },
+  { id: "agent:none", label: "No agent running", dot: "bg-border-strong" },
+] as const;
 
 function basename(path: string): string {
   const cleaned = path.replace(/\/+$/g, "");
@@ -76,6 +98,7 @@ export function Sidebar({
     prStatusByWorktreePath,
     processStatusByPath,
     agentRunByWorktreePath,
+    clearAgentRunState,
     agentSidebarLifecycleEnabled,
     worktreeSetupByRepoPath,
     sidebarGroupsByRepo,
@@ -86,6 +109,7 @@ export function Sidebar({
   );
   const [failedAvatarUrls, setFailedAvatarUrls] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [sessionMode, setSessionMode] = useState<SessionMode>("pr");
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const [activeSpacePath, setActiveSpacePath] = useState<string | null>(
@@ -297,6 +321,15 @@ export function Sidebar({
     if (suppressNextWorktreeClickRef.current) {
       suppressNextWorktreeClickRef.current = false;
       return;
+    }
+
+    const agentRunState = agentRunByWorktreePath[worktree.path];
+    if (
+      sessionMode === "agent" &&
+      (agentRunState?.status === "completed" ||
+        agentRunState?.status === "error")
+    ) {
+      clearAgentRunState(worktree.path);
     }
 
     await selectWorktree(worktree);
@@ -742,6 +775,32 @@ export function Sidebar({
                     >
                       <Plus className="h-3.5 w-3.5" />
                     </button>
+                    {isActive && (
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setSessionMode(sessionMode === "pr" ? "agent" : "pr");
+                        }}
+                        className="rounded-md p-1 text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
+                        title={
+                          sessionMode === "pr"
+                            ? "Switch sessions to Agent mode"
+                            : "Switch sessions to PR mode"
+                        }
+                        aria-label={
+                          sessionMode === "pr"
+                            ? "Switch sessions to Agent mode"
+                            : "Switch sessions to PR mode"
+                        }
+                      >
+                        {sessionMode === "pr" ? (
+                          <Bot className="h-3.5 w-3.5" />
+                        ) : (
+                          <GitPullRequest className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    )}
                     <button
                       onClick={(event) => {
                         event.stopPropagation();
@@ -882,110 +941,179 @@ export function Sidebar({
                          );
                        };
 
-                       const elements: React.ReactNode[] = [];
-                       const renderedWorktreePaths = new Set<string>();
+                       const renderWorktrees = (
+                         worktrees: WorktreeInfo[],
+                         sectionId: SessionSection,
+                       ) => {
+                         const includedPaths = new Set(worktrees.map((worktree) => worktree.path));
+                         const elements: React.ReactNode[] = [];
+                         const renderedWorktreePaths = new Set<string>();
 
-                       for (const wt of group.worktrees) {
-                         if (renderedWorktreePaths.has(wt.path)) {
-                           continue;
-                         }
+                         for (const wt of worktrees) {
+                           if (renderedWorktreePaths.has(wt.path)) continue;
 
-                         const sidebarGroup = groupByWorktreePath.get(wt.path);
-                         if (sidebarGroup) {
-                           const isEditingGroup =
-                             editingGroup?.repoPath === group.repoPath &&
-                             editingGroup.groupId === sidebarGroup.id;
-                           const isGroupDropTarget =
-                             dropTarget?.repoPath === group.repoPath &&
-                             dropTarget.kind === "group" &&
-                             dropTarget.groupId === sidebarGroup.id;
-                           const groupedWorktrees = sidebarGroup.worktreePaths
-                             .map((worktreePath) =>
-                               group.worktrees.find((worktree) => worktree.path === worktreePath)
-                             )
-                             .filter((worktree): worktree is WorktreeInfo => worktree !== undefined);
+                           const sidebarGroup = groupByWorktreePath.get(wt.path);
+                           if (sidebarGroup) {
+                             const groupedWorktrees = sidebarGroup.worktreePaths
+                               .map((worktreePath) =>
+                                 group.worktrees.find((worktree) => worktree.path === worktreePath)
+                               )
+                               .filter(
+                                 (worktree): worktree is WorktreeInfo =>
+                                   worktree !== undefined && includedPaths.has(worktree.path),
+                               );
 
-                           for (const groupedWorktree of groupedWorktrees) {
-                             renderedWorktreePaths.add(groupedWorktree.path);
+                             if (groupedWorktrees.length > 0) {
+                               const isEditingGroup =
+                                 editingGroup?.repoPath === group.repoPath &&
+                                 editingGroup.groupId === sidebarGroup.id;
+                               const isGroupDropTarget =
+                                 dropTarget?.repoPath === group.repoPath &&
+                                 dropTarget.kind === "group" &&
+                                 dropTarget.groupId === sidebarGroup.id;
+
+                               for (const groupedWorktree of groupedWorktrees) {
+                                 renderedWorktreePaths.add(groupedWorktree.path);
+                               }
+
+                               elements.push(
+                                 <div
+                                   key={`${sectionId}-${sidebarGroup.id}`}
+                                   data-sidebar-group-drop-target="true"
+                                   data-repo-path={group.repoPath}
+                                   data-group-id={sidebarGroup.id}
+                                 >
+                                   <SidebarWorktreeGroup
+                                     label={sidebarGroup.name}
+                                     count={groupedWorktrees.length}
+                                     isDropTarget={isGroupDropTarget}
+                                     isEditing={isEditingGroup}
+                                     editingValue={
+                                       isEditingGroup ? editingGroup.value : sidebarGroup.name
+                                     }
+                                     onEditingValueChange={(value) =>
+                                       setEditingGroup({
+                                         repoPath: group.repoPath,
+                                         groupId: sidebarGroup.id,
+                                         value,
+                                       })
+                                     }
+                                     onEditingSubmit={() =>
+                                       commitGroupRename(
+                                         group.repoPath,
+                                         sidebarGroup.id,
+                                         isEditingGroup ? editingGroup.value : sidebarGroup.name,
+                                       )
+                                     }
+                                     onEditingCancel={() => setEditingGroup(null)}
+                                     onStartEditing={() =>
+                                       setEditingGroup({
+                                         repoPath: group.repoPath,
+                                         groupId: sidebarGroup.id,
+                                         value: sidebarGroup.name,
+                                       })
+                                     }
+                                   >
+                                     {groupedWorktrees.map(renderItem)}
+                                   </SidebarWorktreeGroup>
+                                 </div>,
+                               );
+                               continue;
+                             }
                            }
 
-                           elements.push(
-                             <div
-                               key={sidebarGroup.id}
-                               data-sidebar-group-drop-target="true"
-                               data-repo-path={group.repoPath}
-                               data-group-id={sidebarGroup.id}
-                             >
-                               <SidebarWorktreeGroup
-                                 label={sidebarGroup.name}
-                                 count={groupedWorktrees.length}
-                                 isDropTarget={isGroupDropTarget}
-                                 isEditing={isEditingGroup}
-                                 editingValue={
-                                   isEditingGroup ? editingGroup.value : sidebarGroup.name
-                                 }
-                                 onEditingValueChange={(value) =>
-                                   setEditingGroup({
-                                     repoPath: group.repoPath,
-                                     groupId: sidebarGroup.id,
-                                     value,
-                                   })
-                                 }
-                                 onEditingSubmit={() =>
-                                   commitGroupRename(
-                                     group.repoPath,
-                                     sidebarGroup.id,
-                                     (isEditingGroup ? editingGroup.value : sidebarGroup.name)
-                                   )
-                                 }
-                                 onEditingCancel={() => setEditingGroup(null)}
-                                 onStartEditing={() =>
-                                   setEditingGroup({
-                                     repoPath: group.repoPath,
-                                     groupId: sidebarGroup.id,
-                                     value: sidebarGroup.name,
-                                   })
-                                 }
+                           const stackIndex = stackWorktreePaths.get(wt.path);
+                           if (stackIndex !== undefined) {
+                             const stack = stacks[stackIndex];
+                             const groupedWorktrees = stack.allPrs
+                               .map((pr) =>
+                                 group.worktrees.find(
+                                   (worktree) => worktree.branch === pr.head_branch
+                                 )
+                               )
+                               .filter(
+                                 (worktree): worktree is WorktreeInfo =>
+                                   worktree !== undefined && includedPaths.has(worktree.path),
+                               );
+
+                             if (groupedWorktrees.length > 1) {
+                               for (const groupedWorktree of groupedWorktrees) {
+                                 renderedWorktreePaths.add(groupedWorktree.path);
+                               }
+
+                               elements.push(
+                                 <StackGroup
+                                   key={`${sectionId}-stack-${stack.root.pr.number}`}
+                                   label={getStackLabel(stack)}
+                                   count={groupedWorktrees.length}
+                                 >
+                                   {groupedWorktrees.map(renderItem)}
+                                 </StackGroup>,
+                               );
+                               continue;
+                             }
+                           }
+
+                           renderedWorktreePaths.add(wt.path);
+                           elements.push(renderItem(wt));
+                         }
+
+                         return elements;
+                       };
+
+                       const sections: readonly {
+                         id: SessionSection;
+                         label: string;
+                         dot: string;
+                       }[] = sessionMode === "pr"
+                         ? PR_SESSION_SECTIONS
+                         : AGENT_SESSION_SECTIONS;
+
+                       return (
+                         <div className="space-y-2.5 pb-1">
+                           {sections.map((section) => {
+                             const worktrees = group.worktrees.filter((worktree) => {
+                               if (sessionMode === "pr") {
+                                 return getPrSessionSection(
+                                   prStatusByWorktreePath[worktree.path] ?? null,
+                                 ) === section.id;
+                               }
+
+                               return getAgentSessionSection(
+                                 processStatusByPath[worktree.path] || "none",
+                                 agentSidebarLifecycleEnabled
+                                   ? agentRunByWorktreePath[worktree.path]
+                                   : undefined,
+                               ) === section.id;
+                             });
+
+                             if (worktrees.length === 0) return null;
+
+                             return (
+                               <section
+                                 key={section.id}
+                                 aria-label={`${section.label}, ${worktrees.length} sessions`}
                                >
-                                 {groupedWorktrees.map(renderItem)}
-                               </SidebarWorktreeGroup>
-                             </div>
-                           );
-                           continue;
-                         }
-
-                        const stackIndex = stackWorktreePaths.get(wt.path);
-                        if (stackIndex !== undefined) {
-                          const stack = stacks[stackIndex];
-                          const groupedWorktrees = stack.allPrs
-                            .map((pr) =>
-                              group.worktrees.find(
-                                (worktree) => worktree.branch === pr.head_branch
-                              )
-                            )
-                            .filter((worktree): worktree is WorktreeInfo => worktree !== undefined);
-
-                          for (const groupedWorktree of groupedWorktrees) {
-                            renderedWorktreePaths.add(groupedWorktree.path);
-                          }
-
-                           elements.push(
-                             <StackGroup
-                               key={`stack-${stack.root.pr.number}`}
-                               label={getStackLabel(stack)}
-                               count={stack.allPrs.length}
-                             >
-                               {groupedWorktrees.map(renderItem)}
-                             </StackGroup>
-                           );
-                           continue;
-                         }
-
-                         renderedWorktreePaths.add(wt.path);
-                         elements.push(renderItem(wt));
-                       }
-
-                        return elements;
+                                 <div className="flex h-7 items-center gap-1.5 px-2.5 pt-0.5">
+                                   <span
+                                     className={cn("h-1.5 w-1.5 rounded-full", section.dot)}
+                                     aria-hidden="true"
+                                   />
+                                   <h3 className="min-w-0 flex-1 truncate text-[11px] font-medium text-tertiary">
+                                     {section.label}
+                                   </h3>
+                                   <span className="font-mono text-[10px] tabular-nums text-tertiary">
+                                     {worktrees.length}
+                                   </span>
+                                 </div>
+                                 <div className="space-y-0.5">
+                                   {renderWorktrees(worktrees, section.id)}
+                                 </div>
+                               </section>
+                             );
+                           })}
+                         </div>
+                       );
                      })()}
                    </div>
               </div>
@@ -1013,7 +1141,7 @@ export function Sidebar({
       )}
 
       <div className="px-1.5 pb-1.5">
-        <div className="flex items-center justify-between">
+        <div className="flex min-h-8 items-center justify-between">
           <button
             onClick={toggleSettings}
             className="p-0.5 rounded-full transition-colors bg-transparent hover:bg-hover"
