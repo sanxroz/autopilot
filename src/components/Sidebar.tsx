@@ -11,6 +11,7 @@ import {
   SquareTerminal,
   Bot,
   GitPullRequest,
+  CircleHelp,
 } from "lucide-react";
 import { useAppStore } from "../store";
 import type { WorktreeInfo } from "../types";
@@ -24,6 +25,7 @@ import { cn } from "../utils/cn";
 import { beginPanelResize, endPanelResize } from "../utils/panelResize";
 import { isWorktreeSettingUp } from "../store/worktreeSetup";
 import type { SidebarWorktreeGroup as SidebarWorktreeGroupModel } from "../lib/sidebar-groups";
+import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -110,6 +112,7 @@ export function Sidebar({
   const [failedAvatarUrls, setFailedAvatarUrls] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [sessionMode, setSessionMode] = useState<SessionMode>("pr");
+  const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const [activeSpacePath, setActiveSpacePath] = useState<string | null>(
@@ -117,6 +120,7 @@ export function Sidebar({
   );
   const containerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
+  const sessionsListRef = useRef<HTMLDivElement>(null);
   const widthRef = useRef(DEFAULT_WIDTH);
   const pendingWidthRef = useRef(DEFAULT_WIDTH);
   const resizeFrameRef = useRef<number | null>(null);
@@ -272,6 +276,7 @@ export function Sidebar({
   const activeRepoGroups = repoGroups.filter(
     (group) => group.repoPath === resolvedSpacePath,
   );
+  const selectedWorktreePath = selectedWorktree?.path;
 
   useEffect(() => {
     if (!selectedWorktreeSpace) {
@@ -293,6 +298,27 @@ export function Sidebar({
     setActiveSpacePath(resolvedSpacePath);
     saveActiveSpace(resolvedSpacePath);
   }, [activeSpacePath, resolvedSpacePath]);
+
+  useEffect(() => {
+    if (!isOpen || !selectedWorktreePath || captainTerminalRepoPath) return;
+
+    const frame = requestAnimationFrame(() => {
+      const selectedItem = Array.from(
+        sessionsListRef.current?.querySelectorAll<HTMLElement>(
+          "[data-worktree-path]",
+        ) ?? [],
+      ).find((item) => item.dataset.worktreePath === selectedWorktreePath);
+
+      selectedItem?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [
+    captainTerminalRepoPath,
+    isOpen,
+    resolvedSpacePath,
+    selectedWorktreePath,
+  ]);
 
   const handleSpaceSelect = (repoPath: string) => {
     setActiveSpacePath(repoPath);
@@ -843,6 +869,7 @@ export function Sidebar({
         </div>
 
         <div
+          ref={sessionsListRef}
           className="min-h-0 flex-1 overflow-y-auto scrollbar-hide"
           style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
         >
@@ -1142,24 +1169,35 @@ export function Sidebar({
 
       <div className="px-1.5 pb-1.5">
         <div className="flex min-h-8 items-center justify-between">
-          <button
-            onClick={toggleSettings}
-            className="p-0.5 rounded-full transition-colors bg-transparent hover:bg-hover"
-            title={githubSettings.ghAuthUser ? `Signed in as ${githubSettings.ghAuthUser}` : "GitHub Setup"}
-            aria-label={githubSettings.ghAuthUser ? `Account settings for ${githubSettings.ghAuthUser}` : "GitHub Setup"}
-          >
-            {githubSettings.ghAuthUser ? (
-              <img
-                src={`https://github.com/${githubSettings.ghAuthUser}.png?size=64`}
-                alt={githubSettings.ghAuthUser}
-                className="w-5 h-5 rounded-full"
-              />
-            ) : (
-              <div className="w-5 h-5 rounded-full flex items-center justify-center bg-tertiary">
-                <User className="w-3.5 h-3.5 text-tertiary" />
-              </div>
-            )}
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={toggleSettings}
+              className="p-0.5 rounded-full transition-colors bg-transparent hover:bg-hover"
+              title={githubSettings.ghAuthUser ? `Signed in as ${githubSettings.ghAuthUser}` : "GitHub Setup"}
+              aria-label={githubSettings.ghAuthUser ? `Account settings for ${githubSettings.ghAuthUser}` : "GitHub Setup"}
+            >
+              {githubSettings.ghAuthUser ? (
+                <img
+                  src={`https://github.com/${githubSettings.ghAuthUser}.png?size=64`}
+                  alt={githubSettings.ghAuthUser}
+                  className="w-5 h-5 rounded-full"
+                />
+              ) : (
+                <div className="w-5 h-5 rounded-full flex items-center justify-center bg-tertiary">
+                  <User className="w-3.5 h-3.5 text-tertiary" />
+                </div>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShortcutsHelpOpen(true)}
+              className="flex h-8 w-8 items-center justify-center rounded-md text-tertiary transition-colors hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
+              title="Keyboard shortcuts"
+              aria-label="Show keyboard shortcuts"
+            >
+              <CircleHelp className="h-3.5 w-3.5" />
+            </button>
+          </div>
 
           <div className="flex items-center gap-1">
             <button
@@ -1183,6 +1221,10 @@ export function Sidebar({
           onClose={() => setShowWorktreeDialog(null)}
         />
       )}
+      <KeyboardShortcutsHelp
+        open={shortcutsHelpOpen}
+        onOpenChange={setShortcutsHelpOpen}
+      />
       </div>
     </div>
   );

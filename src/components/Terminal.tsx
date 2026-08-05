@@ -384,6 +384,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
   return (
     <div
       ref={containerRef}
+      data-terminal-id={terminalId}
       onClick={onFocus}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget) return;

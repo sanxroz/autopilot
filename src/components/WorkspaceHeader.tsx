@@ -1,5 +1,6 @@
-import { PanelLeft, PanelRight, X } from "lucide-react";
+import { PanelLeft, PanelRight, Search, X } from "lucide-react";
 import { useAppStore } from "../store";
+import { formatShortcut } from "../lib/keyboard-shortcuts";
 import type { WorktreeInfo } from "../types";
 import { cn } from "../utils/cn";
 import {
@@ -10,6 +11,7 @@ import {
 interface WorkspaceHeaderProps {
   sidebarOpen: boolean;
   onToggleSidebar: () => void;
+  onOpenCommandMenu: () => void;
   headerWorktree?: WorktreeInfo | null;
   rightPanelTab: RightPanelTabId;
   onRightPanelTabChange: (tab: RightPanelTabId) => void;
@@ -18,6 +20,7 @@ interface WorkspaceHeaderProps {
 export function WorkspaceHeader({
   sidebarOpen,
   onToggleSidebar,
+  onOpenCommandMenu,
   headerWorktree,
   rightPanelTab,
   onRightPanelTabChange,
@@ -34,6 +37,12 @@ export function WorkspaceHeader({
   );
   const codeReviewOpen = useAppStore((state) => state.codeReviewOpen);
   const setCodeReviewOpen = useAppStore((state) => state.setCodeReviewOpen);
+  const commandMenuShortcut = useAppStore(
+    (state) => state.keyboardShortcuts.commandMenu,
+  );
+  const sidebarShortcut = useAppStore(
+    (state) => state.keyboardShortcuts.toggleSidebar,
+  );
 
   const displayedWorktree = headerWorktree ?? selectedWorktree;
   const canCreateTab = Boolean(selectedWorktree && !headerWorktree);
@@ -53,10 +62,20 @@ export function WorkspaceHeader({
         type="button"
         onClick={onToggleSidebar}
         className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
-        title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
-        aria-label={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+        title={`${sidebarOpen ? "Hide" : "Show"} sidebar (${formatShortcut(sidebarShortcut)})`}
+        aria-label={`${sidebarOpen ? "Hide" : "Show"} sidebar, ${formatShortcut(sidebarShortcut)}`}
       >
         <PanelLeft className="h-4 w-4" strokeWidth={1.5} />
+      </button>
+
+      <button
+        type="button"
+        onClick={onOpenCommandMenu}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
+        title={`Command menu (${formatShortcut(commandMenuShortcut)})`}
+        aria-label={`Open command menu, ${formatShortcut(commandMenuShortcut)}`}
+      >
+        <Search className="h-4 w-4" strokeWidth={1.5} />
       </button>
 
       <div

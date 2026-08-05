@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { WorkspaceHeader } from "./components/WorkspaceHeader";
 import type { RightPanelTabId } from "./components/RightPanelToolbar";
 import { Sidebar } from "./components/Sidebar";
@@ -21,6 +21,16 @@ import { useUpdater } from "./hooks/useUpdater";
 import { useDiffStatsLoader } from "./hooks/useDiffStats";
 import { useProcessStatusPolling } from "./hooks/useProcessStatus";
 import type { AgentStatusEvent } from "./types";
+import { getShortcutAction, type ShortcutAction } from "./lib/keyboard-shortcuts";
+import { cycleItems, getNavigableSessions } from "./lib/session-navigation";
+
+function focusTerminal(terminalId: string | null) {
+  if (!terminalId) return;
+  const terminal = Array.from(
+    document.querySelectorAll<HTMLElement>("[data-terminal-id]"),
+  ).find((element) => element.dataset.terminalId === terminalId);
+  terminal?.querySelector<HTMLElement>(".xterm-helper-textarea")?.focus();
+}
 
 function App() {
   const autoFetchInFlightRef = useRef(false);
@@ -36,10 +46,71 @@ function App() {
   const repositories = useAppStore((state) => state.repositories);
   const autoFetchSettings = useAppStore((state) => state.autoFetchSettings);
   const refreshWorktrees = useAppStore((state) => state.refreshWorktrees);
+  const keyboardShortcuts = useAppStore((state) => state.keyboardShortcuts);
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTabId>("git");
   const [captainTerminalRepoPath, setCaptainTerminalRepoPath] = useState<string | null>(null);
+
+  const runShortcutAction = useCallback((action: ShortcutAction) => {
+    const state = useAppStore.getState();
+
+    switch (action) {
+      case "commandMenu":
+        setCommandMenuOpen((open) => !open);
+        break;
+      case "settings":
+        state.toggleSettings();
+        break;
+      case "toggleSidebar":
+        setSidebarOpen((open) => !open);
+        break;
+      case "toggleWorkspacePanel":
+        state.toggleCodeReview();
+        break;
+      case "focusTerminal":
+        focusTerminal(state.currentActiveTerminalId);
+        break;
+      case "previousTerminal":
+      case "nextTerminal": {
+        const terminals = state.currentTerminals;
+        const current = terminals.find((terminal) => terminal.id === state.currentActiveTerminalId) ?? null;
+        const terminal = cycleItems(terminals, current, action === "nextTerminal" ? 1 : -1);
+        if (terminal) {
+          state.setActiveTerminal(terminal.id);
+          requestAnimationFrame(() => focusTerminal(terminal.id));
+        }
+        break;
+      }
+      case "previousSession":
+      case "nextSession": {
+        const sessions = getNavigableSessions(state.repositories);
+        const current = sessions.find((worktree) => worktree.path === state.selectedWorktree?.path) ?? null;
+        const session = cycleItems(sessions, current, action === "nextSession" ? 1 : -1);
+        if (session) void state.selectWorktree(session);
+        break;
+      }
+      case "previousLayout":
+      case "nextLayout": {
+        const tabs = state.currentTerminalTabs;
+        const current = tabs.find((tab) => tab.id === state.currentActiveTerminalTabId) ?? null;
+        const tab = cycleItems(tabs, current, action === "nextLayout" ? 1 : -1);
+        if (tab) state.setActiveTerminalTab(tab.id);
+        break;
+      }
+      case "showGit":
+      case "showNotes":
+        state.setCodeReviewOpen(true);
+        setRightPanelTab(action === "showGit" ? "git" : "notes");
+        break;
+      case "openWith":
+        state.setCodeReviewOpen(true);
+        window.setTimeout(() => {
+          document.querySelector<HTMLElement>("[data-shortcut-action='open-with']")?.click();
+        });
+        break;
+    }
+  }, []);
 
   useEffect(() => {
     initialize();
@@ -100,15 +171,19 @@ function App() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key === "p") {
-        e.preventDefault();
-        setCommandMenuOpen((prev) => !prev);
-      }
+      if (e.defaultPrevented) return;
+      const action = getShortcutAction(e, keyboardShortcuts);
+      if (!action) return;
+
+      const state = useAppStore.getState();
+      if (state.settingsOpen && action !== "settings") return;
+      e.preventDefault();
+      runShortcutAction(action);
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [keyboardShortcuts, runShortcutAction]);
 
   useEffect(() => {
     setCaptainTerminalRepoPath(null);
@@ -225,6 +300,7 @@ function App() {
           <WorkspaceHeader
             sidebarOpen={sidebarOpen}
             onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+            onOpenCommandMenu={() => setCommandMenuOpen(true)}
             headerWorktree={captainHeaderWorktree}
             rightPanelTab={rightPanelTab}
             onRightPanelTabChange={setRightPanelTab}
@@ -254,7 +330,11 @@ function App() {
 
       {settingsOpen && <SettingsPanel onClose={toggleSettings} />}
 
-      <CommandMenu open={commandMenuOpen} onOpenChange={setCommandMenuOpen} />
+      <CommandMenu
+        open={commandMenuOpen}
+        onOpenChange={setCommandMenuOpen}
+        onRunAction={runShortcutAction}
+      />
 
       <UpdateNotification
         open={updateModalOpen}

@@ -219,6 +219,7 @@ export const WorktreeItem = memo(function WorktreeItem({
       }}
       role="button"
       tabIndex={0}
+      aria-current={isActive ? "page" : undefined}
       aria-label={`${branch || name} workspace${prStatus ? `, PR #${prStatus.number}` : ""}${isActive ? ", currently selected" : ""}`}
       className={cn(
         "group relative w-full cursor-pointer rounded-lg py-1.5 pl-3 pr-1.5 text-primary transition-colors",

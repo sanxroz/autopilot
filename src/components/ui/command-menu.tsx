@@ -21,10 +21,13 @@ const CommandDialog = ({
   return (
     <Modal.Root {...rest}>
       <Modal.Content
-        overlayClassName={cn("justify-start pt-20", overlayClassName)}
+        overlayClassName={cn(
+          "justify-start pt-20 motion-reduce:animate-none",
+          overlayClassName,
+        )}
         showClose={false}
         className={cn(
-          "flex max-h-full max-w-[560px] flex-col overflow-hidden rounded-xl",
+          "flex max-h-full max-w-[680px] flex-col overflow-hidden rounded-xl shadow-2xl motion-reduce:animate-none",
           className
         )}
       >
@@ -44,9 +47,8 @@ const CommandInput = React.forwardRef<
     <Command.Input
       ref={forwardedRef}
       className={cn(
-        "w-full bg-transparent text-sm outline-none text-primary",
-        "transition duration-200 ease-out",
-        "placeholder:transition-colors placeholder:text-muted",
+        "w-full bg-transparent text-sm text-primary outline-none",
+        "placeholder:text-muted",
         "focus:outline-none",
         className
       )}
@@ -73,6 +75,18 @@ const CommandList = React.forwardRef<
 });
 CommandList.displayName = "CommandList";
 
+const CommandEmpty = React.forwardRef<
+  React.ComponentRef<typeof Command.Empty>,
+  React.ComponentPropsWithoutRef<typeof Command.Empty>
+>(({ className, ...rest }, forwardedRef) => (
+  <Command.Empty
+    ref={forwardedRef}
+    className={cn("px-4 py-10 text-center text-sm text-tertiary", className)}
+    {...rest}
+  />
+));
+CommandEmpty.displayName = "CommandEmpty";
+
 const CommandGroup = React.forwardRef<
   React.ComponentRef<typeof Command.Group>,
   React.ComponentPropsWithoutRef<typeof Command.Group>
@@ -81,9 +95,9 @@ const CommandGroup = React.forwardRef<
     <Command.Group
       ref={forwardedRef}
       className={cn(
-        "relative px-2 py-3",
-        "[&>[cmdk-group-heading]]:text-xs [&>[cmdk-group-heading]]:font-medium",
-        "[&>[cmdk-group-heading]]:mb-2 [&>[cmdk-group-heading]]:px-3 [&>[cmdk-group-heading]]:pt-1",
+        "relative border-t border-subtle px-2 py-2.5 first:border-t-0",
+        "[&>[cmdk-group-heading]]:text-[11px] [&>[cmdk-group-heading]]:font-medium",
+        "[&>[cmdk-group-heading]]:mb-1.5 [&>[cmdk-group-heading]]:px-3 [&>[cmdk-group-heading]]:py-1",
         "[&>[cmdk-group-heading]]:text-tertiary",
         className
       )}
@@ -103,9 +117,8 @@ const CommandItem = React.forwardRef<
       className={cn(
         "flex items-center gap-3 rounded-lg",
         "cursor-pointer text-sm text-primary",
-        "transition duration-200 ease-out",
-        "px-3 py-2.5",
-        "data-[selected=true]:bg-hover",
+        "px-3 py-2",
+        "data-[selected=true]:bg-active data-[selected=true]:shadow-[inset_0_0_0_1px_var(--color-border-subtle)]",
         className
       )}
       {...rest}
@@ -136,7 +149,7 @@ function CommandFooter({
   return (
     <div
       className={cn(
-        "flex h-12 items-center justify-between gap-3 px-5",
+        "flex h-11 items-center justify-between gap-3 px-4",
         className
       )}
       {...rest}
@@ -151,7 +164,7 @@ function CommandFooterKeyBox({
   return (
     <div
       className={cn(
-        "flex size-5 shrink-0 items-center justify-center rounded bg-hover text-secondary",
+        "flex min-w-5 shrink-0 items-center justify-center rounded border border-subtle bg-hover px-1 py-0.5 font-sans text-[10px] leading-none text-secondary",
         className
       )}
       {...rest}
@@ -165,6 +178,7 @@ export {
   CommandDialogDescription as DialogDescription,
   CommandInput as Input,
   CommandList as List,
+  CommandEmpty as Empty,
   CommandGroup as Group,
   CommandItem as Item,
   CommandItemIcon as ItemIcon,
