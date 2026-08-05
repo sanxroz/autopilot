@@ -1,0 +1,23 @@
+tests/agent-run-state.test.ts
+  s_756d4ea2acee8d::t_d1efa241716281 2-5,65,76-101
+src-tauri/src/commands/process.rs
+  s_756d4ea2acee8d::t_d1efa241716281 58-63,108-112
+src/store/agentRunState.ts
+  s_756d4ea2acee8d::t_d1efa241716281 3-4,42-47
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "298b4df961ca4c49529e3a43d1c32a2a970c48e8",
+  "prompts": {},
+  "sessions": {
+    "s_756d4ea2acee8d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fcff8-f25b-7001-be1b-42fe4e4a2296",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
