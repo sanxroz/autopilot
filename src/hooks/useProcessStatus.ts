@@ -103,12 +103,12 @@ export function useProcessStatusPolling() {
   }, [hasActiveProcesses, isInitialized, repositories.length, refreshIfIdle]);
 
   useEffect(() => {
-    if (nextFinishedDeadline === undefined) return;
+    if (!isInitialized || repositories.length === 0 || nextFinishedDeadline === undefined) return;
 
     const timeoutId = window.setTimeout(() => {
       void refreshIfIdle().catch(reportRefreshError);
     }, Math.max(0, nextFinishedDeadline - Date.now()));
 
     return () => clearTimeout(timeoutId);
-  }, [nextFinishedDeadline, refreshIfIdle]);
+  }, [isInitialized, repositories.length, nextFinishedDeadline, refreshIfIdle]);
 }
