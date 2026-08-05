@@ -1,0 +1,19 @@
+src/hooks/useProcessStatus.ts
+  s_756d4ea2acee8d::t_0f20d711ef7214 106,113
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "3608564a7b898a89c297843c1cb7dd773fe034b4",
+  "prompts": {},
+  "sessions": {
+    "s_756d4ea2acee8d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fcff8-f25b-7001-be1b-42fe4e4a2296",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
