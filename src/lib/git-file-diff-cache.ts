@@ -7,7 +7,17 @@ const MAX_CACHE_CHARS = 4_000_000;
 const cache = new Map<string, { data: FileDiffData; size: number }>();
 const inFlight = new Map<string, Promise<FileDiffData>>();
 const generations = new Map<string, number>();
+const invalidationListeners = new Set<(worktreePath: string) => void>();
 let cacheChars = 0;
+
+export function subscribeToGitFileDiffInvalidation(
+  listener: (worktreePath: string) => void,
+): () => void {
+  invalidationListeners.add(listener);
+  return () => {
+    invalidationListeners.delete(listener);
+  };
+}
 
 export function getGitFileDiffKey(
   worktreePath: string,
@@ -105,4 +115,5 @@ export function invalidateGitFileDiffCache(worktreePath: string): void {
     if (key.startsWith(prefix)) inFlight.delete(key);
   }
   generations.set(worktreePath, (generations.get(worktreePath) ?? 0) + 1);
+  for (const listener of invalidationListeners) listener(worktreePath);
 }

@@ -10,7 +10,12 @@ const invoke = mock(async () => ({
 
 mock.module("@tauri-apps/api/core", () => ({ invoke }));
 
-const { getGitFileDiffKey, loadGitFileDiff } = await import(
+const {
+  getGitFileDiffKey,
+  invalidateGitFileDiffCache,
+  loadGitFileDiff,
+  subscribeToGitFileDiffInvalidation,
+} = await import(
   "../src/lib/git-file-diff-cache"
 );
 
@@ -32,5 +37,18 @@ describe("git file diff cache", () => {
       isStaged: false,
       includeContent: false,
     });
+  });
+
+  test("notifies active previews when a worktree cache is invalidated", () => {
+    const invalidatedWorktrees: string[] = [];
+    const unsubscribe = subscribeToGitFileDiffInvalidation((worktreePath) => {
+      invalidatedWorktrees.push(worktreePath);
+    });
+
+    invalidateGitFileDiffCache("/repo");
+    unsubscribe();
+    invalidateGitFileDiffCache("/repo");
+
+    expect(invalidatedWorktrees).toEqual(["/repo"]);
   });
 });
