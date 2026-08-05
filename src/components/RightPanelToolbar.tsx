@@ -132,23 +132,23 @@ export function RightPanelToolbar({
         className="flex items-center gap-0.5"
       >
         {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={displayedTab === tab.id}
-            aria-label={tab.label}
-            title={tab.label}
-            onClick={() => onActiveTabChange(tab.id)}
-            className={cn(
-              "flex h-7 w-7 items-center justify-center rounded-md transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1",
-              displayedTab === tab.id
-                ? "text-primary"
-                : "text-muted hover:bg-hover hover:text-secondary",
-            )}
-          >
-            <tab.icon className="h-4 w-4" strokeWidth={1.5} />
-          </button>
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={displayedTab === tab.id}
+              aria-label={tab.label}
+              title={tab.label}
+              onClick={() => onActiveTabChange(tab.id)}
+              className={cn(
+                "flex h-7 w-7 items-center justify-center rounded-md transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1",
+                displayedTab === tab.id
+                  ? "text-primary"
+                  : "text-muted hover:bg-hover hover:text-secondary",
+              )}
+            >
+              <tab.icon className="h-4 w-4" strokeWidth={1.5} />
+            </button>
         ))}
       </div>
 
@@ -176,6 +176,7 @@ export function RightPanelToolbar({
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
+                data-shortcut-action="open-with"
                 className={cn(
                   "flex h-full items-center gap-1.5 px-2 text-[11px] font-medium text-secondary transition-colors hover:bg-hover hover:text-primary",
                   prStatus ? "w-7 justify-center px-0" : "rounded-md",

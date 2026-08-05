@@ -8,7 +8,8 @@ const invoke = mock(async () => ({
   is_binary: false,
 }));
 
-mock.module("@tauri-apps/api/core", () => ({ invoke }));
+const tauriCore = await import("@tauri-apps/api/core");
+mock.module("@tauri-apps/api/core", () => ({ ...tauriCore, invoke }));
 
 const {
   getGitFileDiffKey,

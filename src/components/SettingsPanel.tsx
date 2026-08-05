@@ -13,11 +13,20 @@ import {
   Bug,
   ChevronDown,
   FolderOpen,
+  Keyboard,
 } from "lucide-react";
 import { Checkbox } from "./ui/checkbox";
 import { useAppStore } from "../store";
 import { cn } from "../utils/cn";
 import { AI_AGENTS, type AIAgent, type Repository } from "../types";
+import {
+  DEFAULT_KEYBOARD_SHORTCUTS,
+  SHORTCUT_DEFINITIONS,
+  formatShortcut,
+  getShortcutConflict,
+  shortcutFromKeyboardEvent,
+  type ShortcutAction,
+} from "../lib/keyboard-shortcuts";
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -27,6 +36,7 @@ type NavSection =
   | "account"
   | "appearance"
   | "preferences"
+  | "shortcuts"
   | "projects"
   | "skills"
   | "agents"
@@ -133,6 +143,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     { id: "account", label: "Account", icon: <User className="w-3.5 h-3.5" /> },
     { id: "appearance", label: "Appearance", icon: <Palette className="w-3.5 h-3.5" /> },
     { id: "preferences", label: "Preferences", icon: <SlidersHorizontal className="w-3.5 h-3.5" /> },
+    { id: "shortcuts", label: "Keyboard Shortcuts", icon: <Keyboard className="w-3.5 h-3.5" /> },
     { id: "projects", label: "Projects", icon: <FolderOpen className="w-3.5 h-3.5" /> },
     { id: "skills", label: "Skills", icon: <BookOpen className="w-3.5 h-3.5" />, beta: true },
     { id: "agents", label: "Custom Agents", icon: <Bot className="w-3.5 h-3.5" />, beta: true },
@@ -144,6 +155,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     account: "Account",
     appearance: "Appearance",
     preferences: "Preferences",
+    shortcuts: "Keyboard Shortcuts",
     projects: "Projects",
     skills: "Skills",
     agents: "Custom Agents",
@@ -155,6 +167,12 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
       onClick={onClose}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") onClose();
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Settings"
     >
       <div
         className="flex h-[560px] w-full max-w-[900px] overflow-hidden rounded-xl border border-border bg-secondary shadow-2xl"
@@ -229,6 +247,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 setAutoFetchIntervalMinutes={setAutoFetchIntervalMinutes}
               />
             ) : null}
+            {activeSection === "shortcuts" ? <KeyboardShortcutsSection /> : null}
             {activeSection === "projects" ? (
               <ProjectsSection
                 repositories={repositories}
@@ -269,6 +288,103 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function KeyboardShortcutsSection() {
+  const keyboardShortcuts = useAppStore((state) => state.keyboardShortcuts);
+  const setKeyboardShortcut = useAppStore((state) => state.setKeyboardShortcut);
+  const [recording, setRecording] = useState<ShortcutAction | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const saveShortcut = (action: ShortcutAction, shortcut: string) => {
+    const conflict = getShortcutConflict(action, shortcut, keyboardShortcuts);
+    if (conflict) {
+      setError(`${formatShortcut(shortcut)} is already assigned to ${conflict.label}.`);
+      return;
+    }
+
+    void setKeyboardShortcut(action, shortcut);
+    setRecording(null);
+    setError(null);
+  };
+
+  const recordShortcut = (
+    action: ShortcutAction,
+    event: React.KeyboardEvent<HTMLButtonElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      setRecording(null);
+      setError(null);
+      return;
+    }
+
+    const shortcut = shortcutFromKeyboardEvent(event.nativeEvent);
+    if (!shortcut) {
+      setError("Use at least one modifier key (Command, Control, or Option). Press Escape to cancel.");
+      return;
+    }
+
+    saveShortcut(action, shortcut);
+  };
+
+  return (
+    <div className="space-y-4">
+      <SectionHeading
+        title="Navigation"
+        description={`Start with ${formatShortcut(keyboardShortcuts.commandMenu)} to search every action. Customize the compact 60% bindings here; the help button beside your avatar also shows full-keyboard arrow alternatives.`}
+      />
+
+      {error ? (
+        <p role="alert" className="rounded-lg bg-semantic-error/10 px-3 py-2 text-xs text-semantic-error">
+          {error}
+        </p>
+      ) : null}
+
+      <SettingsCard>
+        {SHORTCUT_DEFINITIONS.map((definition) => {
+          const shortcut = keyboardShortcuts[definition.id];
+          const isRecording = recording === definition.id;
+          const isDefault = shortcut === DEFAULT_KEYBOARD_SHORTCUTS[definition.id];
+          return (
+            <SettingsRow key={definition.id} className="items-center py-3">
+              <SettingsLabel title={definition.label} description={definition.description} />
+              <div className="flex shrink-0 items-center gap-2">
+                {!isDefault ? (
+                  <button
+                    type="button"
+                    onClick={() => saveShortcut(definition.id, DEFAULT_KEYBOARD_SHORTCUTS[definition.id])}
+                    className="min-h-11 rounded-md px-2 text-xs text-tertiary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
+                  >
+                    Reset
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRecording(definition.id);
+                    setError(null);
+                  }}
+                  onBlur={() => setRecording((current) => current === definition.id ? null : current)}
+                  onKeyDown={(event) => recordShortcut(definition.id, event)}
+                  aria-label={`Change ${definition.label} shortcut`}
+                  className={cn(
+                    "min-h-11 min-w-24 rounded-lg border px-3 font-mono text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary",
+                    isRecording
+                      ? "border-accent-primary bg-active text-primary"
+                      : "border-border bg-secondary text-secondary hover:bg-hover",
+                  )}
+                >
+                  {isRecording ? "Press keys…" : formatShortcut(shortcut)}
+                </button>
+              </div>
+            </SettingsRow>
+          );
+        })}
+      </SettingsCard>
     </div>
   );
 }

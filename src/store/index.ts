@@ -34,6 +34,12 @@ import {
   type SidebarWorktreeGroup,
 } from '../lib/sidebar-groups';
 import { reconcileAgentRunState } from './agentRunState';
+import {
+  DEFAULT_KEYBOARD_SHORTCUTS,
+  mergeKeyboardShortcuts,
+  type KeyboardShortcutMap,
+  type ShortcutAction,
+} from '../lib/keyboard-shortcuts';
 
 interface PersistedState {
   repositoryPaths: string[];
@@ -45,6 +51,7 @@ interface PersistedState {
   repoPostCreateCommandsByPath?: Record<string, string>;
   sidebarNotesByWorktreePath?: Record<string, string>;
   sidebarNotesMarkdown?: string;
+  keyboardShortcuts?: Partial<KeyboardShortcutMap>;
 }
 
 interface WorktreeTerminals {
@@ -91,6 +98,7 @@ interface AppStore {
   repoPostCreateCommandsByPath: Record<string, string>;
   worktreeSetupByRepoPath: Record<string, string[]>;
   sidebarNotesByWorktreePath: Record<string, string>;
+  keyboardShortcuts: KeyboardShortcutMap;
 
   initialize: () => Promise<void>;
   preloadInstalledIdes: () => Promise<void>;
@@ -133,6 +141,7 @@ interface AppStore {
   setDefaultAIAgent: (agent: AIAgent) => Promise<void>;
   setAutoFetchEnabled: (enabled: boolean) => Promise<void>;
   setAutoFetchIntervalMinutes: (intervalMinutes: number) => Promise<void>;
+  setKeyboardShortcut: (action: ShortcutAction, shortcut: string) => Promise<void>;
   setRepoPostCreateCommands: (repoPath: string, commands: string) => Promise<void>;
   runPostCreateSetup: (repoPath: string, worktree: WorktreeInfo) => Promise<WorktreeSetupResult | null>;
   startPostCreateSetup: (repoPath: string, worktree: WorktreeInfo) => void;
@@ -237,6 +246,7 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
     const repoPostCreateCommandsByPath = await store.get<Record<string, string>>('repoPostCreateCommandsByPath');
     const sidebarNotesByWorktreePath = await store.get<Record<string, string>>('sidebarNotesByWorktreePath');
     const sidebarNotesMarkdown = await store.get<string>('sidebarNotesMarkdown');
+    const keyboardShortcuts = await store.get<Partial<KeyboardShortcutMap>>('keyboardShortcuts');
     const rawAddressed = await store.get<Record<string, string[]>>('addressedComments');
     let addressedComments: AddressedCommentsMap | undefined;
     if (rawAddressed) {
@@ -257,6 +267,7 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
       repoPostCreateCommandsByPath: repoPostCreateCommandsByPath || {},
       sidebarNotesByWorktreePath: sidebarNotesByWorktreePath || {},
       sidebarNotesMarkdown: sidebarNotesMarkdown || "",
+      keyboardShortcuts,
     };
   } catch {
     return {
@@ -268,6 +279,7 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
       repoPostCreateCommandsByPath: {},
       sidebarNotesByWorktreePath: {},
       sidebarNotesMarkdown: "",
+      keyboardShortcuts: DEFAULT_KEYBOARD_SHORTCUTS,
     };
   }
 }
@@ -420,6 +432,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   repoPostCreateCommandsByPath: {},
   worktreeSetupByRepoPath: {},
   sidebarNotesByWorktreePath: {},
+  keyboardShortcuts: DEFAULT_KEYBOARD_SHORTCUTS,
 
   initialize: async () => {
     if (get().isInitialized) return;
@@ -464,6 +477,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (persisted.sidebarNotesByWorktreePath) {
       set({ sidebarNotesByWorktreePath: persisted.sidebarNotesByWorktreePath });
     }
+
+    set({ keyboardShortcuts: mergeKeyboardShortcuts(persisted.keyboardShortcuts) });
     
     const repoAvatarCache = persisted.repoAvatarCache || {};
     const reposNeedingAvatar: string[] = [];
@@ -1186,6 +1201,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
     } catch (e) {
       console.error('Failed to save theme mode:', e);
     }
+  },
+
+  setKeyboardShortcut: async (action, shortcut) => {
+    const keyboardShortcuts = { ...get().keyboardShortcuts, [action]: shortcut };
+    set({ keyboardShortcuts });
+    await saveStoreValue('keyboardShortcuts', keyboardShortcuts);
   },
 
   toggleSettings: () => {
