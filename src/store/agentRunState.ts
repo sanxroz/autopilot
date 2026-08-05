@@ -1,5 +1,7 @@
 import type { AgentRunState, ProcessStatus } from "../types";
 
+export const AGENT_FINISHED_TTL_MS = 5000;
+
 export function isAgentActiveStatus(status: AgentRunState["status"]): boolean {
   return status === "starting" || status === "running" || status === "waiting_input";
 }
@@ -35,6 +37,14 @@ export function reconcileAgentRunState(
       endedAt: now,
       label: "Agent process exited",
     };
+  }
+
+  if (
+    (currentState.status === "completed" || currentState.status === "error") &&
+    currentState.endedAt &&
+    now - currentState.endedAt >= AGENT_FINISHED_TTL_MS
+  ) {
+    return undefined;
   }
 
   return currentState;
