@@ -12,6 +12,7 @@ mock.module("@tauri-apps/api/core", () => ({ invoke }));
 
 const {
   getGitFileDiffKey,
+  getGitFileDiffRendererKey,
   invalidateGitFileDiffCache,
   loadGitFileDiff,
   subscribeToGitFileDiffInvalidation,
@@ -37,6 +38,25 @@ describe("git file diff cache", () => {
       isStaged: false,
       includeContent: false,
     });
+  });
+
+  test("reuses renderer work only for the same diff response", () => {
+    const first = {
+      path: "file.ts",
+      patch: "@@ -1 +1 @@\n-old\n+new",
+      old_content: null,
+      new_content: null,
+      worktree_content: null,
+      is_binary: false,
+    };
+    const refreshed = { ...first };
+
+    expect(getGitFileDiffRendererKey("request", first)).toBe(
+      getGitFileDiffRendererKey("request", first),
+    );
+    expect(getGitFileDiffRendererKey("request", refreshed)).not.toBe(
+      getGitFileDiffRendererKey("request", first),
+    );
   });
 
   test("notifies active previews when a worktree cache is invalidated", () => {

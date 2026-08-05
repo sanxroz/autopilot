@@ -23,6 +23,7 @@ import {
 import {
   getCachedGitFileDiff,
   getGitFileDiffKey,
+  getGitFileDiffRendererKey,
   invalidateGitFileDiffCache,
   loadGitFileDiff,
   subscribeToGitFileDiffInvalidation,
@@ -432,7 +433,7 @@ export function GitFileDiffOverlay() {
             <DiffErrorBoundary fileName={preview.filePath}>
               <PatchFileDiff
                 patch={diffData.patch}
-                cacheKey={`${requestKey}:${diffData.patch}`}
+                cacheKey={getGitFileDiffRendererKey(requestKey, diffData)}
                 options={diffOptions}
                 filePath={preview.filePath}
                 oldContent={diffData.old_content}
