@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useAppStore } from '../store';
+import { getNextAgentFinishedDeadline } from '../store/agentRunState';
 
 const ACTIVE_POLLING_INTERVAL = 3000;
 const IDLE_POLLING_INTERVAL = 10000;
@@ -11,6 +12,9 @@ export function useProcessStatusPolling() {
   const repositories = useAppStore((state) => state.repositories);
   const hasActiveProcesses = useAppStore((state) =>
     Object.values(state.processStatusByPath).some((status) => status !== 'none')
+  );
+  const nextFinishedDeadline = useAppStore((state) =>
+    getNextAgentFinishedDeadline(state.agentRunByWorktreePath)
   );
   const intervalRef = useRef<number | null>(null);
   const inFlightRefreshRef = useRef<Promise<void> | null>(null);
@@ -97,4 +101,14 @@ export function useProcessStatusPolling() {
       }
     };
   }, [hasActiveProcesses, isInitialized, repositories.length, refreshIfIdle]);
+
+  useEffect(() => {
+    if (nextFinishedDeadline === undefined) return;
+
+    const timeoutId = window.setTimeout(() => {
+      void refreshIfIdle().catch(reportRefreshError);
+    }, Math.max(0, nextFinishedDeadline - Date.now()));
+
+    return () => clearTimeout(timeoutId);
+  }, [nextFinishedDeadline, refreshIfIdle]);
 }
