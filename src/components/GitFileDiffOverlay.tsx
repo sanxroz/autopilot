@@ -23,8 +23,10 @@ import {
 import {
   getCachedGitFileDiff,
   getGitFileDiffKey,
+  getGitFileDiffRendererKey,
   invalidateGitFileDiffCache,
   loadGitFileDiff,
+  subscribeToGitFileDiffInvalidation,
 } from "../lib/git-file-diff-cache";
 import type { FileDiffData } from "../types";
 
@@ -67,6 +69,7 @@ export function GitFileDiffOverlay() {
   const activeTargetRef = useRef({ worktreePath, filePath });
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [diffRevision, setDiffRevision] = useState(0);
 
   activeTargetRef.current = { worktreePath, filePath };
 
@@ -148,6 +151,16 @@ export function GitFileDiffOverlay() {
     setIsDirty(false);
   }, [filePath, worktreePath, flushAutosave]);
 
+  useEffect(
+    () =>
+      subscribeToGitFileDiffInvalidation((invalidatedWorktreePath) => {
+        if (invalidatedWorktreePath !== worktreePath || isEditing) return;
+        setLoadedDiff(null);
+        setDiffRevision((revision) => revision + 1);
+      }),
+    [isEditing, worktreePath],
+  );
+
   useEffect(() => {
     if (!filePath || !worktreePath) {
       setLoadedDiff(null);
@@ -198,7 +211,15 @@ export function GitFileDiffOverlay() {
     return () => {
       cancelled = true;
     };
-  }, [filePath, worktreePath, isStaged, isEditing, isMd, requestKey]);
+  }, [
+    filePath,
+    worktreePath,
+    isStaged,
+    isEditing,
+    isMd,
+    requestKey,
+    diffRevision,
+  ]);
 
   const stats = useMemo(() => {
     let added = 0;
@@ -412,7 +433,7 @@ export function GitFileDiffOverlay() {
             <DiffErrorBoundary fileName={preview.filePath}>
               <PatchFileDiff
                 patch={diffData.patch}
-                cacheKey={requestKey}
+                cacheKey={getGitFileDiffRendererKey(requestKey, diffData)}
                 options={diffOptions}
                 filePath={preview.filePath}
                 oldContent={diffData.old_content}
