@@ -55,6 +55,12 @@ fn is_ai_agent_process(cmd: &[String], name: &str) -> bool {
     let cmd_str = cmd.join(" ").to_lowercase();
     let name_lower = name.to_lowercase();
 
+    // Codex keeps this helper alive independently of an agent turn. Counting it
+    // as an agent leaves worktrees stuck in the running state after the turn ends.
+    if name_lower.contains("codex-code-mode-host") || cmd_str.contains("codex-code-mode-host") {
+        return false;
+    }
+
     name_lower.contains("claude")
         || name_lower.contains("droid")
         || name_lower.contains("opencode")
@@ -97,6 +103,13 @@ mod tests {
         ];
 
         assert!(is_ai_agent_process(&cmd, "node"));
+    }
+
+    #[test]
+    fn rejects_codex_code_mode_helper() {
+        let cmd = vec!["/Users/santiago/.local/bin/codex-code-mode-host".to_string()];
+
+        assert!(!is_ai_agent_process(&cmd, "codex-code-mode-host"));
     }
 
     #[test]
