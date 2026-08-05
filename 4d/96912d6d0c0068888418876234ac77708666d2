@@ -1,0 +1,24 @@
+tests/git-file-diff-cache.test.ts
+  s_300b8bee3f3ec8::t_657a87828bc747 13-18,41-52
+src/lib/git-file-diff-cache.ts
+  s_300b8bee3f3ec8::t_657a87828bc747 10,13-21,118
+src/components/GitFileDiffOverlay.tsx
+  s_300b8bee3f3ec8::t_c5eab2831695b4 156,160
+  s_300b8bee3f3ec8::t_657a87828bc747 28,71,153-155,157-159,161-162,213-221
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4d96912d6d0c0068888418876234ac77708666d2",
+  "prompts": {},
+  "sessions": {
+    "s_300b8bee3f3ec8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fcffb-4b86-7f22-9dd7-638754fd4813",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
