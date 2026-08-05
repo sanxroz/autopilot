@@ -412,7 +412,7 @@ export function GitFileDiffOverlay() {
             <DiffErrorBoundary fileName={preview.filePath}>
               <PatchFileDiff
                 patch={diffData.patch}
-                cacheKey={requestKey}
+                cacheKey={`${requestKey}:${diffData.patch}`}
                 options={diffOptions}
                 filePath={preview.filePath}
                 oldContent={diffData.old_content}
