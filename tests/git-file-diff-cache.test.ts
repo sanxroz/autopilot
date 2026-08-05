@@ -57,6 +57,46 @@ describe("git file diff cache", () => {
     expect(getGitFileDiffRendererKey("request", refreshed)).not.toBe(
       getGitFileDiffRendererKey("request", first),
     );
+
+    const largeDiff = { ...first, patch: "x".repeat(4_000_000) };
+    expect(getGitFileDiffRendererKey("request", largeDiff).length).toBeLessThan(
+      64,
+    );
+  });
+
+  test("does not cache an invalidated in-flight response", async () => {
+    const stale = {
+      patch: "stale",
+      old_content: null,
+      new_content: null,
+      worktree_content: null,
+      is_binary: false,
+    };
+    const fresh = { ...stale, patch: "fresh" };
+    let resolveStale: (data: typeof stale) => void = () => {};
+    const staleResponse = new Promise<typeof stale>((resolve) => {
+      resolveStale = resolve;
+    });
+    invoke.mockImplementationOnce(() => staleResponse);
+
+    const staleRequest = loadGitFileDiff(
+      "/race-repo",
+      "file.ts",
+      false,
+      false,
+    );
+    invalidateGitFileDiffCache("/race-repo");
+    invoke.mockImplementationOnce(async () => fresh);
+
+    expect(
+      await loadGitFileDiff("/race-repo", "file.ts", false, false),
+    ).toBe(fresh);
+    resolveStale(stale);
+    await staleRequest;
+
+    expect(
+      await loadGitFileDiff("/race-repo", "file.ts", false, false),
+    ).toBe(fresh);
   });
 
   test("notifies active previews when a worktree cache is invalidated", () => {
