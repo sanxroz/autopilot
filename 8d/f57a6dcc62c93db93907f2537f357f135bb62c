@@ -1,0 +1,21 @@
+tests/session-search.test.ts
+  s_7ef398d1ab9dfc::t_dac9a3af9b6a4d 67-75
+src/lib/session-search.ts
+  s_7ef398d1ab9dfc::t_dac9a3af9b6a4d 40-41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "8df57a6dcc62c93db93907f2537f357f135bb62c",
+  "prompts": {},
+  "sessions": {
+    "s_7ef398d1ab9dfc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fdc8c-4d53-7ba1-9f83-31b09c5a2b4b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
