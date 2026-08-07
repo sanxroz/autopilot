@@ -52,17 +52,18 @@ const DRAG_START_THRESHOLD_PX = 10;
 const GROUP_HOLD_DELAY_MS = 1200;
 
 const PR_SESSION_SECTIONS = [
+  { id: "pr:none", label: "No pull request", dot: "bg-border-strong" },
   { id: "pr:attention", label: "Needs attention", dot: "bg-semantic-error" },
   { id: "pr:ready", label: "Ready to merge", dot: "bg-semantic-success" },
+  { id: "pr:checks", label: "Checks running", dot: "bg-semantic-warning" },
   { id: "pr:review", label: "In review", dot: "bg-semantic-info" },
-  { id: "pr:none", label: "No pull request", dot: "bg-border-strong" },
   { id: "pr:closed", label: "Closed", dot: "bg-tertiary" },
 ] as const;
 
 const AGENT_SESSION_SECTIONS = [
   { id: "agent:attention", label: "Needs attention", dot: "bg-semantic-warning" },
   { id: "agent:running", label: "Agent running", dot: "bg-semantic-success" },
-  { id: "agent:none", label: "No agent running", dot: "bg-border-strong" },
+  ...PR_SESSION_SECTIONS,
 ] as const;
 
 function basename(path: string): string {
@@ -1112,6 +1113,7 @@ export function Sidebar({
                                  agentSidebarLifecycleEnabled
                                    ? agentRunByWorktreePath[worktree.path]
                                    : undefined,
+                                 prStatusByWorktreePath[worktree.path] ?? null,
                                ) === section.id;
                              });
 
