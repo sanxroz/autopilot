@@ -37,6 +37,8 @@ export function getSessionSearchStatuses(
     ? { label: "PR needs attention", tone: "error" }
     : section === "pr:ready"
       ? { label: "Ready to merge", tone: "success" }
+      : section === "pr:checks"
+        ? { label: "Checks running", tone: "warning" }
       : section === "pr:review"
         ? { label: prStatus.draft ? "Draft PR" : "PR in review", tone: "info" }
         : section === "pr:closed"

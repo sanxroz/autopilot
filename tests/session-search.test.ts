@@ -64,5 +64,14 @@ describe("session search statuses", () => {
       { label: "Waiting for input", tone: "warning" },
       { label: "PR needs attention", tone: "error" },
     ]);
+    expect(
+      getSessionSearchStatuses("none", undefined, {
+        ...pullRequest,
+        checks_status: "pending",
+      }),
+    ).toEqual([
+      { label: "Idle", tone: "muted" },
+      { label: "Checks running", tone: "warning" },
+    ]);
   });
 });
