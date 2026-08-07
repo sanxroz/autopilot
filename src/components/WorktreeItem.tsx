@@ -204,8 +204,10 @@ export const WorktreeItem = memo(function WorktreeItem({
   const processStatusColorClass = getProcessStatusColor(processStatus);
   const processStatusLabel = PROCESS_STATUS_LABELS[processStatus];
   const agentStatus = getAgentStatusDisplay(agentRunState);
+  const secondaryStatusLabel = agentStatus?.label ?? processStatusLabel;
   const secondaryStatusClass =
-    processStatus === "agent_running" ? "text-semantic-warning" : "text-secondary";
+    agentStatus?.colorClass ??
+    (processStatus === "agent_running" ? "text-semantic-warning" : "text-secondary");
 
   return (
     <div
@@ -289,13 +291,13 @@ export const WorktreeItem = memo(function WorktreeItem({
               <span className="font-mono text-xs font-bold">·</span>
             </>
           )}
-          {processStatusLabel && (
+          {secondaryStatusLabel && (
             <>
               <span
                 className={cn("truncate", secondaryStatusClass)}
-                title={agentStatus?.title || processStatusLabel}
+                title={agentStatus?.title || secondaryStatusLabel}
               >
-                {processStatusLabel}
+                {secondaryStatusLabel}
               </span>
               <span className="font-mono text-xs font-bold">·</span>
             </>
