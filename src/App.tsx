@@ -93,9 +93,7 @@ function App() {
           document.querySelectorAll<HTMLElement>("[data-worktree-path]"),
           (element) => element.dataset.worktreePath,
         ).filter((path): path is string => path !== undefined);
-        const sessions = visibleSessionPaths.length > 0
-          ? orderSessionsByPath(allSessions, visibleSessionPaths)
-          : allSessions;
+        const sessions = orderSessionsByPath(allSessions, visibleSessionPaths);
         const current = sessions.find((worktree) => worktree.path === state.selectedWorktree?.path) ?? null;
         const session = cycleItems(sessions, current, action === "nextSession" ? 1 : -1);
         if (session) void state.selectWorktree(session);
