@@ -69,7 +69,7 @@ describe("session sections", () => {
         checks_status: "pending",
         review_decision: "APPROVED",
       }),
-    ).toBe("pr:review");
+    ).toBe("pr:checks");
     expect(
       getPrSessionSection({
         ...openPr,
@@ -82,19 +82,41 @@ describe("session sections", () => {
   });
 
   test("surfaces agent runs that need attention", () => {
-    expect(getAgentSessionSection("none", undefined)).toBe("agent:none");
-    expect(getAgentSessionSection("agent_running", undefined)).toBe(
+    expect(getAgentSessionSection("agent_running", undefined, null)).toBe(
       "agent:running",
     );
-    expect(getAgentSessionSection("none", agentRun)).toBe("agent:running");
+    expect(getAgentSessionSection("none", agentRun, null)).toBe(
+      "agent:running",
+    );
     expect(
-      getAgentSessionSection("none", { ...agentRun, status: "waiting_input" }),
+      getAgentSessionSection(
+        "none",
+        { ...agentRun, status: "waiting_input" },
+        null,
+      ),
     ).toBe("agent:attention");
     expect(
-      getAgentSessionSection("none", { ...agentRun, status: "completed" }),
+      getAgentSessionSection("none", { ...agentRun, status: "completed" }, null),
     ).toBe("agent:attention");
     expect(
-      getAgentSessionSection("none", { ...agentRun, status: "error" }),
+      getAgentSessionSection("none", { ...agentRun, status: "error" }, null),
     ).toBe("agent:attention");
+  });
+
+  test("uses pull request priority when no agent is active", () => {
+    expect(getAgentSessionSection("none", undefined, null)).toBe("pr:none");
+    expect(
+      getAgentSessionSection("none", undefined, {
+        ...openPr,
+        checks_status: "failure",
+      }),
+    ).toBe("pr:attention");
+    expect(
+      getAgentSessionSection("none", undefined, {
+        ...openPr,
+        checks_status: "pending",
+      }),
+    ).toBe("pr:checks");
+    expect(getAgentSessionSection("none", undefined, openPr)).toBe("pr:review");
   });
 });

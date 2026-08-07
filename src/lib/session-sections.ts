@@ -6,6 +6,7 @@ export type SessionMode = "pr" | "agent";
 export type PrSessionSection =
   | "pr:attention"
   | "pr:ready"
+  | "pr:checks"
   | "pr:review"
   | "pr:none"
   | "pr:closed";
@@ -13,7 +14,7 @@ export type PrSessionSection =
 export type AgentSessionSection =
   | "agent:attention"
   | "agent:running"
-  | "agent:none";
+  | PrSessionSection;
 
 export type SessionSection = PrSessionSection | AgentSessionSection;
 
@@ -43,12 +44,14 @@ export function getPrSessionSection(
   ) {
     return "pr:ready";
   }
+  if (prStatus.checks_status === "pending") return "pr:checks";
   return "pr:review";
 }
 
 export function getAgentSessionSection(
   processStatus: ProcessStatus,
   agentRunState: AgentRunState | undefined,
+  prStatus: PRStatus | null,
 ): AgentSessionSection {
   if (
     agentRunState?.status === "waiting_input" ||
@@ -64,5 +67,5 @@ export function getAgentSessionSection(
   ) {
     return "agent:running";
   }
-  return "agent:none";
+  return getPrSessionSection(prStatus);
 }
