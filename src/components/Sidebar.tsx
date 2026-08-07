@@ -732,6 +732,7 @@ export function Sidebar({
                 >
                   <button
                     type="button"
+                    data-space-path={space.repoPath}
                     onClick={() => handleSpaceSelect(space.repoPath)}
                     className="flex min-w-0 flex-1 items-center gap-2 text-left"
                     aria-pressed={isActive}

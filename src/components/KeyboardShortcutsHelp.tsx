@@ -14,6 +14,8 @@ const SECTIONS: readonly {
   {
     title: "Move around",
     actions: [
+      "previousSpace",
+      "nextSpace",
       "previousSession",
       "nextSession",
       "previousTerminal",
