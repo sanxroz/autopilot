@@ -2,6 +2,7 @@ import * as React from "react";
 import {
   AppWindow,
   FileText,
+  Folder,
   FolderPlus,
   GitBranch,
   GitCompare,
@@ -49,6 +50,8 @@ const actionIcons: Partial<Record<ShortcutAction, LucideIcon>> = {
   nextTerminal: Terminal,
   previousSession: GitBranch,
   nextSession: GitBranch,
+  previousSpace: Folder,
+  nextSpace: Folder,
   previousLayout: PanelsTopLeft,
   nextLayout: PanelsTopLeft,
   showGit: GitCompare,

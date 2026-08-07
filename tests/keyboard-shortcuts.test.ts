@@ -55,6 +55,11 @@ describe("keyboard shortcuts", () => {
       DEFAULT_KEYBOARD_SHORTCUTS,
       true,
     )).toBe("previousLayout");
+    expect(getShortcutAction(
+      keyEvent("ArrowDown", { metaKey: true, shiftKey: true }),
+      DEFAULT_KEYBOARD_SHORTCUTS,
+      true,
+    )).toBe("nextSpace");
   });
 
   test("keeps every default binding unique and the movement model consistent", () => {
@@ -64,6 +69,8 @@ describe("keyboard shortcuts", () => {
     expect(new Set(shortcuts).size).toBe(shortcuts.length);
     expect(DEFAULT_KEYBOARD_SHORTCUTS.previousSession).toBe("Mod+[");
     expect(DEFAULT_KEYBOARD_SHORTCUTS.nextSession).toBe("Mod+]");
+    expect(DEFAULT_KEYBOARD_SHORTCUTS.previousSpace).toBe("Mod+Alt+Shift+[");
+    expect(DEFAULT_KEYBOARD_SHORTCUTS.nextSpace).toBe("Mod+Alt+Shift+]");
     expect(DEFAULT_KEYBOARD_SHORTCUTS.previousTerminal).toBe("Mod+Alt+[");
     expect(DEFAULT_KEYBOARD_SHORTCUTS.nextTerminal).toBe("Mod+Alt+]");
     expect(DEFAULT_KEYBOARD_SHORTCUTS.previousLayout).toBe("Mod+Shift+[");

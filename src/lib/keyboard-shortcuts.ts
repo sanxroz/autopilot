@@ -8,6 +8,8 @@ export type ShortcutAction =
   | "nextTerminal"
   | "previousSession"
   | "nextSession"
+  | "previousSpace"
+  | "nextSpace"
   | "previousLayout"
   | "nextLayout"
   | "showGit"
@@ -34,6 +36,8 @@ export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
   { id: "nextTerminal", label: "Next terminal", description: "Focus the next terminal pane", defaultShortcut: "Mod+Alt+]", alternateShortcuts: ["Mod+ArrowRight"] },
   { id: "previousSession", label: "Previous session", description: "Select the previous workspace", defaultShortcut: "Mod+[", alternateShortcuts: ["Mod+ArrowUp"] },
   { id: "nextSession", label: "Next session", description: "Select the next workspace", defaultShortcut: "Mod+]", alternateShortcuts: ["Mod+ArrowDown"] },
+  { id: "previousSpace", label: "Previous Space", description: "Show sessions in the previous Space", defaultShortcut: "Mod+Alt+Shift+[", alternateShortcuts: ["Mod+Shift+ArrowUp"] },
+  { id: "nextSpace", label: "Next Space", description: "Show sessions in the next Space", defaultShortcut: "Mod+Alt+Shift+]", alternateShortcuts: ["Mod+Shift+ArrowDown"] },
   { id: "previousLayout", label: "Previous terminal layout", description: "Switch to the previous terminal layout", defaultShortcut: "Mod+Shift+[", alternateShortcuts: ["Mod+Alt+ArrowUp"] },
   { id: "nextLayout", label: "Next terminal layout", description: "Switch to the next terminal layout", defaultShortcut: "Mod+Shift+]", alternateShortcuts: ["Mod+Alt+ArrowDown"] },
   { id: "showGit", label: "Git changes", description: "Open the workspace panel on Git changes", defaultShortcut: "Mod+Shift+G" },

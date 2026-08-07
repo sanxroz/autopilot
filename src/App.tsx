@@ -22,7 +22,11 @@ import { useDiffStatsLoader } from "./hooks/useDiffStats";
 import { useProcessStatusPolling } from "./hooks/useProcessStatus";
 import type { AgentStatusEvent } from "./types";
 import { getShortcutAction, type ShortcutAction } from "./lib/keyboard-shortcuts";
-import { cycleItems, getNavigableSessions } from "./lib/session-navigation";
+import {
+  cycleItems,
+  getNavigableSessions,
+  orderSessionsByPath,
+} from "./lib/session-navigation";
 
 function focusTerminal(terminalId: string | null) {
   if (!terminalId) return;
@@ -84,10 +88,24 @@ function App() {
       }
       case "previousSession":
       case "nextSession": {
-        const sessions = getNavigableSessions(state.repositories);
+        const allSessions = getNavigableSessions(state.repositories);
+        const visibleSessionPaths = Array.from(
+          document.querySelectorAll<HTMLElement>("[data-worktree-path]"),
+          (element) => element.dataset.worktreePath,
+        ).filter((path): path is string => path !== undefined);
+        const sessions = orderSessionsByPath(allSessions, visibleSessionPaths);
         const current = sessions.find((worktree) => worktree.path === state.selectedWorktree?.path) ?? null;
         const session = cycleItems(sessions, current, action === "nextSession" ? 1 : -1);
         if (session) void state.selectWorktree(session);
+        break;
+      }
+      case "previousSpace":
+      case "nextSpace": {
+        const spaces = Array.from(
+          document.querySelectorAll<HTMLButtonElement>("[data-space-path]"),
+        );
+        const current = spaces.find((space) => space.getAttribute("aria-pressed") === "true") ?? null;
+        cycleItems(spaces, current, action === "nextSpace" ? 1 : -1)?.click();
         break;
       }
       case "previousLayout":

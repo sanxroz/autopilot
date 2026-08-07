@@ -6,6 +6,17 @@ export function getNavigableSessions<T extends { name: string }>(
   );
 }
 
+export function orderSessionsByPath<T extends { path: string }>(
+  sessions: readonly T[],
+  orderedPaths: readonly string[],
+): T[] {
+  const sessionsByPath = new Map(sessions.map((session) => [session.path, session]));
+  return orderedPaths.flatMap((path) => {
+    const session = sessionsByPath.get(path);
+    return session ? [session] : [];
+  });
+}
+
 export function cycleItems<T>(
   sessions: readonly T[],
   current: T | null,
