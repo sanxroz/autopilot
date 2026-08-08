@@ -3,10 +3,11 @@ use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{HashMap, VecDeque};
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::Path;
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -14,6 +15,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, State};
 use tiny_http::{Response, Server, StatusCode};
 use uuid::Uuid;
+
+#[cfg(unix)]
+use std::os::{fd::AsRawFd, unix::fs::OpenOptionsExt};
 
 use crate::AppState;
 
@@ -27,6 +31,41 @@ pub struct TerminalSession {
     master: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
     replay: Arc<Mutex<TerminalReplayBuffer>>,
     output_flow: Arc<TerminalOutputFlow>,
+    write_started_ms: Arc<AtomicI64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalDiagnostic {
+    terminal_id: String,
+    worktree_path: String,
+    shell_pid: Option<u32>,
+    foreground_pid: Option<u32>,
+    foreground_process: Option<String>,
+    queued_input_bytes: Option<u32>,
+    write_blocked_ms: Option<i64>,
+    recoverable: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalRecoveryResult {
+    terminal_id: String,
+    terminated_pid: u32,
+    terminated_process: String,
+    drained_input_bytes: usize,
+}
+
+#[cfg(unix)]
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ProcessRecord {
+    pid: i32,
+    ppid: i32,
+    pgid: i32,
+    tpgid: i32,
+    state: String,
+    tty: String,
+    command: String,
 }
 
 /// Shared state for an agent-backed terminal, readable from any thread.
@@ -1133,6 +1172,7 @@ pub fn spawn_terminal(
         master: Arc::new(Mutex::new(pair.master)),
         replay: replay.clone(),
         output_flow: output_flow.clone(),
+        write_started_ms: Arc::new(AtomicI64::new(0)),
     };
 
     state.terminals.lock().insert(terminal_id.clone(), session);
@@ -1211,20 +1251,30 @@ pub fn spawn_terminal(
 }
 
 #[tauri::command]
-pub fn write_to_terminal(
+pub async fn write_to_terminal(
     app: AppHandle,
     state: State<'_, AppState>,
     terminal_id: String,
     data: String,
 ) -> Result<(), String> {
-    let terminals = state.terminals.lock();
-    let session = terminals.get(&terminal_id).ok_or("Terminal not found")?;
+    let (writer, write_started_ms) = {
+        let terminals = state.terminals.lock();
+        let session = terminals.get(&terminal_id).ok_or("Terminal not found")?;
+        (session.writer.clone(), session.write_started_ms.clone())
+    };
 
-    let mut writer = session.writer.lock();
-    writer
-        .write_all(data.as_bytes())
-        .map_err(|e| e.to_string())?;
-    writer.flush().map_err(|e| e.to_string())?;
+    tokio::task::spawn_blocking(move || {
+        let mut writer = writer.lock();
+        write_started_ms.store(now_ms(), Ordering::Relaxed);
+        let result = writer
+            .write_all(data.as_bytes())
+            .and_then(|_| writer.flush())
+            .map_err(|error| error.to_string());
+        write_started_ms.store(0, Ordering::Relaxed);
+        result
+    })
+    .await
+    .map_err(|error| format!("Terminal writer task failed: {error}"))??;
 
     if let Some(info) = state.agent_terminals.lock().get(&terminal_id) {
         if info.is_waiting.load(Ordering::Relaxed) && !info.hook_enabled.load(Ordering::Relaxed) {
@@ -1347,6 +1397,330 @@ fn close_terminal_inner(state: &AppState, terminal_id: &str) -> Result<(), Strin
         }
     }
     Ok(())
+}
+
+#[cfg(unix)]
+fn parse_process_snapshot(output: &str) -> Vec<ProcessRecord> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            Some(ProcessRecord {
+                pid: fields.next()?.parse().ok()?,
+                ppid: fields.next()?.parse().ok()?,
+                pgid: fields.next()?.parse().ok()?,
+                tpgid: fields.next()?.parse().ok()?,
+                state: fields.next()?.to_string(),
+                tty: fields.next()?.to_string(),
+                command: fields.collect::<Vec<_>>().join(" "),
+            })
+        })
+        .collect()
+}
+
+#[cfg(unix)]
+fn process_snapshot() -> Result<Vec<ProcessRecord>, String> {
+    let output = Command::new("ps")
+        .args(["-axo", "pid=,ppid=,pgid=,tpgid=,state=,tty=,command="])
+        .output()
+        .map_err(|error| format!("Failed to inspect terminal processes: {error}"))?;
+    if !output.status.success() {
+        return Err("Failed to inspect terminal processes".to_string());
+    }
+    Ok(parse_process_snapshot(&String::from_utf8_lossy(
+        &output.stdout,
+    )))
+}
+
+#[cfg(unix)]
+fn is_descendant(processes: &[ProcessRecord], pid: i32, ancestor_pid: i32) -> bool {
+    let mut current = pid;
+    for _ in 0..processes.len() {
+        if current == ancestor_pid {
+            return true;
+        }
+        let Some(process) = processes.iter().find(|process| process.pid == current) else {
+            return false;
+        };
+        if process.ppid <= 0 || process.ppid == current {
+            return false;
+        }
+        current = process.ppid;
+    }
+    false
+}
+
+#[cfg(unix)]
+fn foreground_process<'a>(
+    processes: &'a [ProcessRecord],
+    shell_pid: i32,
+) -> Option<&'a ProcessRecord> {
+    let shell = processes.iter().find(|process| process.pid == shell_pid)?;
+    if shell.tpgid <= 0 || shell.tpgid == shell.pgid {
+        return None;
+    }
+    processes
+        .iter()
+        .filter(|process| process.pgid == shell.tpgid)
+        .find(|process| {
+            process.pid == shell.tpgid && is_descendant(processes, process.pid, shell_pid)
+        })
+        .or_else(|| {
+            processes.iter().find(|process| {
+                process.pgid == shell.tpgid && is_descendant(processes, process.pid, shell_pid)
+            })
+        })
+}
+
+#[cfg(unix)]
+fn process_name(command: &str) -> String {
+    let mut arguments = command.split_whitespace();
+    let executable = arguments.next().unwrap_or(command);
+    let executable_name = Path::new(executable)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(executable);
+    if executable_name == "bun" {
+        if let Some(script) = arguments.next() {
+            return Path::new(script)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or(script)
+                .to_string();
+        }
+    }
+    executable_name.to_string()
+}
+
+#[cfg(unix)]
+fn queued_input_bytes(tty: &str) -> Option<u32> {
+    if tty == "??" || !tty.starts_with("tty") {
+        return None;
+    }
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY)
+        .open(format!("/dev/{tty}"))
+        .ok()?;
+    let mut bytes: libc::c_int = 0;
+    let result = unsafe { libc::ioctl(file.as_raw_fd(), libc::FIONREAD, &mut bytes) };
+    (result == 0).then_some(bytes.max(0) as u32)
+}
+
+#[cfg(unix)]
+fn terminal_diagnostic(
+    terminal_id: String,
+    worktree_path: String,
+    shell_pid: Option<u32>,
+    write_started_ms: i64,
+    processes: &[ProcessRecord],
+) -> TerminalDiagnostic {
+    let shell =
+        shell_pid.and_then(|pid| processes.iter().find(|process| process.pid == pid as i32));
+    let foreground = shell.and_then(|shell| foreground_process(processes, shell.pid));
+    let blocked_ms = (write_started_ms > 0).then(|| now_ms().saturating_sub(write_started_ms));
+
+    TerminalDiagnostic {
+        terminal_id,
+        worktree_path,
+        shell_pid,
+        foreground_pid: foreground.map(|process| process.pid as u32),
+        foreground_process: foreground.map(|process| process_name(&process.command)),
+        queued_input_bytes: shell.and_then(|process| queued_input_bytes(&process.tty)),
+        write_blocked_ms: blocked_ms,
+        recoverable: foreground.is_some(),
+    }
+}
+
+#[tauri::command]
+pub async fn get_terminal_diagnostics(
+    state: State<'_, AppState>,
+) -> Result<Vec<TerminalDiagnostic>, String> {
+    let sessions: Vec<_> = {
+        let terminals = state.terminals.lock();
+        let worktrees = state.terminal_worktrees.lock();
+        terminals
+            .iter()
+            .map(|(terminal_id, session)| {
+                (
+                    terminal_id.clone(),
+                    worktrees.get(terminal_id).cloned().unwrap_or_default(),
+                    session.child.process_id(),
+                    session.write_started_ms.load(Ordering::Relaxed),
+                )
+            })
+            .collect()
+    };
+
+    #[cfg(unix)]
+    {
+        tokio::task::spawn_blocking(move || {
+            let processes = process_snapshot()?;
+            Ok(sessions
+                .into_iter()
+                .map(
+                    |(terminal_id, worktree_path, shell_pid, write_started_ms)| {
+                        terminal_diagnostic(
+                            terminal_id,
+                            worktree_path,
+                            shell_pid,
+                            write_started_ms,
+                            &processes,
+                        )
+                    },
+                )
+                .collect())
+        })
+        .await
+        .map_err(|error| format!("Terminal diagnostics task failed: {error}"))?
+    }
+
+    #[cfg(not(unix))]
+    {
+        Ok(sessions
+            .into_iter()
+            .map(
+                |(terminal_id, worktree_path, shell_pid, write_started_ms)| TerminalDiagnostic {
+                    terminal_id,
+                    worktree_path,
+                    shell_pid,
+                    foreground_pid: None,
+                    foreground_process: None,
+                    queued_input_bytes: None,
+                    write_blocked_ms: (write_started_ms > 0)
+                        .then(|| now_ms().saturating_sub(write_started_ms)),
+                    recoverable: false,
+                },
+            )
+            .collect())
+    }
+}
+
+#[cfg(unix)]
+fn drain_terminal_input(tty: &str) -> Result<usize, String> {
+    if tty == "??" || !tty.starts_with("tty") {
+        return Err("Terminal device is unavailable".to_string());
+    }
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY)
+        .open(format!("/dev/{tty}"))
+        .map_err(|error| format!("Failed to open terminal input: {error}"))?;
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let mut buffer = [0u8; 4096];
+    let mut drained = 0;
+    let mut idle_rounds = 0;
+
+    while std::time::Instant::now() < deadline && idle_rounds < 20 {
+        match file.read(&mut buffer) {
+            Ok(0) => idle_rounds += 1,
+            Ok(count) => {
+                drained += count;
+                idle_rounds = 0;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => idle_rounds += 1,
+            Err(error) => return Err(format!("Failed to drain terminal input: {error}")),
+        }
+        if idle_rounds > 0 {
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
+    if idle_rounds < 20 {
+        return Err("Terminal input did not drain within 10 seconds".to_string());
+    }
+    Ok(drained)
+}
+
+#[tauri::command]
+pub async fn recover_terminal_process(
+    state: State<'_, AppState>,
+    terminal_id: String,
+    expected_foreground_pid: u32,
+) -> Result<TerminalRecoveryResult, String> {
+    #[cfg(unix)]
+    {
+        let shell_pid = {
+            let terminals = state.terminals.lock();
+            let session = terminals
+                .get(&terminal_id)
+                .ok_or("Terminal session no longer exists")?;
+            session
+                .child
+                .process_id()
+                .ok_or("Terminal process is unavailable")?
+        };
+
+        return tokio::task::spawn_blocking(move || {
+            let processes = process_snapshot()?;
+            let shell = processes
+                .iter()
+                .find(|process| process.pid == shell_pid as i32)
+                .ok_or("Terminal shell no longer exists")?;
+            let foreground = foreground_process(&processes, shell.pid)
+                .ok_or("No foreground agent process is running")?;
+            if foreground.pid != expected_foreground_pid as i32 {
+                return Err("Foreground process changed; refresh before recovering".to_string());
+            }
+
+            let foreground_pid = foreground.pid;
+            let foreground_pgid = foreground.pgid;
+            let foreground_name = process_name(&foreground.command);
+            let tty = shell.tty.clone();
+            let stop_result = unsafe { libc::kill(shell.pid, libc::SIGSTOP) };
+            if stop_result != 0 {
+                return Err(format!(
+                    "Failed to pause terminal shell: {}",
+                    std::io::Error::last_os_error()
+                ));
+            }
+
+            let recovery_result: Result<TerminalRecoveryResult, String> = (|| {
+                unsafe {
+                    libc::kill(-foreground_pgid, libc::SIGTERM);
+                }
+                for _ in 0..10 {
+                    let alive = unsafe { libc::kill(foreground_pid, 0) == 0 };
+                    if !alive {
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(200));
+                }
+                if unsafe { libc::kill(foreground_pid, 0) == 0 } {
+                    unsafe {
+                        libc::kill(-foreground_pgid, libc::SIGKILL);
+                    }
+                }
+                let drained_input_bytes = drain_terminal_input(&tty)?;
+                Ok(TerminalRecoveryResult {
+                    terminal_id,
+                    terminated_pid: foreground_pid as u32,
+                    terminated_process: foreground_name,
+                    drained_input_bytes,
+                })
+            })();
+
+            match recovery_result {
+                Ok(result) => {
+                    unsafe {
+                        libc::kill(shell.pid, libc::SIGCONT);
+                    }
+                    Ok(result)
+                }
+                Err(error) => Err(format!(
+                    "{error}. Shell PID {} remains paused; run `kill -CONT {}` after checking its input",
+                    shell.pid, shell.pid
+                )),
+            }
+        })
+        .await
+        .map_err(|error| format!("Terminal recovery task failed: {error}"))?;
+    }
+
+    #[cfg(not(unix))]
+    {
+        let _ = (state, terminal_id, expected_foreground_pid);
+        Err("Targeted terminal recovery is not supported on this platform".to_string())
+    }
 }
 
 #[tauri::command]
@@ -1552,6 +1926,7 @@ pub fn spawn_terminal_with_command(
         master: Arc::new(Mutex::new(pair.master)),
         replay: replay.clone(),
         output_flow: output_flow.clone(),
+        write_started_ms: Arc::new(AtomicI64::new(0)),
     };
 
     state.terminals.lock().insert(terminal_id.clone(), session);
@@ -1817,6 +2192,28 @@ pub fn spawn_terminal_with_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn terminal_diagnostics_find_the_shell_foreground_process() {
+        let processes = parse_process_snapshot(
+            "100 1 100 200 Ss ttys007 /bin/zsh\n\
+             200 100 200 200 S+ ttys007 bun /Users/test/.bun/bin/omp\n",
+        );
+
+        let foreground = foreground_process(&processes, 100).unwrap();
+        assert_eq!(foreground.pid, 200);
+        assert_eq!(process_name(&foreground.command), "omp");
+        assert!(is_descendant(&processes, foreground.pid, 100));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn terminal_diagnostics_do_not_recover_the_shell_itself() {
+        let processes = parse_process_snapshot("100 1 100 100 Ss ttys007 /bin/zsh\n");
+
+        assert!(foreground_process(&processes, 100).is_none());
+    }
 
     #[test]
     fn detect_agent_known_commands() {

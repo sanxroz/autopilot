@@ -14,6 +14,7 @@ const LAUNCHER_NAME: &str = "autopilot";
 const LAUNCHER_NAME: &str = "autopilot.cmd";
 
 const NOTE_SCRIPT_NAME: &str = "autopilot-note.mjs";
+const RECOVER_SCRIPT_NAME: &str = "autopilot-recover.mjs";
 
 pub fn install_cli_launcher(app: &AppHandle) -> Result<(), String> {
     let home_dir = dirs::home_dir().ok_or_else(|| "home directory unavailable".to_string())?;
@@ -24,6 +25,7 @@ pub fn install_cli_launcher(app: &AppHandle) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     let cli_dir = app_data_dir.join("cli");
     let note_script_path = cli_dir.join(NOTE_SCRIPT_NAME);
+    let recover_script_path = cli_dir.join(RECOVER_SCRIPT_NAME);
     let launcher_path = launcher_dir.join(LAUNCHER_NAME);
 
     fs::create_dir_all(&cli_dir).map_err(|error| error.to_string())?;
@@ -32,6 +34,11 @@ pub fn install_cli_launcher(app: &AppHandle) -> Result<(), String> {
     write_file_if_changed(
         &note_script_path,
         include_str!("../../../scripts/autopilot-note.mjs"),
+    )
+    .map_err(|error| error.to_string())?;
+    write_file_if_changed(
+        &recover_script_path,
+        include_str!("../../../scripts/autopilot-recover.mjs"),
     )
     .map_err(|error| error.to_string())?;
 
@@ -44,8 +51,11 @@ pub fn install_cli_launcher(app: &AppHandle) -> Result<(), String> {
 
     #[cfg(not(target_os = "windows"))]
     {
-        write_file_if_changed(&launcher_path, &build_unix_launcher(&note_script_path))
-            .map_err(|error| error.to_string())?;
+        write_file_if_changed(
+            &launcher_path,
+            &build_unix_launcher(&note_script_path, &recover_script_path),
+        )
+        .map_err(|error| error.to_string())?;
         set_executable(&launcher_path).map_err(|error| error.to_string())?;
         ensure_unix_path_contains(&launcher_dir)?;
     }
@@ -62,7 +72,7 @@ fn write_file_if_changed(path: &Path, contents: &str) -> Result<(), std::io::Err
     }
 }
 
-fn build_unix_launcher(note_script_path: &Path) -> String {
+fn build_unix_launcher(note_script_path: &Path, recover_script_path: &Path) -> String {
     format!(
         r#"#!/bin/sh
 set -eu
@@ -72,9 +82,14 @@ case "${{1:-}}" in
     shift
     exec bun run "{}" "$@"
     ;;
+  recover)
+    shift
+    exec bun run "{}" "$@"
+    ;;
   --help|-h|help|"")
     cat <<'EOF'
 Usage:
+  autopilot recover [--list]
   autopilot note [--worktree <path>] set --text <markdown>
   autopilot note [--worktree <path>] set --stdin
   autopilot note [--worktree <path>] get
@@ -87,7 +102,8 @@ EOF
     ;;
 esac
 "#,
-        note_script_path.display()
+        note_script_path.display(),
+        recover_script_path.display()
     )
 }
 
@@ -276,16 +292,15 @@ mod tests {
     use std::fs;
     #[cfg(not(target_os = "windows"))]
     use std::io::ErrorKind;
-    #[cfg(target_os = "windows")]
     use std::path::Path;
     #[cfg(not(target_os = "windows"))]
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    #[cfg(not(target_os = "windows"))]
-    use super::append_block_if_missing;
     #[cfg(target_os = "windows")]
     use super::build_windows_launcher;
     use super::path_contains_entry;
+    #[cfg(not(target_os = "windows"))]
+    use super::{append_block_if_missing, build_unix_launcher};
 
     #[cfg(not(target_os = "windows"))]
     fn make_temp_dir() -> std::path::PathBuf {
@@ -315,6 +330,19 @@ mod tests {
             r"/usr/bin:/bin",
             r"/home/me/.local/bin"
         ));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn unix_launcher_routes_recovery_outside_the_app_process() {
+        let launcher = build_unix_launcher(
+            Path::new("/tmp/autopilot-note.mjs"),
+            Path::new("/tmp/autopilot-recover.mjs"),
+        );
+
+        assert!(launcher.contains("recover)\n    shift\n    exec bun run"));
+        assert!(launcher.contains("/tmp/autopilot-recover.mjs"));
+        assert!(launcher.contains("autopilot recover [--list]"));
     }
 
     #[cfg(target_os = "windows")]

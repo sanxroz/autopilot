@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   X,
   Check,
@@ -14,6 +15,7 @@ import {
   ChevronDown,
   FolderOpen,
   Keyboard,
+  RefreshCw,
 } from "lucide-react";
 import { Checkbox } from "./ui/checkbox";
 import { useAppStore } from "../store";
@@ -30,6 +32,24 @@ import {
 
 interface SettingsPanelProps {
   onClose: () => void;
+}
+
+interface TerminalDiagnostic {
+  terminalId: string;
+  worktreePath: string;
+  shellPid: number | null;
+  foregroundPid: number | null;
+  foregroundProcess: string | null;
+  queuedInputBytes: number | null;
+  writeBlockedMs: number | null;
+  recoverable: boolean;
+}
+
+interface TerminalRecoveryResult {
+  terminalId: string;
+  terminatedPid: number;
+  terminatedProcess: string;
+  drainedInputBytes: number;
 }
 
 type NavSection =
@@ -469,8 +489,200 @@ function DebugSection({
 }: {
   githubSettings: { ghCliAvailable: boolean; ghAuthUser: string | null };
 }) {
+  const [terminals, setTerminals] = useState<TerminalDiagnostic[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [recoveringId, setRecoveringId] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const refreshDiagnostics = useCallback(async () => {
+    try {
+      const diagnostics = await invoke<TerminalDiagnostic[]>(
+        "get_terminal_diagnostics",
+      );
+      setTerminals(
+        diagnostics.sort((left, right) => {
+          const leftBlocked = left.writeBlockedMs ?? 0;
+          const rightBlocked = right.writeBlockedMs ?? 0;
+          return rightBlocked - leftBlocked || left.worktreePath.localeCompare(right.worktreePath);
+        }),
+      );
+      setError(null);
+    } catch (diagnosticError) {
+      setError(String(diagnosticError));
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshDiagnostics();
+    const interval = window.setInterval(() => {
+      void refreshDiagnostics();
+    }, 2_000);
+    return () => window.clearInterval(interval);
+  }, [refreshDiagnostics]);
+
+  const recoverTerminal = async (terminal: TerminalDiagnostic) => {
+    if (terminal.foregroundPid == null) return;
+    setRecoveringId(terminal.terminalId);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await invoke<TerminalRecoveryResult>(
+        "recover_terminal_process",
+        {
+          terminalId: terminal.terminalId,
+          expectedForegroundPid: terminal.foregroundPid,
+        },
+      );
+      setMessage(
+        `Ended ${result.terminatedProcess} (PID ${result.terminatedPid}) and kept its terminal open.`,
+      );
+      setConfirmingId(null);
+      await refreshDiagnostics();
+    } catch (recoveryError) {
+      setError(String(recoveryError));
+    } finally {
+      setRecoveringId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      <div className="space-y-3">
+        <div className="flex items-start justify-between gap-4">
+          <SectionHeading
+            title="Terminal recovery"
+            description="Inspect the foreground process in every worktree. Recovery ends only that process and keeps its terminal shell open."
+          />
+          <button
+            type="button"
+            onClick={() => void refreshDiagnostics()}
+            disabled={isLoading}
+            aria-label="Refresh terminal diagnostics"
+            className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary text-secondary hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary disabled:opacity-60"
+          >
+            <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin motion-reduce:animate-none")} />
+          </button>
+        </div>
+
+        {error ? (
+          <p role="alert" className="rounded-lg bg-semantic-error/10 px-3 py-2 text-xs leading-5 text-semantic-error">
+            {error}
+          </p>
+        ) : null}
+        {message ? (
+          <p role="status" className="rounded-lg bg-active px-3 py-2 text-xs leading-5 text-secondary">
+            {message}
+          </p>
+        ) : null}
+
+        <SettingsCard>
+          {isLoading && terminals.length === 0 ? (
+            <SettingsRow>
+              <SettingsLabel
+                title="Inspecting terminal sessions…"
+                description="Reading foreground processes and queued input."
+              />
+            </SettingsRow>
+          ) : null}
+          {!isLoading && terminals.length === 0 ? (
+            <SettingsRow>
+              <SettingsLabel
+                title="No terminal sessions"
+                description="Open a worktree terminal and it will appear here."
+              />
+            </SettingsRow>
+          ) : null}
+          {terminals.map((terminal) => {
+            const blocked =
+              (terminal.writeBlockedMs ?? 0) >= 500 ||
+              (terminal.queuedInputBytes ?? 0) >= 1_000;
+            const worktreeName =
+              terminal.worktreePath.split(/[\\/]/).filter(Boolean).pop() ??
+              "Unknown worktree";
+            const isRecovering = recoveringId === terminal.terminalId;
+            const isConfirming = confirmingId === terminal.terminalId;
+
+            return (
+              <SettingsRow key={terminal.terminalId} className="items-center">
+                <div className="min-w-0 space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="truncate text-sm font-medium text-primary">
+                      {worktreeName}
+                    </span>
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-[10px] font-medium tabular-nums",
+                        blocked
+                          ? "bg-semantic-error/10 text-semantic-error"
+                          : "bg-active text-secondary",
+                      )}
+                    >
+                      {blocked ? "Input blocked" : "Responsive"}
+                    </span>
+                  </div>
+                  <p className="truncate text-xs text-tertiary" title={terminal.worktreePath}>
+                    {terminal.worktreePath}
+                  </p>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs tabular-nums text-secondary">
+                    <span>
+                      {terminal.foregroundProcess ?? "Shell"} PID {terminal.foregroundPid ?? terminal.shellPid ?? "—"}
+                    </span>
+                    {terminal.queuedInputBytes != null ? (
+                      <span>{terminal.queuedInputBytes.toLocaleString()} queued bytes</span>
+                    ) : null}
+                    {terminal.writeBlockedMs != null ? (
+                      <span>{Math.max(1, Math.round(terminal.writeBlockedMs / 1_000))}s blocked</span>
+                    ) : null}
+                  </div>
+                </div>
+
+                {terminal.recoverable ? (
+                  <div className="flex shrink-0 items-center gap-2">
+                    {isConfirming ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmingId(null)}
+                          disabled={isRecovering}
+                          className="min-h-11 rounded-lg px-3 text-xs text-secondary hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary disabled:opacity-60"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          autoFocus
+                          onClick={() => void recoverTerminal(terminal)}
+                          disabled={isRecovering}
+                          className="min-h-11 rounded-lg bg-semantic-error px-3 text-xs font-medium text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-semantic-error disabled:opacity-60"
+                        >
+                          {isRecovering ? "Recovering…" : "End process"}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirmingId(terminal.terminalId);
+                          setMessage(null);
+                        }}
+                        aria-label={`Recover terminal for ${worktreeName}`}
+                        className="min-h-11 rounded-lg border border-border bg-secondary px-3 text-xs font-medium text-secondary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
+                      >
+                        Recover
+                      </button>
+                    )}
+                  </div>
+                ) : null}
+              </SettingsRow>
+            );
+          })}
+        </SettingsCard>
+      </div>
+
       <SectionHeading
         title="GitHub integration"
         description="Use this view to confirm the local GitHub CLI is available before debugging review or PR actions."

@@ -202,6 +202,8 @@ pub fn run() {
             terminal::detach_terminal_output,
             terminal::acknowledge_terminal_output,
             terminal::resize_terminal,
+            terminal::get_terminal_diagnostics,
+            terminal::recover_terminal_process,
             terminal::close_terminal,
             terminal::close_terminals_for_worktree,
             watcher::start_watching_repository,
