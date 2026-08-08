@@ -1,0 +1,20 @@
+src-tauri/src/commands/terminal.rs
+  s_0660ffd3f8025c::t_ebe9e95940127e 14,45-52,145,147-152,154-191,1844,1861-1866,1896-1897,2462-2478,2481,2483-2507,2510,2512-2517
+  s_0660ffd3f8025c::t_1d932f5bb6fdc1 2479-2480,2482,2508-2509,2511
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f096986410a5e0201aae2678946252b3c3afdea9",
+  "prompts": {},
+  "sessions": {
+    "s_0660ffd3f8025c": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019fe239-16cd-72fa-b577-14368f253fed",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
