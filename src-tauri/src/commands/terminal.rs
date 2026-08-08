@@ -436,6 +436,47 @@ fn shell_quote_single(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
+fn append_before_shell_boundary(command: &str, args: &str) -> String {
+    let bytes = command.as_bytes();
+    let mut quote = None;
+    let mut escaped = false;
+
+    for (index, byte) in bytes.iter().copied().enumerate() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+
+        match quote {
+            Some(active_quote) => {
+                if byte == active_quote {
+                    quote = None;
+                } else if active_quote == b'"' && byte == b'\\' {
+                    escaped = true;
+                }
+            }
+            None => {
+                if matches!(byte, b'\'' | b'"') {
+                    quote = Some(byte);
+                } else if byte == b'\\' {
+                    escaped = true;
+                } else if matches!(byte, b'&' | b'|' | b';' | b'\n')
+                    || (byte == b'#' && (index == 0 || bytes[index - 1].is_ascii_whitespace()))
+                {
+                    let invocation_end = command[..index].trim_end().len();
+                    return format!(
+                        "{} {args}{}",
+                        &command[..invocation_end],
+                        &command[invocation_end..]
+                    );
+                }
+            }
+        }
+    }
+
+    format!("{command} {args}")
+}
+
 fn percent_decode(input: &str) -> String {
     let mut out = Vec::with_capacity(input.len());
     let bytes = input.as_bytes();
@@ -1553,11 +1594,8 @@ pub fn spawn_terminal_with_command(
                 hook_runtime.notify_script_path.as_deref(),
             ) {
                 cmd.env("AUTOPILOT_NOTIFY_SCRIPT", notify_script_path);
-                full_command = format!(
-                    "{} --extension {}",
-                    full_command,
-                    shell_quote_single(extension_path)
-                );
+                let extension_arg = format!("--extension {}", shell_quote_single(extension_path));
+                full_command = append_before_shell_boundary(&full_command, &extension_arg);
                 hooks_injected = true;
                 eprintln!("[autopilot] pi hooks injected, full_command={full_command}");
             }
@@ -1908,6 +1946,28 @@ mod tests {
         assert_eq!(detect_agent_from_command("ls -la"), None);
         assert_eq!(detect_agent_from_command(""), None);
         assert_eq!(detect_agent_from_command("npm start"), None);
+    }
+
+    #[test]
+    fn agent_args_are_inserted_before_shell_boundaries() {
+        let extension = "--extension '/tmp/pi-extension.ts'";
+
+        assert_eq!(
+            append_before_shell_boundary("pi && other-command", extension),
+            "pi --extension '/tmp/pi-extension.ts' && other-command"
+        );
+        assert_eq!(
+            append_before_shell_boundary("pi -p 'keep && quoted' || fallback", extension),
+            "pi -p 'keep && quoted' --extension '/tmp/pi-extension.ts' || fallback"
+        );
+        assert_eq!(
+            append_before_shell_boundary("pi # keep comment", extension),
+            "pi --extension '/tmp/pi-extension.ts' # keep comment"
+        );
+        assert_eq!(
+            append_before_shell_boundary("pi -p hello", extension),
+            "pi -p hello --extension '/tmp/pi-extension.ts'"
+        );
     }
 
     #[test]
