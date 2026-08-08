@@ -505,6 +505,9 @@ fn append_before_shell_boundary(command: &str, args: &str) -> String {
         } else if byte == b'$' && bytes.get(index + 1) == Some(&b'(') {
             contexts.push(ShellContext::CommandSubstitution);
             index += 2;
+        } else if matches!(byte, b'<' | b'>') && bytes.get(index + 1) == Some(&b'(') {
+            contexts.push(ShellContext::Parenthesis);
+            index += 2;
         } else if byte == b'(' && !contexts.is_empty() {
             contexts.push(ShellContext::Parenthesis);
             index += 1;
@@ -2032,6 +2035,14 @@ mod tests {
         assert_eq!(
             append_before_shell_boundary("pi -p `printf a && echo b` && other-command", extension),
             "pi -p `printf a && echo b` --extension '/tmp/pi-extension.ts' && other-command"
+        );
+        assert_eq!(
+            append_before_shell_boundary("pi -p <(printf a && echo b) && other-command", extension),
+            "pi -p <(printf a && echo b) --extension '/tmp/pi-extension.ts' && other-command"
+        );
+        assert_eq!(
+            append_before_shell_boundary("pi -p >(printf a && echo b) && other-command", extension),
+            "pi -p >(printf a && echo b) --extension '/tmp/pi-extension.ts' && other-command"
         );
     }
 
