@@ -127,5 +127,5 @@ export function formatShortcut(shortcut: string): string {
     .replace("ArrowRight", "→")
     .replace("ArrowUp", "↑")
     .replace("ArrowDown", "↓")
-    .replaceAll("+", "");
+    .replace(/\+/g, "");
 }
