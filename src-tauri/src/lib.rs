@@ -11,6 +11,30 @@ use tauri::Manager;
 #[cfg(target_os = "macos")]
 use tauri::{Listener, WebviewWindow};
 
+#[cfg(unix)]
+const MIN_FILE_DESCRIPTOR_LIMIT: libc::rlim_t = 4096;
+
+#[cfg(unix)]
+fn raise_file_descriptor_limit() -> Result<(), std::io::Error> {
+    let mut limit = std::mem::MaybeUninit::<libc::rlimit>::uninit();
+    if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, limit.as_mut_ptr()) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+
+    let mut limit = unsafe { limit.assume_init() };
+    let target = limit.rlim_max.min(MIN_FILE_DESCRIPTOR_LIMIT);
+    if limit.rlim_cur >= target {
+        return Ok(());
+    }
+
+    limit.rlim_cur = target;
+    if unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &limit) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+
+    Ok(())
+}
+
 #[cfg(target_os = "macos")]
 fn position_traffic_lights(window: &WebviewWindow, x: f64, y: f64) {
     use cocoa::appkit::{NSView, NSWindow, NSWindowButton};
@@ -86,6 +110,10 @@ impl Default for AppState {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(unix)]
+    if let Err(error) = raise_file_descriptor_limit() {
+        eprintln!("[autopilot] warning: failed to raise file descriptor limit ({error})");
+    }
     let terminals = Arc::new(Mutex::new(HashMap::new()));
     let completed_terminal_outputs =
         Arc::new(Mutex::new(terminal::CompletedTerminalOutputCache::default()));
@@ -212,4 +240,23 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn raises_file_descriptor_limit_for_terminal_sessions() {
+        raise_file_descriptor_limit().unwrap();
+
+        let mut limit = std::mem::MaybeUninit::<libc::rlimit>::uninit();
+        assert_eq!(
+            unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, limit.as_mut_ptr()) },
+            0
+        );
+        let limit = unsafe { limit.assume_init() };
+
+        assert!(limit.rlim_cur >= limit.rlim_max.min(MIN_FILE_DESCRIPTOR_LIMIT));
+    }
 }
