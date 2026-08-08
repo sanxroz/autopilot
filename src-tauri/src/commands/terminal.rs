@@ -11,7 +11,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, State};
 use tiny_http::{Response, Server, StatusCode};
 use uuid::Uuid;
@@ -40,6 +40,14 @@ pub struct TerminalSession {
 struct TerminalWriteState {
     generation: u64,
     recovering: bool,
+}
+
+fn mark_terminal_recovery_started(state: &mut TerminalWriteState) -> Result<(), String> {
+    if state.recovering {
+        return Err("Terminal recovery is already in progress".to_string());
+    }
+    state.recovering = true;
+    Ok(())
 }
 
 enum TerminalWriteRequest {
@@ -134,18 +142,53 @@ fn start_terminal_writer(
     (sender, state, generation, write_started_ms)
 }
 
-fn fence_terminal_writes(
+fn drain_and_fence_terminal_writes<F>(
     sender: &tokio::sync::mpsc::Sender<TerminalWriteRequest>,
-) -> Result<(), String> {
+    mut drain: F,
+) -> Result<usize, String>
+where
+    F: FnMut() -> Result<usize, String>,
+{
+    let deadline = Instant::now() + Duration::from_secs(10);
     let (response_sender, response_receiver) = std::sync::mpsc::sync_channel(0);
-    sender
-        .blocking_send(TerminalWriteRequest::Fence {
-            response: response_sender,
-        })
-        .map_err(|_| "Terminal writer is unavailable".to_string())?;
-    response_receiver
-        .recv_timeout(Duration::from_secs(10))
-        .map_err(|_| "Terminal writer did not stop within 10 seconds".to_string())
+    let mut fence = TerminalWriteRequest::Fence {
+        response: response_sender,
+    };
+    let mut drained_input_bytes = drain()?;
+
+    loop {
+        match sender.try_send(fence) {
+            Ok(()) => break,
+            Err(tokio::sync::mpsc::error::TrySendError::Full(request)) => fence = request,
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
+                return Err("Terminal writer is unavailable".to_string());
+            }
+        }
+        if Instant::now() >= deadline {
+            return Err("Terminal writer did not stop within 10 seconds".to_string());
+        }
+        thread::sleep(Duration::from_millis(10));
+        drained_input_bytes += drain()?;
+    }
+
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err("Terminal writer did not stop within 10 seconds".to_string());
+        }
+        match response_receiver.recv_timeout(remaining.min(Duration::from_millis(50))) {
+            Ok(()) => {
+                drained_input_bytes += drain()?;
+                return Ok(drained_input_bytes);
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                drained_input_bytes += drain()?;
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                return Err("Terminal writer is unavailable".to_string());
+            }
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -1798,12 +1841,7 @@ pub async fn recover_terminal_process(
         };
         {
             let mut state = write_state.lock();
-            if state.recovering {
-                return Err("Terminal recovery is already in progress".to_string());
-            }
-            state.recovering = true;
-            state.generation = state.generation.wrapping_add(1);
-            write_generation.store(state.generation, Ordering::Release);
+            mark_terminal_recovery_started(&mut state)?;
         }
 
         return tokio::task::spawn_blocking(move || {
@@ -1818,6 +1856,12 @@ pub async fn recover_terminal_process(
                     .ok_or("No foreground agent process is running")?;
                 if foreground.pid != expected_foreground_pid as i32 {
                     return Err("Foreground process changed; refresh before recovering".to_string());
+                }
+
+                {
+                    let mut state = write_state.lock();
+                    state.generation = state.generation.wrapping_add(1);
+                    write_generation.store(state.generation, Ordering::Release);
                 }
 
                 let shell_pid = shell.pid;
@@ -1849,9 +1893,8 @@ pub async fn recover_terminal_process(
                     }
                 }
 
-                let mut drained_input_bytes = drain_terminal_input(&tty)?;
-                fence_terminal_writes(&write_sender)?;
-                drained_input_bytes += drain_terminal_input(&tty)?;
+                let drained_input_bytes =
+                    drain_and_fence_terminal_writes(&write_sender, || drain_terminal_input(&tty))?;
 
                 let continue_result = unsafe { libc::kill(shell_pid, libc::SIGCONT) };
                 if continue_result != 0 {
@@ -2414,6 +2457,64 @@ mod tests {
         fn flush(&mut self) -> std::io::Result<()> {
             Ok(())
         }
+    }
+
+    #[test]
+    fn starting_recovery_preserves_the_current_write_generation() {
+        let mut state = TerminalWriteState {
+            generation: 7,
+            recovering: false,
+        };
+
+        mark_terminal_recovery_started(&mut state).unwrap();
+
+        assert!(state.recovering);
+        assert_eq!(state.generation, 7);
+    }
+
+    struct DrainReleasedWriter(Arc<(Mutex<usize>, Condvar)>);
+
+    impl Write for DrainReleasedWriter {
+        fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+            let (drain_count, drain_ready) = &*self.0;
+            let mut drain_count = drain_count.lock();
+            while *drain_count < 2 {
+                drain_ready.wait(&mut drain_count);
+            }
+            Ok(data.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn terminal_write_fence_repeatedly_drains_a_blocked_writer() {
+        let drains = Arc::new((Mutex::new(0), Condvar::new()));
+        let (sender, _, _, _) =
+            start_terminal_writer(Box::new(DrainReleasedWriter(drains.clone())));
+        let (write_response, write_result) = tokio::sync::oneshot::channel();
+        sender
+            .blocking_send(TerminalWriteRequest::Write {
+                data: "blocked".to_string(),
+                generation: 0,
+                response: write_response,
+            })
+            .unwrap();
+
+        let drain_signal = drains.clone();
+        drain_and_fence_terminal_writes(&sender, || {
+            let (drain_count, drain_ready) = &*drain_signal;
+            let mut drain_count = drain_count.lock();
+            *drain_count += 1;
+            drain_ready.notify_all();
+            Ok(0)
+        })
+        .unwrap();
+
+        write_result.blocking_recv().unwrap().unwrap();
+        assert!(*drains.0.lock() >= 3);
     }
 
     #[test]
