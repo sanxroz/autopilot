@@ -36,11 +36,13 @@ pub fn install_cli_launcher(app: &AppHandle) -> Result<(), String> {
         include_str!("../../../scripts/autopilot-note.mjs"),
     )
     .map_err(|error| error.to_string())?;
-    write_file_if_changed(
-        &recover_script_path,
-        include_str!("../../../scripts/autopilot-recover.mjs"),
-    )
-    .map_err(|error| error.to_string())?;
+    if cfg!(target_os = "macos") {
+        write_file_if_changed(
+            &recover_script_path,
+            include_str!("../../../scripts/autopilot-recover.mjs"),
+        )
+        .map_err(|error| error.to_string())?;
+    }
 
     #[cfg(target_os = "windows")]
     {
@@ -51,9 +53,11 @@ pub fn install_cli_launcher(app: &AppHandle) -> Result<(), String> {
 
     #[cfg(not(target_os = "windows"))]
     {
+        let recover_script_path =
+            cfg!(target_os = "macos").then_some(recover_script_path.as_path());
         write_file_if_changed(
             &launcher_path,
-            &build_unix_launcher(&note_script_path, &recover_script_path),
+            &build_unix_launcher(&note_script_path, recover_script_path),
         )
         .map_err(|error| error.to_string())?;
         set_executable(&launcher_path).map_err(|error| error.to_string())?;
@@ -72,7 +76,22 @@ fn write_file_if_changed(path: &Path, contents: &str) -> Result<(), std::io::Err
     }
 }
 
-fn build_unix_launcher(note_script_path: &Path, recover_script_path: &Path) -> String {
+fn build_unix_launcher(note_script_path: &Path, recover_script_path: Option<&Path>) -> String {
+    let (recover_route, recover_usage) = match recover_script_path {
+        Some(path) => (
+            format!(
+                r#"  recover)
+    shift
+    exec bun run "{}" "$@"
+    ;;
+"#,
+                path.display()
+            ),
+            "  autopilot recover [--list]\n",
+        ),
+        None => (String::new(), ""),
+    };
+
     format!(
         r#"#!/bin/sh
 set -eu
@@ -82,15 +101,10 @@ case "${{1:-}}" in
     shift
     exec bun run "{}" "$@"
     ;;
-  recover)
-    shift
-    exec bun run "{}" "$@"
-    ;;
-  --help|-h|help|"")
+{}  --help|-h|help|"")
     cat <<'EOF'
 Usage:
-  autopilot recover [--list]
-  autopilot note [--worktree <path>] set --text <markdown>
+{}  autopilot note [--worktree <path>] set --text <markdown>
   autopilot note [--worktree <path>] set --stdin
   autopilot note [--worktree <path>] get
   autopilot note [--worktree <path>] clear
@@ -103,7 +117,8 @@ EOF
 esac
 "#,
         note_script_path.display(),
-        recover_script_path.display()
+        recover_route,
+        recover_usage,
     )
 }
 
@@ -334,15 +349,25 @@ mod tests {
 
     #[cfg(not(target_os = "windows"))]
     #[test]
-    fn unix_launcher_routes_recovery_outside_the_app_process() {
+    fn unix_launcher_routes_recovery_when_the_script_is_available() {
         let launcher = build_unix_launcher(
             Path::new("/tmp/autopilot-note.mjs"),
-            Path::new("/tmp/autopilot-recover.mjs"),
+            Some(Path::new("/tmp/autopilot-recover.mjs")),
         );
 
         assert!(launcher.contains("recover)\n    shift\n    exec bun run"));
         assert!(launcher.contains("/tmp/autopilot-recover.mjs"));
         assert!(launcher.contains("autopilot recover [--list]"));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn unix_launcher_omits_recovery_when_the_script_is_unavailable() {
+        let launcher = build_unix_launcher(Path::new("/tmp/autopilot-note.mjs"), None);
+
+        assert!(!launcher.contains("recover)"));
+        assert!(!launcher.contains("autopilot recover"));
+        assert!(launcher.contains("autopilot note"));
     }
 
     #[cfg(target_os = "windows")]

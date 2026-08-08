@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   addQueueDiagnostics,
   findRecoverableSessions,
+  formatQueueStatus,
   parseProcessSnapshot,
 } from "../scripts/autopilot-recover.mjs";
 
@@ -56,5 +57,10 @@ describe("autopilot recover", () => {
 
     expect(diagnosed.map((session) => session.foregroundPid)).toEqual([20, 10]);
     expect(diagnosed[0].queuedInputBytes).toBe(1_022);
+  });
+
+  test("distinguishes unavailable queue diagnostics from an empty queue", () => {
+    expect(formatQueueStatus(null)).toBe(" — queue depth unavailable");
+    expect(formatQueueStatus(0)).toBe("");
   });
 });

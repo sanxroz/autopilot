@@ -8,7 +8,7 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::Path;
 use std::process::Command;
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -26,12 +26,126 @@ use crate::AppState;
 // ---------------------------------------------------------------------------
 
 pub struct TerminalSession {
-    writer: Arc<Mutex<Box<dyn Write + Send>>>,
+    write_sender: tokio::sync::mpsc::Sender<TerminalWriteRequest>,
+    write_state: Arc<Mutex<TerminalWriteState>>,
+    write_generation: Arc<AtomicU64>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
     master: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
     replay: Arc<Mutex<TerminalReplayBuffer>>,
     output_flow: Arc<TerminalOutputFlow>,
     write_started_ms: Arc<AtomicI64>,
+}
+
+#[derive(Default)]
+struct TerminalWriteState {
+    generation: u64,
+    recovering: bool,
+}
+
+enum TerminalWriteRequest {
+    Write {
+        data: String,
+        generation: u64,
+        response: tokio::sync::oneshot::Sender<Result<(), String>>,
+    },
+    Fence {
+        response: std::sync::mpsc::SyncSender<()>,
+    },
+}
+
+fn terminal_write_worker(
+    mut writer: Box<dyn Write + Send>,
+    mut receiver: tokio::sync::mpsc::Receiver<TerminalWriteRequest>,
+    generation: Arc<AtomicU64>,
+    write_started_ms: Arc<AtomicI64>,
+) {
+    while let Some(request) = receiver.blocking_recv() {
+        match request {
+            TerminalWriteRequest::Write {
+                data,
+                generation: request_generation,
+                response,
+            } => {
+                if request_generation != generation.load(Ordering::Acquire) {
+                    let _ = response.send(Err(
+                        "Terminal input was discarded during recovery".to_string()
+                    ));
+                    continue;
+                }
+
+                write_started_ms.store(now_ms(), Ordering::Relaxed);
+                let result = write_terminal_data(
+                    writer.as_mut(),
+                    data.as_bytes(),
+                    request_generation,
+                    &generation,
+                );
+                write_started_ms.store(0, Ordering::Relaxed);
+                let _ = response.send(result);
+            }
+            TerminalWriteRequest::Fence { response } => {
+                let _ = response.send(());
+            }
+        }
+    }
+}
+
+fn write_terminal_data(
+    writer: &mut dyn Write,
+    data: &[u8],
+    request_generation: u64,
+    generation: &AtomicU64,
+) -> Result<(), String> {
+    let mut written = 0;
+    while written < data.len() {
+        if request_generation != generation.load(Ordering::Acquire) {
+            return Err("Terminal input was discarded during recovery".to_string());
+        }
+        match writer.write(&data[written..]) {
+            Ok(0) => return Err("Terminal writer stopped accepting input".to_string()),
+            Ok(count) => written += count,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    if request_generation != generation.load(Ordering::Acquire) {
+        return Err("Terminal input was discarded during recovery".to_string());
+    }
+    writer.flush().map_err(|error| error.to_string())
+}
+
+fn start_terminal_writer(
+    writer: Box<dyn Write + Send>,
+) -> (
+    tokio::sync::mpsc::Sender<TerminalWriteRequest>,
+    Arc<Mutex<TerminalWriteState>>,
+    Arc<AtomicU64>,
+    Arc<AtomicI64>,
+) {
+    let (sender, receiver) = tokio::sync::mpsc::channel(TERMINAL_WRITE_QUEUE_CAPACITY);
+    let state = Arc::new(Mutex::new(TerminalWriteState::default()));
+    let generation = Arc::new(AtomicU64::new(0));
+    let write_started_ms = Arc::new(AtomicI64::new(0));
+    let worker_generation = generation.clone();
+    let worker_write_started_ms = write_started_ms.clone();
+    thread::spawn(move || {
+        terminal_write_worker(writer, receiver, worker_generation, worker_write_started_ms)
+    });
+    (sender, state, generation, write_started_ms)
+}
+
+fn fence_terminal_writes(
+    sender: &tokio::sync::mpsc::Sender<TerminalWriteRequest>,
+) -> Result<(), String> {
+    let (response_sender, response_receiver) = std::sync::mpsc::sync_channel(0);
+    sender
+        .blocking_send(TerminalWriteRequest::Fence {
+            response: response_sender,
+        })
+        .map_err(|_| "Terminal writer is unavailable".to_string())?;
+    response_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .map_err(|_| "Terminal writer did not stop within 10 seconds".to_string())
 }
 
 #[derive(Debug, Serialize)]
@@ -127,6 +241,7 @@ const TERMINAL_REPLAY_CHUNK_MAX_BYTES: usize = 4096;
 const COMPLETED_TERMINAL_OUTPUT_MAX_BYTES: usize = 4 * 1024 * 1024;
 const COMPLETED_TERMINAL_OUTPUT_MAX_ENTRIES: usize = 64;
 
+const TERMINAL_WRITE_QUEUE_CAPACITY: usize = 256;
 #[derive(Default)]
 struct TerminalOutputFlowState {
     attached: bool,
@@ -1166,13 +1281,17 @@ pub fn spawn_terminal(
         TERMINAL_REPLAY_MAX_BYTES,
     )));
     let output_flow = Arc::new(TerminalOutputFlow::default());
+    let (write_sender, write_state, write_generation, write_started_ms) =
+        start_terminal_writer(writer);
     let session = TerminalSession {
-        writer: Arc::new(Mutex::new(writer)),
+        write_sender,
+        write_state,
+        write_generation,
         child,
         master: Arc::new(Mutex::new(pair.master)),
         replay: replay.clone(),
         output_flow: output_flow.clone(),
-        write_started_ms: Arc::new(AtomicI64::new(0)),
+        write_started_ms,
     };
 
     state.terminals.lock().insert(terminal_id.clone(), session);
@@ -1257,24 +1376,30 @@ pub async fn write_to_terminal(
     terminal_id: String,
     data: String,
 ) -> Result<(), String> {
-    let (writer, write_started_ms) = {
+    let (write_sender, write_state) = {
         let terminals = state.terminals.lock();
         let session = terminals.get(&terminal_id).ok_or("Terminal not found")?;
-        (session.writer.clone(), session.write_started_ms.clone())
+        (session.write_sender.clone(), session.write_state.clone())
     };
-
-    tokio::task::spawn_blocking(move || {
-        let mut writer = writer.lock();
-        write_started_ms.store(now_ms(), Ordering::Relaxed);
-        let result = writer
-            .write_all(data.as_bytes())
-            .and_then(|_| writer.flush())
-            .map_err(|error| error.to_string());
-        write_started_ms.store(0, Ordering::Relaxed);
-        result
-    })
-    .await
-    .map_err(|error| format!("Terminal writer task failed: {error}"))??;
+    let generation = {
+        let write_state = write_state.lock();
+        if write_state.recovering {
+            return Err("Terminal recovery is in progress".to_string());
+        }
+        write_state.generation
+    };
+    let (response_sender, response_receiver) = tokio::sync::oneshot::channel();
+    write_sender
+        .send(TerminalWriteRequest::Write {
+            data,
+            generation,
+            response: response_sender,
+        })
+        .await
+        .map_err(|_| "Terminal writer is unavailable".to_string())?;
+    response_receiver
+        .await
+        .map_err(|_| "Terminal writer stopped before completing input".to_string())??;
 
     if let Some(info) = state.agent_terminals.lock().get(&terminal_id) {
         if info.is_waiting.load(Ordering::Relaxed) && !info.hook_enabled.load(Ordering::Relaxed) {
@@ -1493,14 +1618,31 @@ fn process_name(command: &str) -> String {
 }
 
 #[cfg(unix)]
-fn queued_input_bytes(tty: &str) -> Option<u32> {
-    if tty == "??" || !tty.starts_with("tty") {
+fn terminal_device_path(tty: &str) -> Option<std::path::PathBuf> {
+    let mut components = Path::new(tty).components();
+    let first = components.next()?.as_os_str().to_str()?;
+    let second = components.next().and_then(|part| part.as_os_str().to_str());
+    if components.next().is_some() {
         return None;
     }
+    let valid = match second {
+        None => first.strip_prefix("tty").is_some_and(|suffix| {
+            !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_alphanumeric())
+        }),
+        Some(index) => {
+            first == "pts" && !index.is_empty() && index.chars().all(|c| c.is_ascii_digit())
+        }
+    };
+    valid.then(|| Path::new("/dev").join(tty))
+}
+
+#[cfg(unix)]
+fn queued_input_bytes(tty: &str) -> Option<u32> {
+    let path = terminal_device_path(tty)?;
     let file = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY)
-        .open(format!("/dev/{tty}"))
+        .open(path)
         .ok()?;
     let mut bytes: libc::c_int = 0;
     let result = unsafe { libc::ioctl(file.as_raw_fd(), libc::FIONREAD, &mut bytes) };
@@ -1598,37 +1740,37 @@ pub async fn get_terminal_diagnostics(
 
 #[cfg(unix)]
 fn drain_terminal_input(tty: &str) -> Result<usize, String> {
-    if tty == "??" || !tty.starts_with("tty") {
-        return Err("Terminal device is unavailable".to_string());
-    }
-    let mut file = OpenOptions::new()
+    let path =
+        terminal_device_path(tty).ok_or_else(|| "Terminal device is unavailable".to_string())?;
+    let file = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY)
-        .open(format!("/dev/{tty}"))
+        .open(path)
         .map_err(|error| format!("Failed to open terminal input: {error}"))?;
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
-    let mut buffer = [0u8; 4096];
-    let mut drained = 0;
-    let mut idle_rounds = 0;
-
-    while std::time::Instant::now() < deadline && idle_rounds < 20 {
-        match file.read(&mut buffer) {
-            Ok(0) => idle_rounds += 1,
-            Ok(count) => {
-                drained += count;
-                idle_rounds = 0;
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => idle_rounds += 1,
-            Err(error) => return Err(format!("Failed to drain terminal input: {error}")),
-        }
-        if idle_rounds > 0 {
-            thread::sleep(Duration::from_millis(50));
-        }
-    }
-    if idle_rounds < 20 {
-        return Err("Terminal input did not drain within 10 seconds".to_string());
+    let mut bytes: libc::c_int = 0;
+    let queued = unsafe { libc::ioctl(file.as_raw_fd(), libc::FIONREAD, &mut bytes) };
+    let drained = if queued == 0 {
+        bytes.max(0) as usize
+    } else {
+        0
+    };
+    let result = unsafe { libc::tcflush(file.as_raw_fd(), libc::TCIFLUSH) };
+    if result != 0 {
+        return Err(format!(
+            "Failed to flush terminal input: {}",
+            std::io::Error::last_os_error()
+        ));
     }
     Ok(drained)
+}
+
+#[cfg(unix)]
+fn process_group_exists(pgid: i32) -> bool {
+    if pgid <= 0 {
+        return false;
+    }
+    let result = unsafe { libc::kill(-pgid, 0) };
+    result == 0 || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
 }
 
 #[tauri::command]
@@ -1639,58 +1781,87 @@ pub async fn recover_terminal_process(
 ) -> Result<TerminalRecoveryResult, String> {
     #[cfg(unix)]
     {
-        let shell_pid = {
+        let (shell_pid, write_sender, write_state, write_generation) = {
             let terminals = state.terminals.lock();
             let session = terminals
                 .get(&terminal_id)
                 .ok_or("Terminal session no longer exists")?;
-            session
-                .child
-                .process_id()
-                .ok_or("Terminal process is unavailable")?
+            (
+                session
+                    .child
+                    .process_id()
+                    .ok_or("Terminal process is unavailable")?,
+                session.write_sender.clone(),
+                session.write_state.clone(),
+                session.write_generation.clone(),
+            )
         };
+        {
+            let mut state = write_state.lock();
+            if state.recovering {
+                return Err("Terminal recovery is already in progress".to_string());
+            }
+            state.recovering = true;
+            state.generation = state.generation.wrapping_add(1);
+            write_generation.store(state.generation, Ordering::Release);
+        }
 
         return tokio::task::spawn_blocking(move || {
-            let processes = process_snapshot()?;
-            let shell = processes
-                .iter()
-                .find(|process| process.pid == shell_pid as i32)
-                .ok_or("Terminal shell no longer exists")?;
-            let foreground = foreground_process(&processes, shell.pid)
-                .ok_or("No foreground agent process is running")?;
-            if foreground.pid != expected_foreground_pid as i32 {
-                return Err("Foreground process changed; refresh before recovering".to_string());
-            }
-
-            let foreground_pid = foreground.pid;
-            let foreground_pgid = foreground.pgid;
-            let foreground_name = process_name(&foreground.command);
-            let tty = shell.tty.clone();
-            let stop_result = unsafe { libc::kill(shell.pid, libc::SIGSTOP) };
-            if stop_result != 0 {
-                return Err(format!(
-                    "Failed to pause terminal shell: {}",
-                    std::io::Error::last_os_error()
-                ));
-            }
-
+            let mut shell_paused = false;
             let recovery_result: Result<TerminalRecoveryResult, String> = (|| {
+                let processes = process_snapshot()?;
+                let shell = processes
+                    .iter()
+                    .find(|process| process.pid == shell_pid as i32)
+                    .ok_or("Terminal shell no longer exists")?;
+                let foreground = foreground_process(&processes, shell.pid)
+                    .ok_or("No foreground agent process is running")?;
+                if foreground.pid != expected_foreground_pid as i32 {
+                    return Err("Foreground process changed; refresh before recovering".to_string());
+                }
+
+                let shell_pid = shell.pid;
+                let foreground_pid = foreground.pid;
+                let foreground_pgid = foreground.pgid;
+                let foreground_name = process_name(&foreground.command);
+                let tty = shell.tty.clone();
+                let stop_result = unsafe { libc::kill(shell_pid, libc::SIGSTOP) };
+                if stop_result != 0 {
+                    return Err(format!(
+                        "Failed to pause terminal shell: {}",
+                        std::io::Error::last_os_error()
+                    ));
+                }
+                shell_paused = true;
+
                 unsafe {
                     libc::kill(-foreground_pgid, libc::SIGTERM);
                 }
                 for _ in 0..10 {
-                    let alive = unsafe { libc::kill(foreground_pid, 0) == 0 };
-                    if !alive {
+                    if !process_group_exists(foreground_pgid) {
                         break;
                     }
                     thread::sleep(Duration::from_millis(200));
                 }
-                if unsafe { libc::kill(foreground_pid, 0) == 0 } {
+                if process_group_exists(foreground_pgid) {
                     unsafe {
                         libc::kill(-foreground_pgid, libc::SIGKILL);
                     }
                 }
-                let drained_input_bytes = drain_terminal_input(&tty)?;
+
+                let mut drained_input_bytes = drain_terminal_input(&tty)?;
+                fence_terminal_writes(&write_sender)?;
+                drained_input_bytes += drain_terminal_input(&tty)?;
+
+                let continue_result = unsafe { libc::kill(shell_pid, libc::SIGCONT) };
+                if continue_result != 0 {
+                    return Err(format!(
+                        "Failed to resume terminal shell: {}",
+                        std::io::Error::last_os_error()
+                    ));
+                }
+                shell_paused = false;
+
                 Ok(TerminalRecoveryResult {
                     terminal_id,
                     terminated_pid: foreground_pid as u32,
@@ -1699,17 +1870,12 @@ pub async fn recover_terminal_process(
                 })
             })();
 
+            write_state.lock().recovering = false;
             match recovery_result {
-                Ok(result) => {
-                    unsafe {
-                        libc::kill(shell.pid, libc::SIGCONT);
-                    }
-                    Ok(result)
-                }
-                Err(error) => Err(format!(
-                    "{error}. Shell PID {} remains paused; run `kill -CONT {}` after checking its input",
-                    shell.pid, shell.pid
+                Err(error) if shell_paused => Err(format!(
+                    "{error}. Shell PID {shell_pid} remains paused; run `kill -CONT {shell_pid}` after checking its input"
                 )),
+                result => result,
             }
         })
         .await
@@ -1920,13 +2086,17 @@ pub fn spawn_terminal_with_command(
         TERMINAL_REPLAY_MAX_BYTES,
     )));
     let output_flow = Arc::new(TerminalOutputFlow::default());
+    let (write_sender, write_state, write_generation, write_started_ms) =
+        start_terminal_writer(writer);
     let session = TerminalSession {
-        writer: Arc::new(Mutex::new(writer)),
+        write_sender,
+        write_state,
+        write_generation,
         child,
         master: Arc::new(Mutex::new(pair.master)),
         replay: replay.clone(),
         output_flow: output_flow.clone(),
-        write_started_ms: Arc::new(AtomicI64::new(0)),
+        write_started_ms,
     };
 
     state.terminals.lock().insert(terminal_id.clone(), session);
@@ -2213,6 +2383,71 @@ mod tests {
         let processes = parse_process_snapshot("100 1 100 100 Ss ttys007 /bin/zsh\n");
 
         assert!(foreground_process(&processes, 100).is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn terminal_device_paths_accept_supported_ttys_without_traversal() {
+        assert_eq!(
+            terminal_device_path("ttys007"),
+            Some(Path::new("/dev/ttys007").to_path_buf())
+        );
+        assert_eq!(
+            terminal_device_path("pts/3"),
+            Some(Path::new("/dev/pts/3").to_path_buf())
+        );
+        assert_eq!(terminal_device_path("??"), None);
+        assert_eq!(terminal_device_path("../ttys007"), None);
+        assert_eq!(terminal_device_path("pts/../3"), None);
+        assert_eq!(terminal_device_path("pts/not-a-number"), None);
+    }
+
+    #[derive(Clone)]
+    struct RecordingWriter(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for RecordingWriter {
+        fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().extend_from_slice(data);
+            Ok(data.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn terminal_writer_discards_requests_from_before_recovery() {
+        let written = Arc::new(Mutex::new(Vec::new()));
+        let (sender, state, generation, _) =
+            start_terminal_writer(Box::new(RecordingWriter(written.clone())));
+        {
+            let mut state = state.lock();
+            state.generation = 1;
+            generation.store(1, Ordering::Release);
+        }
+
+        let (stale_sender, stale_receiver) = tokio::sync::oneshot::channel();
+        sender
+            .blocking_send(TerminalWriteRequest::Write {
+                data: "stale".to_string(),
+                generation: 0,
+                response: stale_sender,
+            })
+            .unwrap();
+        assert!(stale_receiver.blocking_recv().unwrap().is_err());
+
+        let (current_sender, current_receiver) = tokio::sync::oneshot::channel();
+        sender
+            .blocking_send(TerminalWriteRequest::Write {
+                data: "current".to_string(),
+                generation: 1,
+                response: current_sender,
+            })
+            .unwrap();
+        current_receiver.blocking_recv().unwrap().unwrap();
+
+        assert_eq!(written.lock().as_slice(), b"current");
     }
 
     #[test]

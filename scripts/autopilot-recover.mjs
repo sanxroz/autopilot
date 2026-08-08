@@ -146,6 +146,15 @@ export function addQueueDiagnostics(sessions, queuedBytesByTty) {
     });
 }
 
+export function formatQueueStatus(queuedBytes) {
+  if (queuedBytes == null) return " — queue depth unavailable";
+  if (queuedBytes >= BLOCKED_QUEUE_BYTES) {
+    return ` — BLOCKED (${queuedBytes.toLocaleString()} queued bytes)`;
+  }
+  if (queuedBytes > 0) return ` — ${queuedBytes.toLocaleString()} queued bytes`;
+  return "";
+}
+
 function readSnapshot() {
   const output = execFileSync(
     "ps",
@@ -249,12 +258,7 @@ function printSessions(sessions) {
   }
   for (const [index, session] of sessions.entries()) {
     const worktree = session.worktreePath || "Unknown worktree";
-    const queuedBytes = session.queuedInputBytes;
-    const queueStatus = queuedBytes >= BLOCKED_QUEUE_BYTES
-      ? ` — BLOCKED (${queuedBytes.toLocaleString()} queued bytes)`
-      : queuedBytes > 0
-        ? ` — ${queuedBytes.toLocaleString()} queued bytes`
-        : "";
+    const queueStatus = formatQueueStatus(session.queuedInputBytes);
     console.log(`${index + 1}. ${session.processName} (PID ${session.foregroundPid})${queueStatus}`);
     console.log(`   ${worktree}`);
   }

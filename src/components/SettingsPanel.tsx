@@ -634,7 +634,7 @@ function DebugSection({
                     {terminal.queuedInputBytes != null ? (
                       <span>{terminal.queuedInputBytes.toLocaleString()} queued bytes</span>
                     ) : null}
-                    {terminal.writeBlockedMs != null ? (
+                    {terminal.writeBlockedMs != null && terminal.writeBlockedMs >= 500 ? (
                       <span>{Math.max(1, Math.round(terminal.writeBlockedMs / 1_000))}s blocked</span>
                     ) : null}
                   </div>
