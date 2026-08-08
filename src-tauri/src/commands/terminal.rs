@@ -437,40 +437,97 @@ fn shell_quote_single(value: &str) -> String {
 }
 
 fn append_before_shell_boundary(command: &str, args: &str) -> String {
-    let bytes = command.as_bytes();
-    let mut quote = None;
-    let mut escaped = false;
+    enum ShellContext {
+        SingleQuote,
+        DoubleQuote,
+        Backtick,
+        CommandSubstitution,
+        Parenthesis,
+    }
 
-    for (index, byte) in bytes.iter().copied().enumerate() {
-        if escaped {
-            escaped = false;
-            continue;
+    let bytes = command.as_bytes();
+    let mut contexts = Vec::new();
+    let mut index = 0;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+
+        match contexts.last() {
+            Some(ShellContext::SingleQuote) => {
+                if byte == b'\'' {
+                    contexts.pop();
+                }
+                index += 1;
+                continue;
+            }
+            Some(ShellContext::DoubleQuote) => {
+                if byte == b'"' {
+                    contexts.pop();
+                    index += 1;
+                } else if byte == b'\\' {
+                    index += 2;
+                } else if byte == b'`' {
+                    contexts.push(ShellContext::Backtick);
+                    index += 1;
+                } else if byte == b'$' && bytes.get(index + 1) == Some(&b'(') {
+                    contexts.push(ShellContext::CommandSubstitution);
+                    index += 2;
+                } else {
+                    index += 1;
+                }
+                continue;
+            }
+            Some(ShellContext::Backtick) => {
+                if byte == b'`' {
+                    contexts.pop();
+                    index += 1;
+                } else if byte == b'\\' {
+                    index += 2;
+                } else {
+                    index += 1;
+                }
+                continue;
+            }
+            _ => {}
         }
 
-        match quote {
-            Some(active_quote) => {
-                if byte == active_quote {
-                    quote = None;
-                } else if active_quote == b'"' && byte == b'\\' {
-                    escaped = true;
-                }
-            }
-            None => {
-                if matches!(byte, b'\'' | b'"') {
-                    quote = Some(byte);
-                } else if byte == b'\\' {
-                    escaped = true;
-                } else if matches!(byte, b'&' | b'|' | b';' | b'\n')
-                    || (byte == b'#' && (index == 0 || bytes[index - 1].is_ascii_whitespace()))
-                {
-                    let invocation_end = command[..index].trim_end().len();
-                    return format!(
-                        "{} {args}{}",
-                        &command[..invocation_end],
-                        &command[invocation_end..]
-                    );
-                }
-            }
+        if byte == b'\\' {
+            index += 2;
+        } else if byte == b'\'' {
+            contexts.push(ShellContext::SingleQuote);
+            index += 1;
+        } else if byte == b'"' {
+            contexts.push(ShellContext::DoubleQuote);
+            index += 1;
+        } else if byte == b'`' {
+            contexts.push(ShellContext::Backtick);
+            index += 1;
+        } else if byte == b'$' && bytes.get(index + 1) == Some(&b'(') {
+            contexts.push(ShellContext::CommandSubstitution);
+            index += 2;
+        } else if byte == b'(' && !contexts.is_empty() {
+            contexts.push(ShellContext::Parenthesis);
+            index += 1;
+        } else if byte == b')'
+            && matches!(
+                contexts.last(),
+                Some(ShellContext::CommandSubstitution | ShellContext::Parenthesis)
+            )
+        {
+            contexts.pop();
+            index += 1;
+        } else if contexts.is_empty()
+            && (matches!(byte, b'&' | b'|' | b';' | b'\n')
+                || (byte == b'#' && (index == 0 || bytes[index - 1].is_ascii_whitespace())))
+        {
+            let invocation_end = command[..index].trim_end().len();
+            return format!(
+                "{} {args}{}",
+                &command[..invocation_end],
+                &command[invocation_end..]
+            );
+        } else {
+            index += 1;
         }
     }
 
@@ -1967,6 +2024,14 @@ mod tests {
         assert_eq!(
             append_before_shell_boundary("pi -p hello", extension),
             "pi -p hello --extension '/tmp/pi-extension.ts'"
+        );
+        assert_eq!(
+            append_before_shell_boundary("pi -p $(printf a && echo b) && other-command", extension),
+            "pi -p $(printf a && echo b) --extension '/tmp/pi-extension.ts' && other-command"
+        );
+        assert_eq!(
+            append_before_shell_boundary("pi -p `printf a && echo b` && other-command", extension),
+            "pi -p `printf a && echo b` --extension '/tmp/pi-extension.ts' && other-command"
         );
     }
 
