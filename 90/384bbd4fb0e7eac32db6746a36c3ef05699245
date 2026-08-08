@@ -1,0 +1,20 @@
+src-tauri/src/commands/terminal.rs
+  s_ee67b016f903d6::t_154e3ce512aacd 2028-2035
+  s_ee67b016f903d6::t_dd923cfa241f2a 440-447,449-450,452-453,455-458,460-461,463-466,468-487,489,491-530
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "90384bbd4fb0e7eac32db6746a36c3ef05699245",
+  "prompts": {},
+  "sessions": {
+    "s_ee67b016f903d6": {
+      "agent_id": {
+        "tool": "pi",
+        "id": "019fe238-9a6e-7a0a-932f-4e5031029a8e",
+        "model": "gpt-5.6-terra"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
