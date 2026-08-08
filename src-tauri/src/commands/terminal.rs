@@ -246,6 +246,9 @@ pub struct AgentHookRuntime {
     pub port: u16,
     pub notify_script_path: Option<String>,
     pub claude_settings_path: Option<String>,
+    pub pi_extension_path: Option<String>,
+    pub amp_plugin_available: bool,
+    pub opencode_plugin_available: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -630,6 +633,107 @@ fn shell_quote_single(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\"'\"'"))
 }
 
+fn append_before_shell_boundary(command: &str, args: &str) -> String {
+    enum ShellContext {
+        SingleQuote,
+        DoubleQuote,
+        Backtick,
+        CommandSubstitution,
+        Parenthesis,
+    }
+
+    let bytes = command.as_bytes();
+    let mut contexts = Vec::new();
+    let mut index = 0;
+
+    while index < bytes.len() {
+        let byte = bytes[index];
+
+        match contexts.last() {
+            Some(ShellContext::SingleQuote) => {
+                if byte == b'\'' {
+                    contexts.pop();
+                }
+                index += 1;
+                continue;
+            }
+            Some(ShellContext::DoubleQuote) => {
+                if byte == b'"' {
+                    contexts.pop();
+                    index += 1;
+                } else if byte == b'\\' {
+                    index += 2;
+                } else if byte == b'`' {
+                    contexts.push(ShellContext::Backtick);
+                    index += 1;
+                } else if byte == b'$' && bytes.get(index + 1) == Some(&b'(') {
+                    contexts.push(ShellContext::CommandSubstitution);
+                    index += 2;
+                } else {
+                    index += 1;
+                }
+                continue;
+            }
+            Some(ShellContext::Backtick) => {
+                if byte == b'`' {
+                    contexts.pop();
+                    index += 1;
+                } else if byte == b'\\' {
+                    index += 2;
+                } else {
+                    index += 1;
+                }
+                continue;
+            }
+            _ => {}
+        }
+
+        if byte == b'\\' {
+            index += 2;
+        } else if byte == b'\'' {
+            contexts.push(ShellContext::SingleQuote);
+            index += 1;
+        } else if byte == b'"' {
+            contexts.push(ShellContext::DoubleQuote);
+            index += 1;
+        } else if byte == b'`' {
+            contexts.push(ShellContext::Backtick);
+            index += 1;
+        } else if byte == b'$' && bytes.get(index + 1) == Some(&b'(') {
+            contexts.push(ShellContext::CommandSubstitution);
+            index += 2;
+        } else if matches!(byte, b'<' | b'>') && bytes.get(index + 1) == Some(&b'(') {
+            contexts.push(ShellContext::Parenthesis);
+            index += 2;
+        } else if byte == b'(' && !contexts.is_empty() {
+            contexts.push(ShellContext::Parenthesis);
+            index += 1;
+        } else if byte == b')'
+            && matches!(
+                contexts.last(),
+                Some(ShellContext::CommandSubstitution | ShellContext::Parenthesis)
+            )
+        {
+            contexts.pop();
+            index += 1;
+        } else if contexts.is_empty()
+            && (matches!(byte, b'&' | b'|' | b';' | b'\n')
+                || (byte == b'#' && (index == 0 || bytes[index - 1].is_ascii_whitespace())))
+        {
+            let invocation_end = command[..index].trim_end().len();
+            return format!(
+                "{} {args}{}",
+                &command[..invocation_end],
+                &command[invocation_end..]
+            );
+        } else {
+            index += 1;
+        }
+    }
+
+    format!("{command} {args}")
+}
+
 fn percent_decode(input: &str) -> String {
     let mut out = Vec::with_capacity(input.len());
     let bytes = input.as_bytes();
@@ -668,10 +772,18 @@ fn write_hook_file(path: &Path, contents: &str) -> Result<(), String> {
     fs::write(path, contents).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-fn setup_hook_files(hooks_dir: &Path) -> (Option<String>, Option<String>, Option<String>) {
+fn setup_hook_files(
+    hooks_dir: &Path,
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
     let notify_path = hooks_dir.join("notify.sh");
     let claude_settings_path = hooks_dir.join("claude-settings.json");
-    let amp_delegate_path = hooks_dir.join("amp-delegate.sh");
+    let pi_extension_path = hooks_dir.join("pi-extension.ts");
+    let opencode_plugin_path = hooks_dir.join("plugins").join("autopilot-lifecycle.ts");
 
     let notify_script = r#"#!/bin/bash
 # Autopilot agent notification hook
@@ -700,27 +812,78 @@ curl -sG "http://127.0.0.1:${AUTOPILOT_HOOK_PORT}/hook/complete" \
 exit 0
 "#;
 
-    // AMP permission delegate: always allows (exit 0), notifies lifecycle
-    // server as a side-effect.  AMP hooks (tool:pre-execute/post-execute)
-    // cannot run external commands, so we piggyback on the permission
-    // delegation mechanism instead.  The delegate is registered for a set
-    // of safe, always-allowed tools (Read, Grep, edit_file, …) so it does
-    // not weaken AMP's built-in security rules.
-    let amp_delegate_script = r#"#!/bin/bash
-# Autopilot AMP permission delegate — always allows, notifies lifecycle server
-# Stdin: tool parameters (JSON) — consumed to prevent broken pipe
-# Exit 0 = allow
-cat > /dev/null 2>&1
-[ -z "$AUTOPILOT_TERMINAL_ID" ] && exit 0
-[ -z "$AUTOPILOT_HOOK_PORT" ] && exit 0
+    let pi_extension = r#"import { spawn } from "node:child_process";
 
-curl -sG "http://127.0.0.1:${AUTOPILOT_HOOK_PORT}/hook/complete" \
-  --connect-timeout 1 --max-time 2 \
-  --data-urlencode "terminalId=$AUTOPILOT_TERMINAL_ID" \
-  --data-urlencode "eventType=Start" \
-  --data-urlencode "agent=amp" \
-  > /dev/null 2>&1 &
-exit 0
+export default function (pi: any) {
+  const notifyScript = process.env.AUTOPILOT_NOTIFY_SCRIPT;
+  if (!notifyScript || !process.env.AUTOPILOT_TERMINAL_ID) return;
+
+  const fire = (hook_event_name: string) => {
+    try {
+      const child = spawn(notifyScript, [], {
+        stdio: ["pipe", "ignore", "ignore"],
+        detached: true,
+        env: process.env,
+      });
+      child.on("error", () => {});
+      child.stdin?.on("error", () => {});
+      child.stdin?.end(JSON.stringify({ hook_event_name }));
+      child.unref();
+    } catch {}
+  };
+
+  pi.on("agent_start", () => fire("Start"));
+  pi.on("agent_end", () => fire("Stop"));
+}
+"#;
+
+    let opencode_plugin = r#"import { spawn } from "node:child_process";
+
+export const AutopilotLifecyclePlugin = async () => {
+  const notifyScript = process.env.AUTOPILOT_NOTIFY_SCRIPT;
+  if (!notifyScript || !process.env.AUTOPILOT_TERMINAL_ID) return {};
+  let state: "idle" | "busy" = "idle";
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const fire = (hook_event_name: string) => {
+    try {
+      const child = spawn(notifyScript, [], {
+        stdio: ["pipe", "ignore", "ignore"],
+        detached: true,
+        env: process.env,
+      });
+      child.on("error", () => {});
+      child.stdin?.on("error", () => {});
+      child.stdin?.end(JSON.stringify({ hook_event_name }));
+      child.unref();
+    } catch {}
+  };
+
+  return {
+    event: async ({ event }: { event: any }) => {
+      if (event.type !== "session.status") return;
+      if (event.properties.status.type === "busy") {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = undefined;
+        if (state === "idle") {
+          state = "busy";
+          fire("Start");
+        }
+      }
+      if (event.properties.status.type === "idle" && state === "busy" && !idleTimer) {
+        idleTimer = setTimeout(() => {
+          idleTimer = undefined;
+          if (state === "busy") {
+            state = "idle";
+            fire("Stop");
+          }
+        }, 500);
+      }
+    },
+  };
+};
+
+export default AutopilotLifecyclePlugin;
 "#;
 
     let mut notify_script_path = None;
@@ -742,26 +905,27 @@ exit 0
         notify_script_path = Some(notify_path.to_string_lossy().to_string());
     }
 
-    let mut amp_delegate = None;
-    if let Err(e) = write_hook_file(&amp_delegate_path, amp_delegate_script) {
-        eprintln!("[autopilot] warning: failed to write amp delegate script ({e})");
-    } else {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-
-            if let Err(e) =
-                fs::set_permissions(&amp_delegate_path, fs::Permissions::from_mode(0o755))
-            {
-                eprintln!(
-                    "[autopilot] warning: failed to set amp delegate script permissions ({}: {e})",
-                    amp_delegate_path.display()
-                );
-            }
+    let pi_extension = match write_hook_file(&pi_extension_path, pi_extension) {
+        Ok(()) => Some(pi_extension_path.to_string_lossy().to_string()),
+        Err(e) => {
+            eprintln!("[autopilot] warning: failed to write pi hook extension ({e})");
+            None
         }
+    };
 
-        amp_delegate = Some(amp_delegate_path.to_string_lossy().to_string());
-    }
+    let opencode_plugin = match opencode_plugin_path.parent() {
+        Some(parent) => match fs::create_dir_all(parent)
+            .map_err(|e| e.to_string())
+            .and_then(|_| write_hook_file(&opencode_plugin_path, opencode_plugin))
+        {
+            Ok(()) => Some(opencode_plugin_path.to_string_lossy().to_string()),
+            Err(e) => {
+                eprintln!("[autopilot] warning: failed to write OpenCode hook plugin ({e})");
+                None
+            }
+        },
+        None => None,
+    };
 
     let mut claude_settings = None;
     if let Some(ref notify) = notify_script_path {
@@ -787,7 +951,12 @@ exit 0
         }
     }
 
-    (notify_script_path, claude_settings, amp_delegate)
+    (
+        notify_script_path,
+        claude_settings,
+        pi_extension,
+        opencode_plugin,
+    )
 }
 
 fn map_hook_event(event_type: &str) -> Option<(&'static str, bool)> {
@@ -796,6 +965,14 @@ fn map_hook_event(event_type: &str) -> Option<(&'static str, bool)> {
         "Stop" | "PermissionRequest" | "Notification" => Some(("waiting_input", true)),
         "SessionEnd" => Some(("completed", true)),
         _ => None,
+    }
+}
+
+fn should_emit_hook_transition(status: &str, was_waiting: bool) -> bool {
+    match status {
+        "running" => was_waiting,
+        "waiting_input" => !was_waiting,
+        _ => true,
     }
 }
 
@@ -874,17 +1051,23 @@ fn run_hook_server(
                         "[autopilot:hook] -> status={status} agent={} worktree={}",
                         info.agent, info.worktree_path
                     );
-                    info.is_waiting.store(waiting, Ordering::Relaxed);
+                    let was_waiting = info.is_waiting.swap(waiting, Ordering::Relaxed);
                     info.last_output_ms.store(now_ms(), Ordering::Relaxed);
-                    emit_agent_status(
-                        &app,
-                        &info.worktree_path,
-                        &info.session_id,
-                        &terminal_id,
-                        status,
-                        Some(&info.agent),
-                        Some(format!("Hook event: {event_type}")),
-                    );
+                    if should_emit_hook_transition(status, was_waiting) {
+                        emit_agent_status(
+                            &app,
+                            &info.worktree_path,
+                            &info.session_id,
+                            &terminal_id,
+                            status,
+                            Some(&info.agent),
+                            Some(format!("Hook event: {event_type}")),
+                        );
+                    } else {
+                        eprintln!(
+                            "[autopilot:hook] duplicate status suppressed terminal={terminal_id} status={status}"
+                        );
+                    }
                 }
             } else {
                 eprintln!("[autopilot:hook] missing params in request: {url}");
@@ -1009,88 +1192,48 @@ fn install_hooks_to_claude_global_settings(notify_script_path: &str) {
     }
 }
 
-fn install_hooks_to_amp_global_settings(delegate_path: &str) {
+const AMP_HOOK_PLUGIN: &str = r#"// @i-know-the-amp-plugin-api-is-wip-and-very-experimental-right-now
+import { spawn } from "node:child_process";
+
+export default function (amp: any) {
+  const notifyScript = process.env.AUTOPILOT_NOTIFY_SCRIPT;
+  if (!notifyScript || !process.env.AUTOPILOT_TERMINAL_ID) return;
+
+  const fire = (hook_event_name: string) => {
+    try {
+      const child = spawn(notifyScript, [], {
+        stdio: ["pipe", "ignore", "ignore"],
+        detached: true,
+        env: process.env,
+      });
+      child.on("error", () => {});
+      child.stdin?.on("error", () => {});
+      child.stdin?.end(JSON.stringify({ hook_event_name }));
+      child.unref();
+    } catch {}
+  };
+
+  amp.on("agent.start", () => fire("Start"));
+  amp.on("agent.end", () => fire("Stop"));
+}
+"#;
+
+fn install_amp_global_plugin() -> bool {
     let Some(home_dir) = dirs::home_dir() else {
-        return;
+        return false;
     };
-    let config_dir = home_dir.join(".config").join("amp");
-    let settings_path = config_dir.join("settings.json");
-
-    let mut settings: serde_json::Value = if settings_path.exists() {
-        match fs::read_to_string(&settings_path) {
-            Ok(contents) => serde_json::from_str(&contents).unwrap_or_else(|_| json!({})),
-            Err(_) => json!({}),
-        }
-    } else {
-        if let Err(e) = fs::create_dir_all(&config_dir) {
-            eprintln!("[autopilot] warning: failed to create ~/.config/amp directory ({e})");
-            return;
-        }
-        json!({})
-    };
-    if !settings.is_object() {
-        settings = json!({});
+    let plugins_dir = home_dir.join(".config").join("amp").join("plugins");
+    if let Err(e) = fs::create_dir_all(&plugins_dir) {
+        eprintln!("[autopilot] warning: failed to create Amp plugins directory ({e})");
+        return false;
     }
 
-    let permissions = settings
-        .as_object_mut()
-        .unwrap()
-        .entry("amp.permissions")
-        .or_insert_with(|| json!([]));
-
-    let arr = match permissions.as_array_mut() {
-        Some(a) => a,
-        None => {
-            *permissions = json!([]);
-            permissions.as_array_mut().unwrap()
-        }
-    };
-
-    let already_installed = arr.iter().any(|entry| {
-        entry
-            .get("to")
-            .and_then(|v| v.as_str())
-            .map_or(false, |to| to == delegate_path)
-    });
-
-    if already_installed {
-        return;
-    }
-
-    let delegate_tools = [
-        "Read",
-        "Grep",
-        "glob",
-        "finder",
-        "edit_file",
-        "create_file",
-        "undo_edit",
-        "Task",
-    ];
-    for tool in &delegate_tools {
-        arr.push(json!({
-            "tool": tool,
-            "action": "delegate",
-            "to": delegate_path
-        }));
-    }
-
-    match serde_json::to_string_pretty(&settings) {
-        Ok(contents) => {
-            if let Err(e) = fs::write(&settings_path, contents) {
-                eprintln!(
-                    "[autopilot] warning: failed to write amp settings ({}: {e})",
-                    settings_path.display()
-                );
-            } else {
-                eprintln!(
-                    "[autopilot] installed hooks into {}",
-                    settings_path.display()
-                );
-            }
-        }
+    let plugin_path = plugins_dir.join("autopilot-lifecycle.ts");
+    match write_hook_file(&plugin_path, AMP_HOOK_PLUGIN) {
+        Ok(()) => true,
         Err(e) => {
-            eprintln!("[autopilot] warning: failed to serialize amp settings ({e})");
+            eprintln!("[autopilot] warning: failed to write Amp lifecycle plugin ({e})");
+            false
         }
     }
 }
@@ -1231,6 +1374,9 @@ pub fn initialize_agent_hook_runtime(
 
     let mut notify_script_path = None;
     let mut claude_settings_path = None;
+    let mut pi_extension_path = None;
+    let mut amp_plugin_available = false;
+    let mut opencode_plugin_available = false;
 
     if let Some(home_dir) = dirs::home_dir() {
         let hooks_dir = home_dir.join(".autopilot").join("hooks");
@@ -1241,16 +1387,16 @@ pub fn initialize_agent_hook_runtime(
                 hooks_dir.display()
             );
         } else {
-            let (notify, claude, amp_delegate) = setup_hook_files(&hooks_dir);
+            let (notify, claude, pi_extension, opencode_plugin) = setup_hook_files(&hooks_dir);
             notify_script_path = notify.clone();
             claude_settings_path = claude;
+            pi_extension_path = pi_extension;
+            opencode_plugin_available = opencode_plugin.is_some();
 
             if let Some(ref notify_path) = notify {
                 install_hooks_to_claude_global_settings(notify_path);
                 install_hooks_to_droid_global_settings(notify_path);
-            }
-            if let Some(ref delegate_path) = amp_delegate {
-                install_hooks_to_amp_global_settings(delegate_path);
+                amp_plugin_available = install_amp_global_plugin();
             }
         }
     } else {
@@ -1263,6 +1409,9 @@ pub fn initialize_agent_hook_runtime(
         port,
         notify_script_path,
         claude_settings_path,
+        pi_extension_path,
+        amp_plugin_available,
+        opencode_plugin_available,
     })
 }
 
@@ -2057,24 +2206,42 @@ pub fn spawn_terminal_with_command(
             hooks_injected = true;
             eprintln!("[autopilot] droid hooks via global ~/.factory/settings.json");
         } else if agent == "opencode" {
-            if let Some(home_dir) = dirs::home_dir() {
-                let opencode_dir = home_dir.join(".autopilot").join("hooks");
-                cmd.env(
-                    "OPENCODE_CONFIG_DIR",
-                    opencode_dir.to_string_lossy().to_string(),
-                );
-                hooks_injected = true;
-                eprintln!(
-                    "[autopilot] opencode hooks injected, config_dir={}",
-                    opencode_dir.display()
-                );
+            if hook_runtime.opencode_plugin_available {
+                if let (Some(home_dir), Some(notify_script_path)) =
+                    (dirs::home_dir(), hook_runtime.notify_script_path.as_deref())
+                {
+                    cmd.env("AUTOPILOT_NOTIFY_SCRIPT", notify_script_path);
+                    let opencode_dir = home_dir.join(".autopilot").join("hooks");
+                    cmd.env(
+                        "OPENCODE_CONFIG_DIR",
+                        opencode_dir.to_string_lossy().to_string(),
+                    );
+                    hooks_injected = true;
+                    eprintln!(
+                        "[autopilot] opencode hooks injected, config_dir={}",
+                        opencode_dir.display()
+                    );
+                }
             }
         } else if agent == "amp" {
-            // AMP uses permission delegation installed in ~/.config/amp/settings.json.
-            // The delegate fires "Start" events on tool calls, giving us "running" signals.
-            // We keep hooks_injected=false so the inactivity watchdog stays active for
-            // "waiting_input" detection — AMP's hook system cannot send lifecycle events.
-            eprintln!("[autopilot] amp lifecycle via permission delegate + watchdog");
+            if hook_runtime.amp_plugin_available {
+                if let Some(notify_script_path) = hook_runtime.notify_script_path.as_deref() {
+                    cmd.env("AUTOPILOT_NOTIFY_SCRIPT", notify_script_path);
+                    hooks_injected = true;
+                    eprintln!("[autopilot] amp lifecycle plugin enabled");
+                }
+            }
+        } else if agent == "pi" {
+            if let (Some(extension_path), Some(notify_script_path)) = (
+                hook_runtime.pi_extension_path.as_deref(),
+                hook_runtime.notify_script_path.as_deref(),
+            ) {
+                cmd.env("AUTOPILOT_NOTIFY_SCRIPT", notify_script_path);
+                let extension_arg = format!("--extension {}", shell_quote_single(extension_path));
+                full_command = append_before_shell_boundary(&full_command, &extension_arg);
+                hooks_injected = true;
+                eprintln!("[autopilot] pi hooks injected, full_command={full_command}");
+            }
         } else {
             eprintln!("[autopilot] agent={agent} has no hook support, using watchdog fallback");
         }
@@ -2575,6 +2742,44 @@ mod tests {
     }
 
     #[test]
+    fn agent_args_are_inserted_before_shell_boundaries() {
+        let extension = "--extension '/tmp/pi-extension.ts'";
+
+        assert_eq!(
+            append_before_shell_boundary("pi && other-command", extension),
+            "pi --extension '/tmp/pi-extension.ts' && other-command"
+        );
+        assert_eq!(
+            append_before_shell_boundary("pi -p 'keep && quoted' || fallback", extension),
+            "pi -p 'keep && quoted' --extension '/tmp/pi-extension.ts' || fallback"
+        );
+        assert_eq!(
+            append_before_shell_boundary("pi # keep comment", extension),
+            "pi --extension '/tmp/pi-extension.ts' # keep comment"
+        );
+        assert_eq!(
+            append_before_shell_boundary("pi -p hello", extension),
+            "pi -p hello --extension '/tmp/pi-extension.ts'"
+        );
+        assert_eq!(
+            append_before_shell_boundary("pi -p $(printf a && echo b) && other-command", extension),
+            "pi -p $(printf a && echo b) --extension '/tmp/pi-extension.ts' && other-command"
+        );
+        assert_eq!(
+            append_before_shell_boundary("pi -p `printf a && echo b` && other-command", extension),
+            "pi -p `printf a && echo b` --extension '/tmp/pi-extension.ts' && other-command"
+        );
+        assert_eq!(
+            append_before_shell_boundary("pi -p <(printf a && echo b) && other-command", extension),
+            "pi -p <(printf a && echo b) --extension '/tmp/pi-extension.ts' && other-command"
+        );
+        assert_eq!(
+            append_before_shell_boundary("pi -p >(printf a && echo b) && other-command", extension),
+            "pi -p >(printf a && echo b) --extension '/tmp/pi-extension.ts' && other-command"
+        );
+    }
+
+    #[test]
     fn osc_133_prompt_ready_standard() {
         assert!(contains_osc_prompt_ready("text\x1b]133;B\x07more"));
         assert!(contains_osc_prompt_ready("\x1b]633;B\x07"));
@@ -2673,6 +2878,15 @@ mod tests {
     }
 
     #[test]
+    fn hook_transitions_suppress_duplicate_active_states() {
+        assert!(should_emit_hook_transition("running", true));
+        assert!(!should_emit_hook_transition("running", false));
+        assert!(should_emit_hook_transition("waiting_input", false));
+        assert!(!should_emit_hook_transition("waiting_input", true));
+        assert!(should_emit_hook_transition("completed", true));
+    }
+
+    #[test]
     fn normalize_hook_agent_prefers_explicit_codex_agent() {
         assert_eq!(
             normalize_hook_agent(Some("codex"), "UserPromptSubmit"),
@@ -2683,6 +2897,31 @@ mod tests {
     #[test]
     fn normalize_hook_agent_falls_back_to_event_mapping() {
         assert_eq!(normalize_hook_agent(None, "UserPromptSubmit"), "claude");
+    }
+
+    #[test]
+    fn generated_hook_extensions_report_agent_lifecycle() {
+        let hooks_dir =
+            std::env::temp_dir().join(format!("autopilot-pi-hook-test-{}", Uuid::new_v4()));
+        fs::create_dir_all(&hooks_dir).unwrap();
+
+        let (_, _, pi_extension_path, opencode_plugin_path) = setup_hook_files(&hooks_dir);
+        let extension = fs::read_to_string(pi_extension_path.unwrap()).unwrap();
+        let opencode_plugin = fs::read_to_string(opencode_plugin_path.unwrap()).unwrap();
+
+        assert!(extension.contains(r#"pi.on("agent_start", () => fire("Start"))"#));
+        assert!(extension.contains(r#"pi.on("agent_end", () => fire("Stop"))"#));
+        assert!(opencode_plugin.contains(r#"state = "busy";"#));
+        assert!(opencode_plugin.contains(r#"state = "idle";"#));
+        assert!(opencode_plugin.contains("}, 500);"));
+
+        fs::remove_dir_all(hooks_dir).unwrap();
+    }
+
+    #[test]
+    fn amp_hook_plugin_reports_agent_lifecycle() {
+        assert!(AMP_HOOK_PLUGIN.contains(r#"amp.on("agent.start", () => fire("Start"))"#));
+        assert!(AMP_HOOK_PLUGIN.contains(r#"amp.on("agent.end", () => fire("Stop"))"#));
     }
 
     #[test]
