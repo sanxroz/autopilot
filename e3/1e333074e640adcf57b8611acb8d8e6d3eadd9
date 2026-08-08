@@ -1,0 +1,20 @@
+src-tauri/src/commands/terminal.rs
+  s_bbce169a0922de::t_61218814e5c0a5 2039-2046
+  s_bbce169a0922de::t_744a5e05bbec14 508-510
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "e31e333074e640adcf57b8611acb8d8e6d3eadd9",
+  "prompts": {},
+  "sessions": {
+    "s_bbce169a0922de": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fe243-e33e-71b0-8bee-426521ba00a7",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
