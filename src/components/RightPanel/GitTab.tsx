@@ -21,6 +21,7 @@ import {
   invalidateGitFileDiffCache,
   loadGitFileDiff,
 } from "../../lib/git-file-diff-cache";
+import { createCoalescedTask } from "../../lib/coalesced-task";
 
 import { cn } from "../../utils/cn";
 
@@ -86,7 +87,8 @@ export function GitTab({ worktreePath }: GitTabProps) {
   latestWorktreePathRef.current = worktreePath;
 
   const fetchStatus = useCallback(async () => {
-    if (!worktreePath) {
+    const requestedWorktreePath = latestWorktreePathRef.current;
+    if (!requestedWorktreePath) {
       activeFetchIdRef.current += 1;
       setIsLoading(false);
       setGitStatus(null);
@@ -99,10 +101,12 @@ export function GitTab({ worktreePath }: GitTabProps) {
     setError(null);
 
     try {
-      const status = await invoke<GitStatus>("get_git_status", { worktreePath });
+      const status = await invoke<GitStatus>("get_git_status", {
+        worktreePath: requestedWorktreePath,
+      });
       if (
         activeFetchIdRef.current !== fetchId ||
-        latestWorktreePathRef.current !== worktreePath
+        latestWorktreePathRef.current !== requestedWorktreePath
       ) {
         return;
       }
@@ -110,7 +114,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
     } catch (e) {
       if (
         activeFetchIdRef.current !== fetchId ||
-        latestWorktreePathRef.current !== worktreePath
+        latestWorktreePathRef.current !== requestedWorktreePath
       ) {
         return;
       }
@@ -119,13 +123,19 @@ export function GitTab({ worktreePath }: GitTabProps) {
     } finally {
       if (
         activeFetchIdRef.current !== fetchId ||
-        latestWorktreePathRef.current !== worktreePath
+        latestWorktreePathRef.current !== requestedWorktreePath
       ) {
         return;
       }
       setIsLoading(false);
     }
-  }, [worktreePath]);
+  }, []);
+
+  const refreshStatusRef = useRef<(() => Promise<void>) | null>(null);
+  if (!refreshStatusRef.current) {
+    refreshStatusRef.current = createCoalescedTask(fetchStatus);
+  }
+  const refreshStatus = refreshStatusRef.current;
 
   useEffect(() => {
     return () => {
@@ -140,29 +150,41 @@ export function GitTab({ worktreePath }: GitTabProps) {
 
     refreshTimerRef.current = setTimeout(() => {
       refreshTimerRef.current = null;
-      fetchStatus();
-    }, 500);
-  }, [fetchStatus]);
+      const currentWorktreePath = latestWorktreePathRef.current;
+      if (currentWorktreePath) invalidateGitFileDiffCache(currentWorktreePath);
+      void refreshStatus();
+    }, 1_000);
+  }, [refreshStatus]);
 
   useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
+    void refreshStatus();
+  }, [refreshStatus, worktreePath]);
+
+  useEffect(() => {
+    const refreshOnFocus = () => {
+      const currentWorktreePath = latestWorktreePathRef.current;
+      if (!currentWorktreePath || document.visibilityState !== "visible") return;
+      invalidateGitFileDiffCache(currentWorktreePath);
+      void refreshStatus();
+    };
+
+    window.addEventListener("focus", refreshOnFocus);
+    return () => {
+      window.removeEventListener("focus", refreshOnFocus);
+    };
+  }, [refreshStatus]);
 
   useEffect(() => {
     if (!worktreePath) return;
 
-    invoke("start_watching_worktree_files", { worktreePath }).catch(console.error);
-
     const unlistenFileChanged = listen<{ worktree_path: string }>("file-changed", (event) => {
       if (event.payload.worktree_path === worktreePath) {
-        invalidateGitFileDiffCache(worktreePath);
         scheduleStatusRefresh();
       }
     });
 
     const unlistenIndexChanged = listen<{ worktree_path: string }>("git-index-changed", (event) => {
       if (event.payload.worktree_path === worktreePath) {
-        invalidateGitFileDiffCache(worktreePath);
         scheduleStatusRefresh();
       }
     });
@@ -176,7 +198,6 @@ export function GitTab({ worktreePath }: GitTabProps) {
         clearTimeout(prefetchTimerRef.current);
         prefetchTimerRef.current = null;
       }
-      invoke("stop_watching_worktree_files", { worktreePath }).catch(console.error);
       unlistenFileChanged.then((fn) => fn());
       unlistenIndexChanged.then((fn) => fn());
     };
@@ -217,6 +238,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
     if (gitFileDiffPreview?.filePath === file.path && gitFileDiffPreview?.isStaged === isStaged) {
       setGitFileDiffPreview(null);
     } else {
+      invalidateGitFileDiffCache(worktreePath);
       setGitFileDiffPreview({ filePath: file.path, worktreePath, isStaged });
     }
   }, [worktreePath, gitFileDiffPreview, setGitFileDiffPreview]);
@@ -235,26 +257,26 @@ export function GitTab({ worktreePath }: GitTabProps) {
     setIsStaging(true);
     try {
       await invoke("git_stage_files", { worktreePath, files });
-      await fetchStatus();
+      await refreshStatus();
     } catch (e) {
       setError(String(e));
     } finally {
       setIsStaging(false);
     }
-  }, [worktreePath, fetchStatus, isOperationInProgress]);
+  }, [worktreePath, refreshStatus, isOperationInProgress]);
 
   const handleUnstageFiles = useCallback(async (files: string[]) => {
     if (!worktreePath || files.length === 0 || isOperationInProgress) return;
     setIsStaging(true);
     try {
       await invoke("git_unstage_files", { worktreePath, files });
-      await fetchStatus();
+      await refreshStatus();
     } catch (e) {
       setError(String(e));
     } finally {
       setIsStaging(false);
     }
-  }, [worktreePath, fetchStatus, isOperationInProgress]);
+  }, [worktreePath, refreshStatus, isOperationInProgress]);
 
   const handleRevertFile = useCallback(
     async (file: GitStatusFile, isStaged: boolean) => {
@@ -272,14 +294,14 @@ export function GitTab({ worktreePath }: GitTabProps) {
           isStaged,
           status: file.status,
         });
-        await fetchStatus();
+        await refreshStatus();
       } catch (e) {
         setError(String(e));
       } finally {
         setRevertingFile(null);
       }
     },
-    [worktreePath, fetchStatus, isOperationInProgress]
+    [worktreePath, refreshStatus, isOperationInProgress]
   );
 
   const handleStageAll = useCallback(async () => {
@@ -287,26 +309,26 @@ export function GitTab({ worktreePath }: GitTabProps) {
     setIsStaging(true);
     try {
       await invoke("git_stage_all", { worktreePath });
-      await fetchStatus();
+      await refreshStatus();
     } catch (e) {
       setError(String(e));
     } finally {
       setIsStaging(false);
     }
-  }, [worktreePath, fetchStatus, isOperationInProgress]);
+  }, [worktreePath, refreshStatus, isOperationInProgress]);
 
   const handleUnstageAll = useCallback(async () => {
     if (!worktreePath || isOperationInProgress) return;
     setIsStaging(true);
     try {
       await invoke("git_unstage_all", { worktreePath });
-      await fetchStatus();
+      await refreshStatus();
     } catch (e) {
       setError(String(e));
     } finally {
       setIsStaging(false);
     }
-  }, [worktreePath, fetchStatus, isOperationInProgress]);
+  }, [worktreePath, refreshStatus, isOperationInProgress]);
 
   const handleCommit = useCallback(async () => {
     if (!worktreePath || !commitMessage.trim() || isOperationInProgress) return;
@@ -315,13 +337,13 @@ export function GitTab({ worktreePath }: GitTabProps) {
     try {
       await invoke<string>("git_commit", { worktreePath, message: commitMessage.trim() });
       setCommitMessage("");
-      await fetchStatus();
+      await refreshStatus();
     } catch (e) {
       setError(String(e));
     } finally {
       setIsCommitting(false);
     }
-  }, [worktreePath, commitMessage, fetchStatus, isOperationInProgress]);
+  }, [worktreePath, commitMessage, refreshStatus, isOperationInProgress]);
 
   const handlePush = useCallback(async () => {
     if (!worktreePath) return;
@@ -329,13 +351,13 @@ export function GitTab({ worktreePath }: GitTabProps) {
     setError(null);
     try {
       await invoke("git_push", { worktreePath });
-      await fetchStatus();
+      await refreshStatus();
     } catch (e) {
       setError(String(e));
     } finally {
       setIsPushing(false);
     }
-  }, [worktreePath, fetchStatus]);
+  }, [worktreePath, refreshStatus]);
 
   const handleGenerateMessage = useCallback(async () => {
     if (!worktreePath) return;
@@ -376,7 +398,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
       <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6">
         <span className="text-sm text-center text-tertiary">{error}</span>
         <button
-          onClick={() => fetchStatus()}
+          onClick={() => void refreshStatus()}
           className="px-3 py-1.5 rounded text-xs font-medium transition-colors bg-tertiary text-primary"
         >
           Try again

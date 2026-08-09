@@ -25,6 +25,7 @@ export function useGitWatcher() {
   const pendingWorktreeUpdates = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const inFlightRefreshes = useRef<Set<string>>(new Set());
   const pendingRefreshNeeded = useRef<Set<string>>(new Set());
+  const watchedWorktreePaths = useRef<Set<string>>(new Set());
 
   const repoWorktreeSignature = useMemo(() => {
     return repositories.map(r => ({
@@ -105,7 +106,25 @@ export function useGitWatcher() {
   }, [isInitialized, debouncedBranchUpdate, debouncedWorktreeRefresh]);
 
   useEffect(() => {
-    if (!isInitialized || repositories.length === 0) return;
+    if (!isInitialized) return;
+
+    const nextWorktreePaths = new Set(
+      repositories.flatMap((repo) => repo.worktrees.map((worktree) => worktree.path)),
+    );
+
+    for (const worktreePath of watchedWorktreePaths.current) {
+      if (!nextWorktreePaths.has(worktreePath)) {
+        invoke('stop_watching_worktree_files', { worktreePath }).catch(console.error);
+      }
+    }
+
+    for (const worktreePath of nextWorktreePaths) {
+      if (!watchedWorktreePaths.current.has(worktreePath)) {
+        invoke('start_watching_worktree_files', { worktreePath }).catch(console.error);
+      }
+    }
+
+    watchedWorktreePaths.current = nextWorktreePaths;
 
     for (const repo of repositories) {
       const worktreePaths = repo.worktrees.map(wt => wt.path);
@@ -126,6 +145,7 @@ export function useGitWatcher() {
         unlistenWorktreeRef.current();
         unlistenWorktreeRef.current = null;
       }
+      watchedWorktreePaths.current.clear();
       invoke('stop_all_watchers').catch(console.error);
     };
   }, []);

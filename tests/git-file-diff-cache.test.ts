@@ -100,6 +100,30 @@ describe("git file diff cache", () => {
     ).toBe(fresh);
   });
 
+  test("reloads a cached diff after its worktree is invalidated", async () => {
+    const initial = {
+      patch: "initial",
+      old_content: null,
+      new_content: null,
+      worktree_content: null,
+      is_binary: false,
+    };
+    const refreshed = { ...initial, patch: "refreshed" };
+    invoke.mockImplementationOnce(async () => initial);
+
+    expect(
+      await loadGitFileDiff("/changed-repo", "file.ts", false, false),
+    ).toBe(initial);
+
+    invalidateGitFileDiffCache("/changed-repo");
+    invoke.mockImplementationOnce(async () => refreshed);
+
+    expect(
+      await loadGitFileDiff("/changed-repo", "file.ts", false, false),
+    ).toBe(refreshed);
+    expect(invoke).toHaveBeenCalledTimes(2);
+  });
+
   test("notifies active previews when a worktree cache is invalidated", () => {
     const invalidatedWorktrees: string[] = [];
     const unsubscribe = subscribeToGitFileDiffInvalidation((worktreePath) => {

@@ -306,9 +306,6 @@ impl GitWatcher {
             return Err("Worktree path does not exist".to_string());
         }
 
-        let last_emit = Arc::new(Mutex::new(std::time::Instant::now()));
-        let debounce_ms = 300;
-
         let watcher = RecommendedWatcher::new(
             move |res: Result<Event, notify::Error>| {
                 if let Ok(event) = res {
@@ -326,17 +323,12 @@ impl GitWatcher {
 
                     match event.kind {
                         EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
-                            let mut last = last_emit.lock();
-                            let now = std::time::Instant::now();
-                            if now.duration_since(*last).as_millis() > debounce_ms {
-                                *last = now;
-                                let _ = app_handle.emit(
-                                    "file-changed",
-                                    FileChangeEvent {
-                                        worktree_path: worktree_path_clone.clone(),
-                                    },
-                                );
-                            }
+                            let _ = app_handle.emit(
+                                "file-changed",
+                                FileChangeEvent {
+                                    worktree_path: worktree_path_clone.clone(),
+                                },
+                            );
                         }
                         _ => {}
                     }
