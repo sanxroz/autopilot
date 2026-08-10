@@ -39,4 +39,24 @@ describe("createCoalescedTask", () => {
 
     expect(runs).toBe(2);
   });
+
+  test("drops a queued follow-up after disposal", async () => {
+    let release: (() => void) | undefined;
+    let runs = 0;
+    const task = createCoalescedTask(async () => {
+      runs += 1;
+      if (runs !== 1) return;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+
+    const active = task();
+    void task();
+    task.dispose();
+    release?.();
+    await active;
+
+    expect(runs).toBe(1);
+  });
 });

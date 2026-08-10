@@ -1,10 +1,13 @@
 export function createCoalescedTask(
   task: () => Promise<void>,
-): () => Promise<void> {
+) {
   let active: Promise<void> | null = null;
   let queued = false;
+  let disposed = false;
 
-  return function run(): Promise<void> {
+  const run = function (): Promise<void> {
+    if (disposed) return Promise.resolve();
+
     if (active) {
       queued = true;
       return active;
@@ -14,11 +17,18 @@ export function createCoalescedTask(
       do {
         queued = false;
         await task();
-      } while (queued);
+      } while (queued && !disposed);
     })().finally(() => {
       active = null;
     });
 
     return active;
   };
+
+  run.dispose = () => {
+    disposed = true;
+    queued = false;
+  };
+
+  return run;
 }

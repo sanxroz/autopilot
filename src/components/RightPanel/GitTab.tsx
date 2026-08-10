@@ -131,7 +131,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
     }
   }, []);
 
-  const refreshStatusRef = useRef<(() => Promise<void>) | null>(null);
+  const refreshStatusRef = useRef<ReturnType<typeof createCoalescedTask> | null>(null);
   if (!refreshStatusRef.current) {
     refreshStatusRef.current = createCoalescedTask(fetchStatus);
   }
@@ -140,8 +140,9 @@ export function GitTab({ worktreePath }: GitTabProps) {
   useEffect(() => {
     return () => {
       activeFetchIdRef.current += 1;
+      refreshStatus.dispose();
     };
-  }, []);
+  }, [refreshStatus]);
 
   const scheduleStatusRefresh = useCallback(() => {
     if (refreshTimerRef.current) {
