@@ -976,6 +976,10 @@ fn should_emit_hook_transition(status: &str, was_waiting: bool) -> bool {
     }
 }
 
+fn should_mark_agent_running_on_input(agent: &str, is_waiting: bool, hook_enabled: bool) -> bool {
+    is_waiting && (!hook_enabled || agent == "codex")
+}
+
 fn detect_agent_name_from_event(event_type: &str) -> &'static str {
     match event_type {
         "SessionStart" | "SessionEnd" | "SubagentStop" => "droid",
@@ -1594,7 +1598,11 @@ pub async fn write_to_terminal(
         .map_err(|_| "Terminal writer stopped before completing input".to_string())??;
 
     if let Some(info) = state.agent_terminals.lock().get(&terminal_id) {
-        if info.is_waiting.load(Ordering::Relaxed) && !info.hook_enabled.load(Ordering::Relaxed) {
+        if should_mark_agent_running_on_input(
+            &info.agent,
+            info.is_waiting.load(Ordering::Relaxed),
+            info.hook_enabled.load(Ordering::Relaxed),
+        ) {
             info.is_waiting.store(false, Ordering::Relaxed);
             info.last_output_ms.store(now_ms(), Ordering::Relaxed);
             emit_agent_status(
@@ -2194,7 +2202,11 @@ pub fn spawn_terminal_with_command(
                 eprintln!("[autopilot] claude settings path missing, hooks NOT injected");
             }
         } else if agent == "codex" {
-            if let Some(notify_script_path) = hook_runtime.notify_script_path.as_deref() {
+            if cfg!(target_os = "windows") {
+                eprintln!(
+                    "[autopilot] codex hooks unsupported on Windows, using watchdog fallback"
+                );
+            } else if let Some(notify_script_path) = hook_runtime.notify_script_path.as_deref() {
                 if let Ok(notify_json) = serde_json::to_string(&vec!["bash", notify_script_path]) {
                     let codex_notify = format!("notify={notify_json}");
                     full_command =
@@ -2885,6 +2897,14 @@ mod tests {
         assert!(should_emit_hook_transition("waiting_input", false));
         assert!(!should_emit_hook_transition("waiting_input", true));
         assert!(should_emit_hook_transition("completed", true));
+    }
+
+    #[test]
+    fn input_starts_codex_and_fallback_tracked_turns() {
+        assert!(should_mark_agent_running_on_input("codex", true, true));
+        assert!(!should_mark_agent_running_on_input("codex", false, true));
+        assert!(!should_mark_agent_running_on_input("claude", true, true));
+        assert!(should_mark_agent_running_on_input("claude", true, false));
     }
 
     #[test]
