@@ -59,4 +59,25 @@ describe("createCoalescedTask", () => {
 
     expect(runs).toBe(1);
   });
+
+  test("can queue a refresh after disposal is reset", async () => {
+    let release: (() => void) | undefined;
+    let runs = 0;
+    const task = createCoalescedTask(async () => {
+      runs += 1;
+      if (runs !== 1) return;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+
+    const active = task();
+    task.dispose();
+    task.reset();
+    void task();
+    release?.();
+    await active;
+
+    expect(runs).toBe(2);
+  });
 });

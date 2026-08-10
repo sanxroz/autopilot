@@ -138,6 +138,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
   const refreshStatus = refreshStatusRef.current;
 
   useEffect(() => {
+    refreshStatus.reset();
     return () => {
       activeFetchIdRef.current += 1;
       refreshStatus.dispose();

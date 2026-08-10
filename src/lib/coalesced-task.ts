@@ -30,5 +30,9 @@ export function createCoalescedTask(
     queued = false;
   };
 
+  run.reset = () => {
+    disposed = false;
+  };
+
   return run;
 }
