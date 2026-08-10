@@ -2199,6 +2199,7 @@ pub fn spawn_terminal_with_command(
                     let codex_notify = format!("notify={notify_json}");
                     full_command =
                         format!("{} -c {}", full_command, shell_quote_single(&codex_notify));
+                    hooks_injected = true;
                     eprintln!("[autopilot] codex hooks injected, full_command={full_command}");
                 }
             }
