@@ -31,6 +31,30 @@ pub struct FileChangeEvent {
     pub worktree_path: String,
 }
 
+async fn emit_after_quiet<F>(
+    mut changes: tokio::sync::watch::Receiver<()>,
+    delay: Duration,
+    mut emit: F,
+) where
+    F: FnMut() + Send,
+{
+    while changes.changed().await.is_ok() {
+        loop {
+            tokio::select! {
+                result = changes.changed() => {
+                    if result.is_err() {
+                        return;
+                    }
+                }
+                _ = tokio::time::sleep(delay) => {
+                    emit();
+                    break;
+                }
+            }
+        }
+    }
+}
+
 pub struct GitWatcher {
     watchers: Arc<Mutex<HashMap<String, RecommendedWatcher>>>,
     file_watchers: Arc<Mutex<HashMap<String, RecommendedWatcher>>>,
@@ -306,8 +330,19 @@ impl GitWatcher {
             return Err("Worktree path does not exist".to_string());
         }
 
-        let last_emit = Arc::new(Mutex::new(std::time::Instant::now()));
-        let debounce_ms = 300;
+        let (file_change_tx, file_change_rx) = tokio::sync::watch::channel(());
+        tauri::async_runtime::spawn(emit_after_quiet(
+            file_change_rx,
+            Duration::from_millis(300),
+            move || {
+                let _ = app_handle.emit(
+                    "file-changed",
+                    FileChangeEvent {
+                        worktree_path: worktree_path_clone.clone(),
+                    },
+                );
+            },
+        ));
 
         let watcher = RecommendedWatcher::new(
             move |res: Result<Event, notify::Error>| {
@@ -326,17 +361,7 @@ impl GitWatcher {
 
                     match event.kind {
                         EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
-                            let mut last = last_emit.lock();
-                            let now = std::time::Instant::now();
-                            if now.duration_since(*last).as_millis() > debounce_ms {
-                                *last = now;
-                                let _ = app_handle.emit(
-                                    "file-changed",
-                                    FileChangeEvent {
-                                        worktree_path: worktree_path_clone.clone(),
-                                    },
-                                );
-                            }
+                            let _ = file_change_tx.send(());
                         }
                         _ => {}
                     }
@@ -449,4 +474,41 @@ pub fn stop_watching_worktree_files(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::emit_after_quiet;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn worktree_file_events_are_trailing_debounced() {
+        let (change_tx, change_rx) = tokio::sync::watch::channel(());
+        let (emit_tx, mut emit_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let debounce_task = tokio::spawn(emit_after_quiet(
+            change_rx,
+            Duration::from_millis(80),
+            move || {
+                let _ = emit_tx.send(());
+            },
+        ));
+
+        let _ = change_tx.send(());
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        let _ = change_tx.send(());
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        assert!(emit_rx.try_recv().is_err());
+
+        tokio::time::timeout(Duration::from_millis(100), emit_rx.recv())
+            .await
+            .expect("debounced event should be emitted")
+            .expect("debouncer should remain active");
+        assert!(emit_rx.try_recv().is_err());
+
+        let _ = change_tx.send(());
+        drop(change_tx);
+        debounce_task.await.expect("debouncer task should finish");
+        assert!(emit_rx.try_recv().is_err());
+    }
 }
