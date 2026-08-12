@@ -51,18 +51,31 @@ function getPreferredPortConfig(cwd) {
   return { devPort, hmrPort: devPort + 1 };
 }
 
-function canListen(port, host) {
+function canListenOnHost(port, host, ignoreUnavailableAddress = false) {
   return new Promise((resolve) => {
     const server = net.createServer();
 
-    server.once("error", () => {
-      resolve(false);
+    server.once("error", (error) => {
+      resolve(ignoreUnavailableAddress && error.code === "EADDRNOTAVAIL");
     });
 
     server.listen(port, host, () => {
       server.close(() => resolve(true));
     });
   });
+}
+
+async function canListen(port, host) {
+  if (host !== "localhost") {
+    return canListenOnHost(port, host);
+  }
+
+  const results = await Promise.all(
+    ["127.0.0.1", "::1"].map((candidate) =>
+      canListenOnHost(port, candidate, true),
+    ),
+  );
+  return results.every(Boolean);
 }
 
 export async function getAvailablePortConfig(cwd, host = "localhost") {
