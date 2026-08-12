@@ -121,7 +121,6 @@ export function Sidebar({
     repoPath: string;
     worktreeName: string;
   } | null>(null);
-  const [deleteConfirmation, setDeleteConfirmation] = useState("");
   const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -390,24 +389,16 @@ export function Sidebar({
     repoPath: string,
     worktreeName: string
   ) => {
-    setDeleteConfirmation("");
     setPendingWorkspaceDeletion({ repoPath, worktreeName });
   };
 
   const closeDeleteWorkspaceDialog = () => {
     if (isDeletingWorkspace) return;
     setPendingWorkspaceDeletion(null);
-    setDeleteConfirmation("");
   };
 
   const confirmDeleteWorktree = async () => {
-    if (
-      isDeletingWorkspace ||
-      !pendingWorkspaceDeletion ||
-      deleteConfirmation !== pendingWorkspaceDeletion.worktreeName
-    ) {
-      return;
-    }
+    if (isDeletingWorkspace || !pendingWorkspaceDeletion) return;
 
     setError(null);
     setIsDeletingWorkspace(true);
@@ -417,7 +408,6 @@ export function Sidebar({
         pendingWorkspaceDeletion.worktreeName,
       );
       setPendingWorkspaceDeletion(null);
-      setDeleteConfirmation("");
     } catch (e) {
       console.error("Failed to delete worktree:", e);
       setError(String(e));
@@ -1273,32 +1263,13 @@ export function Sidebar({
         <Modal.Content showClose={!isDeletingWorkspace} className="p-5">
           <Modal.Title>Delete workspace?</Modal.Title>
           <Modal.Description className="mt-2 leading-5">
-            This permanently deletes the workspace files and any uncommitted
-            changes. The Git branch remains.
+            Delete{" "}
+            <strong className="font-medium text-primary">
+              {pendingWorkspaceDeletion?.worktreeName}
+            </strong>{" "}
+            and its uncommitted changes? The Git branch will remain.
           </Modal.Description>
-          <label
-            htmlFor="delete-workspace-confirmation"
-            className="mt-4 block text-xs text-secondary"
-          >
-            Type <strong className="font-medium text-primary">{pendingWorkspaceDeletion?.worktreeName}</strong> to confirm
-          </label>
-          <input
-            id="delete-workspace-confirmation"
-            autoFocus
-            value={deleteConfirmation}
-            onChange={(event) => setDeleteConfirmation(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                void confirmDeleteWorktree();
-              }
-            }}
-            disabled={isDeletingWorkspace}
-            autoComplete="off"
-            spellCheck={false}
-            className="mt-2 h-10 w-full rounded-md border border-border bg-tertiary px-3 text-base text-primary outline-none focus:ring-2 focus:ring-accent-primary focus:ring-offset-2 focus:ring-offset-bg-secondary disabled:opacity-50"
-          />
-          <div className="mt-5 flex justify-end gap-2">
+          <div className="mt-6 flex justify-end gap-2">
             <button
               type="button"
               onClick={closeDeleteWorkspaceDialog}
@@ -1310,10 +1281,7 @@ export function Sidebar({
             <button
               type="button"
               onClick={() => void confirmDeleteWorktree()}
-              disabled={
-                isDeletingWorkspace ||
-                deleteConfirmation !== pendingWorkspaceDeletion?.worktreeName
-              }
+              disabled={isDeletingWorkspace}
               className="min-h-10 rounded-md bg-semantic-error px-3 text-sm font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
             >
               {isDeletingWorkspace ? "Deleting…" : "Delete workspace"}
