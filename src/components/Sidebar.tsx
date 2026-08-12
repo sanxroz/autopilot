@@ -26,6 +26,7 @@ import { beginPanelResize, endPanelResize } from "../utils/panelResize";
 import { isWorktreeSettingUp } from "../store/worktreeSetup";
 import type { SidebarWorktreeGroup as SidebarWorktreeGroupModel } from "../lib/sidebar-groups";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
+import * as Modal from "./ui/modal";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,6 +51,8 @@ const MAX_WIDTH = 520;
 const DEFAULT_WIDTH = 312;
 const DRAG_START_THRESHOLD_PX = 10;
 const GROUP_HOLD_DELAY_MS = 1200;
+const IS_DEVELOPMENT_BUILD =
+  import.meta.env.VITE_AUTOPILOT_DEVELOPMENT === "1";
 
 const PR_SESSION_SECTIONS = [
   { id: "pr:none", label: "No pull request", dot: "bg-border-strong" },
@@ -114,6 +117,12 @@ export function Sidebar({
   const [error, setError] = useState<string | null>(null);
   const [sessionMode, setSessionMode] = useState<SessionMode>("pr");
   const [shortcutsHelpOpen, setShortcutsHelpOpen] = useState(false);
+  const [pendingWorkspaceDeletion, setPendingWorkspaceDeletion] = useState<{
+    repoPath: string;
+    worktreeName: string;
+  } | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const [activeSpacePath, setActiveSpacePath] = useState<string | null>(
@@ -377,23 +386,43 @@ export function Sidebar({
     }
   };
 
-  const handleDeleteWorktree = async (
-    e: React.MouseEvent,
+  const handleDeleteWorktree = (
     repoPath: string,
     worktreeName: string
   ) => {
-    e.stopPropagation();
-    const confirmed = window.confirm(
-      `Delete workspace "${worktreeName}"?\n\nThis permanently deletes its worktree files, including uncommitted changes. The Git branch will remain.`,
-    );
-    if (!confirmed) return;
+    setDeleteConfirmation("");
+    setPendingWorkspaceDeletion({ repoPath, worktreeName });
+  };
+
+  const closeDeleteWorkspaceDialog = () => {
+    if (isDeletingWorkspace) return;
+    setPendingWorkspaceDeletion(null);
+    setDeleteConfirmation("");
+  };
+
+  const confirmDeleteWorktree = async () => {
+    if (
+      isDeletingWorkspace ||
+      !pendingWorkspaceDeletion ||
+      deleteConfirmation !== pendingWorkspaceDeletion.worktreeName
+    ) {
+      return;
+    }
 
     setError(null);
+    setIsDeletingWorkspace(true);
     try {
-      await deleteWorktree(repoPath, worktreeName);
+      await deleteWorktree(
+        pendingWorkspaceDeletion.repoPath,
+        pendingWorkspaceDeletion.worktreeName,
+      );
+      setPendingWorkspaceDeletion(null);
+      setDeleteConfirmation("");
     } catch (e) {
       console.error("Failed to delete worktree:", e);
       setError(String(e));
+    } finally {
+      setIsDeletingWorkspace(false);
     }
   };
 
@@ -695,12 +724,19 @@ export function Sidebar({
       <div className="flex min-h-0 flex-1 flex-col px-1.5 pb-1.5">
         <section className="shrink-0 pb-1.5" aria-labelledby="spaces-heading">
           <div className="flex h-8 items-center justify-between px-1.5">
-            <h2
-              id="spaces-heading"
-              className="text-xs font-semibold tracking-wide text-tertiary"
-            >
-              Spaces
-            </h2>
+            <div className="flex min-w-0 items-center gap-2">
+              <h2
+                id="spaces-heading"
+                className="text-xs font-semibold tracking-wide text-tertiary"
+              >
+                Spaces
+              </h2>
+              {IS_DEVELOPMENT_BUILD && (
+                <span className="rounded bg-semantic-warning-muted px-1.5 py-0.5 text-[10px] font-medium text-semantic-warning">
+                  Development
+                </span>
+              )}
+            </div>
             <button
               type="button"
               onClick={handleAddRepository}
@@ -957,7 +993,7 @@ export function Sidebar({
                                isSettingUp={isWorktreeSettingUp(worktreeSetupByRepoPath, group.repoPath, wt.name)}
                                isActive={!captainTerminalRepoPath && selectedWorktree?.path === wt.path}
                                onSelect={() => handleWorktreeClick(wt)}
-                               onDelete={(e) => handleDeleteWorktree(e, group.repoPath, wt.name)}
+                               onDelete={() => handleDeleteWorktree(group.repoPath, wt.name)}
                                className={cn(
                                  draggedWorktree ? "cursor-grabbing" : "cursor-pointer",
                                  isDragSource && "opacity-60"
@@ -1228,6 +1264,63 @@ export function Sidebar({
         open={shortcutsHelpOpen}
         onOpenChange={setShortcutsHelpOpen}
       />
+      <Modal.Root
+        open={pendingWorkspaceDeletion !== null}
+        onOpenChange={(open) => {
+          if (!open) closeDeleteWorkspaceDialog();
+        }}
+      >
+        <Modal.Content showClose={!isDeletingWorkspace} className="p-5">
+          <Modal.Title>Delete workspace?</Modal.Title>
+          <Modal.Description className="mt-2 leading-5">
+            This permanently deletes the workspace files and any uncommitted
+            changes. The Git branch remains.
+          </Modal.Description>
+          <label
+            htmlFor="delete-workspace-confirmation"
+            className="mt-4 block text-xs text-secondary"
+          >
+            Type <strong className="font-medium text-primary">{pendingWorkspaceDeletion?.worktreeName}</strong> to confirm
+          </label>
+          <input
+            id="delete-workspace-confirmation"
+            autoFocus
+            value={deleteConfirmation}
+            onChange={(event) => setDeleteConfirmation(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void confirmDeleteWorktree();
+              }
+            }}
+            disabled={isDeletingWorkspace}
+            autoComplete="off"
+            spellCheck={false}
+            className="mt-2 h-10 w-full rounded-md border border-border bg-tertiary px-3 text-base text-primary outline-none focus:ring-2 focus:ring-accent-primary focus:ring-offset-2 focus:ring-offset-bg-secondary disabled:opacity-50"
+          />
+          <div className="mt-5 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={closeDeleteWorkspaceDialog}
+              disabled={isDeletingWorkspace}
+              className="min-h-10 rounded-md px-3 text-sm text-secondary transition-colors hover:bg-hover hover:text-primary disabled:opacity-50 motion-reduce:transition-none"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void confirmDeleteWorktree()}
+              disabled={
+                isDeletingWorkspace ||
+                deleteConfirmation !== pendingWorkspaceDeletion?.worktreeName
+              }
+              className="min-h-10 rounded-md bg-semantic-error px-3 text-sm font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+            >
+              {isDeletingWorkspace ? "Deleting…" : "Delete workspace"}
+            </button>
+          </div>
+        </Modal.Content>
+      </Modal.Root>
       </div>
     </div>
   );

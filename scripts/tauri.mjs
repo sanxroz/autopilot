@@ -12,6 +12,46 @@ const childEnv = { ...process.env };
 
 configureSharedCargoTarget(childEnv);
 let tauriArgs = [command, ...restArgs];
+const developmentConfig = {
+  productName: "Autopilot Development",
+  identifier: "com.autopilot.development",
+  bundle: {
+    createUpdaterArtifacts: false,
+    icon: [
+      "icons-development/32x32.png",
+      "icons-development/128x128.png",
+      "icons-development/128x128@2x.png",
+      "icons-development/icon.icns",
+      "icons-development/icon.ico",
+    ],
+  },
+  app: {
+    windows: [
+      {
+        title: "Autopilot Development",
+        width: 1200,
+        height: 800,
+        minWidth: 800,
+        minHeight: 600,
+        decorations: true,
+        transparent: true,
+        titleBarStyle: "Overlay",
+        hiddenTitle: true,
+        backgroundColor: "#00000000",
+      },
+    ],
+  },
+};
+
+if (command === "dev" || command === "build" || command === "bundle") {
+  childEnv.VITE_AUTOPILOT_DEVELOPMENT = "1";
+  tauriArgs = [
+    command,
+    "--config",
+    JSON.stringify(developmentConfig),
+    ...restArgs,
+  ];
+}
 
 if (command === "dev") {
   const devHost = childEnv.TAURI_DEV_HOST || "localhost";
@@ -29,6 +69,7 @@ if (command === "dev") {
       "dev",
       "--config",
       JSON.stringify({
+        ...developmentConfig,
         build: {
           devUrl: `http://localhost:${devPort}`,
         },

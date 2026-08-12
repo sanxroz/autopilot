@@ -1,8 +1,14 @@
 import { memo, useState } from "react";
-import { CircleAlert, CircleCheck, GitBranch, Loader, Trash2 } from "lucide-react";
+import { CircleAlert, CircleCheck, Ellipsis, GitBranch, Loader, Trash2 } from "lucide-react";
 import type { ProcessStatus, DiffStats, AgentRunState } from "../types";
 import type { PRStatus } from "../types/github";
 import { cn } from "../utils/cn";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 
 const PROCESS_STATUS_LABELS: Record<ProcessStatus, string> = {
   dev_server: "Dev server running",
@@ -82,7 +88,7 @@ interface WorktreeItemProps {
   isSettingUp?: boolean;
   isActive: boolean;
   onSelect: () => void;
-  onDelete: (e: React.MouseEvent) => void;
+  onDelete: () => void;
   className?: string;
 }
 
@@ -266,18 +272,31 @@ export const WorktreeItem = memo(function WorktreeItem({
                 )}
               </div>
             )}
-            <button
-              type="button"
-              onClick={onDelete}
-              className={cn(
-                "invisible absolute inset-y-0 right-0 z-10 rounded-md p-1 text-tertiary transition-colors hover:bg-semantic-error/10 hover:text-semantic-error focus-visible:visible focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:text-semantic-error group-hover:visible group-focus-within:visible",
-                isActive ? "bg-active" : "bg-hover"
-              )}
-              title={`Delete ${branch || name} workspace`}
-              aria-label={`Delete ${branch || name} workspace`}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  onClick={(event) => event.stopPropagation()}
+                  className={cn(
+                    "invisible absolute -inset-y-1 right-0 z-10 flex h-7 w-7 items-center justify-center rounded-md text-tertiary transition-colors hover:bg-hover hover:text-primary focus-visible:visible focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 group-hover:visible group-focus-within:visible",
+                    isActive ? "bg-active" : "bg-hover"
+                  )}
+                  title={`${branch || name} workspace actions`}
+                  aria-label={`${branch || name} workspace actions`}
+                >
+                  <Ellipsis className="h-3.5 w-3.5" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onSelect={onDelete}
+                  className="text-red-500 focus:text-red-500"
+                >
+                  <Trash2 />
+                  Delete workspace…
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
         <div className="text-xs pl-5 flex items-center gap-1 min-w-0 overflow-hidden whitespace-nowrap text-secondary">

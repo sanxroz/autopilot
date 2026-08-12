@@ -14,6 +14,9 @@ import { initializeTheme } from "./theme";
 
 preloadDiffHighlighter();
 initializeTheme("dark");
+document.title = import.meta.env.VITE_AUTOPILOT_DEVELOPMENT === "1"
+  ? "Autopilot Development"
+  : "Autopilot";
 
 const createDiffEditor: CreateEditor<undefined> = (options) =>
   new Editor(options);
