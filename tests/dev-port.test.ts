@@ -22,10 +22,19 @@ afterEach(() => {
 describe("development ports", () => {
   test("skips a port occupied on an IPv6 localhost address", async () => {
     const server = net.createServer();
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(0, "::1", () => resolve());
+    const supportsIpv6 = await new Promise<boolean>((resolve, reject) => {
+      server.once("error", (error) => {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code === "EADDRNOTAVAIL" || code === "EAFNOSUPPORT") {
+          resolve(false);
+          return;
+        }
+
+        reject(error);
+      });
+      server.listen(0, "::1", () => resolve(true));
     });
+    if (!supportsIpv6) return;
 
     try {
       const address = server.address();
