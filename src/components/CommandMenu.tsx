@@ -12,6 +12,7 @@ import {
   PanelsTopLeft,
   Plus,
   Search,
+  SlidersHorizontal,
   Settings,
   Sun,
   Moon,
@@ -29,7 +30,12 @@ import {
   type ShortcutAction,
 } from "../lib/keyboard-shortcuts";
 import {
+  getSessionSearchFilters,
+  getSessionSearchCommands,
   getSessionSearchStatuses,
+  parseSessionSearch,
+  SESSION_SEARCH_COMMANDS,
+  type SessionSearchCommand,
   type SessionSearchStatus,
 } from "../lib/session-search";
 import { cn } from "../utils/cn";
@@ -67,9 +73,22 @@ const statusDotClasses: Record<SessionSearchStatus["tone"], string> = {
   error: "bg-semantic-error",
 };
 
+const filterDotClasses: Record<SessionSearchCommand["filter"], string> = {
+  attention: "bg-semantic-warning",
+  waiting: "bg-semantic-warning",
+  failed: "bg-semantic-error",
+  ready: "bg-semantic-success",
+  running: "bg-semantic-success",
+  checks: "bg-semantic-warning",
+};
+const filterBySubstring = (value: string, search: string, keywords?: string[]) =>
+  `${value} ${keywords?.join(" ") ?? ""}`.toLowerCase().includes(search.toLowerCase()) ? 1 : 0;
+
 export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: CommandMenuProps) {
   const themeMode = useThemeMode();
   const [search, setSearch] = React.useState("");
+  const [activeFilter, setActiveFilter] = React.useState<SessionSearchCommand["filter"] | null>(null);
+  const inputRef = React.useRef<React.ComponentRef<typeof CommandMenuUI.Input>>(null);
 
   const repositories = useAppStore((state) => state.repositories);
   const addRepository = useAppStore((state) => state.addRepository);
@@ -96,9 +115,57 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
     );
   }, [repositories]);
 
+  const parsedSearch = React.useMemo(() => parseSessionSearch(search), [search]);
+  const sessionEntries = React.useMemo(() => allWorktrees.map((worktree) => {
+    const prStatus = prStatusByWorktreePath[worktree.path];
+    const agentRun = agentSidebarLifecycleEnabled
+      ? agentRunByWorktreePath[worktree.path]
+      : undefined;
+    const processStatus = processStatusByPath[worktree.path] ?? "none";
+    const statuses = getSessionSearchStatuses(processStatus, agentRun, prStatus);
+    const filters = getSessionSearchFilters(processStatus, agentRun, prStatus);
+    const searchableText = [
+      worktree.repoName,
+      worktree.branch ?? "",
+      worktree.name,
+      worktree.path,
+      prStatus?.title ?? "",
+      prStatus ? `PR ${prStatus.number}` : "",
+      ...statuses.map(({ label }) => label),
+    ].join(" ").toLowerCase();
+
+    return { worktree, prStatus, statuses, filters, searchableText };
+  }), [
+    agentRunByWorktreePath,
+    agentSidebarLifecycleEnabled,
+    allWorktrees,
+    prStatusByWorktreePath,
+    processStatusByPath,
+  ]);
+  const effectiveFilter = activeFilter;
+
+  const filteredSessions = React.useMemo(() => {
+    if (parsedSearch.commandQuery !== null) return [];
+    if (!effectiveFilter) return sessionEntries;
+
+    const query = parsedSearch.query.toLowerCase();
+    return sessionEntries.filter(({ filters, searchableText }) => (
+      filters.has(effectiveFilter) && (!query || searchableText.includes(query))
+    ));
+  }, [effectiveFilter, parsedSearch, sessionEntries]);
+  const attentionSessions = filteredSessions.filter(({ filters }) => filters.has("attention"));
+  const otherSessions = filteredSessions.filter(({ filters }) => !filters.has("attention"));
+  const activeFilterLabel = SESSION_SEARCH_COMMANDS.find(
+    ({ filter }) => filter === effectiveFilter,
+  )?.label;
+  const commandSuggestions = parsedSearch.commandQuery === null
+    ? []
+    : getSessionSearchCommands(parsedSearch.commandQuery);
+
   React.useEffect(() => {
     if (!isOpen) {
       setSearch("");
+      setActiveFilter(null);
     }
   }, [isOpen]);
 
@@ -143,8 +210,93 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
     await selectWorktree(worktree);
   };
 
+  const applyFilter = (filter: SessionSearchCommand["filter"]) => {
+    setActiveFilter(filter);
+    if (search.trimStart().startsWith("/")) setSearch("");
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
+  const handleSearchChange = (value: string) => {
+    const nextSearch = parseSessionSearch(value);
+    if (nextSearch.filter) {
+      setActiveFilter(nextSearch.filter);
+      setSearch(nextSearch.query);
+      return;
+    }
+    setSearch(value.trimStart());
+  };
+
+  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Backspace" && !search && activeFilter) {
+      event.preventDefault();
+      setActiveFilter(null);
+      return;
+    }
+    if (event.key === "Escape" && (search || activeFilter)) {
+      event.preventDefault();
+      event.stopPropagation();
+      setSearch("");
+      setActiveFilter(null);
+    }
+  };
+
+  const clearSearch = () => {
+    setSearch("");
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
+  const renderSession = ({ worktree: wt, prStatus, statuses, filters }: typeof sessionEntries[number]) => {
+    const isCurrentWorktree = selectedWorktree?.path === wt.path;
+    const visibleStatuses = statuses.filter(({ label }) => label !== "Idle" || statuses.length === 1);
+    return (
+      <CommandMenuUI.Item
+        key={wt.path}
+        onSelect={() => handleSelectWorktree(wt)}
+        keywords={[
+          wt.repoName,
+          wt.branch ?? "",
+          wt.name,
+          prStatus?.title ?? "",
+          prStatus ? `PR ${prStatus.number}` : "",
+          ...statuses.map(({ label }) => label),
+          ...Array.from(filters, (filter) => `/${filter}`),
+          isCurrentWorktree ? "current active" : "",
+        ]}
+        className="min-h-9 text-primary"
+        aria-current={isCurrentWorktree ? "page" : undefined}
+      >
+        <GitBranch className="h-3.5 w-3.5 shrink-0 text-tertiary" aria-hidden="true" />
+        <div className="flex min-w-0 flex-1 items-baseline gap-2">
+          <span className="truncate font-medium">{wt.branch || wt.name}</span>
+          <span className="shrink-0 text-xs text-tertiary">{wt.repoName}</span>
+          {prStatus ? <span className="shrink-0 text-xs text-tertiary">PR #{prStatus.number}</span> : null}
+          {isCurrentWorktree ? <span className="shrink-0 text-[11px] text-secondary">Current</span> : null}
+        </div>
+        <div className="ml-auto flex max-w-48 shrink-0 items-center gap-2">
+          {visibleStatuses.map((status) => (
+            <span
+              key={status.label}
+              className="flex items-center gap-1.5 whitespace-nowrap text-[11px] text-secondary"
+            >
+              <span
+                className={cn("h-1.5 w-1.5 rounded-full", statusDotClasses[status.tone])}
+                aria-hidden="true"
+              />
+              {status.label}
+            </span>
+          ))}
+        </div>
+      </CommandMenuUI.Item>
+    );
+  };
+
   return (
-    <CommandMenuUI.Dialog open={isOpen} onOpenChange={onOpenChange}>
+    <CommandMenuUI.Dialog
+      open={isOpen}
+      onOpenChange={onOpenChange}
+      filter={filterBySubstring}
+      shouldFilter={!effectiveFilter && parsedSearch.commandQuery === null}
+    >
       <CommandMenuUI.DialogTitle className="sr-only">
         Search sessions and commands
       </CommandMenuUI.DialogTitle>
@@ -152,24 +304,45 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
         Switch sessions or run an application command.
       </CommandMenuUI.DialogDescription>
 
-      <div className="group/cmd-input flex h-14 items-center gap-3 border-b border-subtle px-4">
-        <Search className="h-[18px] w-[18px] shrink-0 text-secondary" aria-hidden="true" />
+      <div className="group/cmd-input flex h-10 items-center gap-1.5 border-b border-subtle px-2">
+        <Search className="h-4 w-4 shrink-0 text-tertiary" aria-hidden="true" />
+        {activeFilter && activeFilterLabel ? (
+          <button
+            type="button"
+            onClick={() => {
+              setActiveFilter(null);
+              inputRef.current?.focus();
+            }}
+            className="flex h-7 shrink-0 items-center gap-1.5 rounded px-1 text-xs text-primary outline-none hover:bg-hover focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
+            aria-label={`Remove ${activeFilterLabel} filter`}
+            title={`Remove ${activeFilterLabel} filter`}
+          >
+            <span className={cn("h-1.5 w-1.5 rounded-full", filterDotClasses[activeFilter])} aria-hidden="true" />
+            {activeFilterLabel}
+            <X className="h-3 w-3 text-muted" aria-hidden="true" />
+          </button>
+        ) : null}
+        {activeFilter ? <span className="h-4 w-px shrink-0 bg-border-subtle" aria-hidden="true" /> : null}
         <CommandMenuUI.Input
+          ref={inputRef}
           value={search}
-          onValueChange={setSearch}
-          placeholder="Search sessions, branches, or commands…"
+          onValueChange={handleSearchChange}
+          onKeyDown={handleSearchKeyDown}
+          placeholder={activeFilterLabel
+            ? `Search ${activeFilterLabel.toLowerCase()} worktrees…`
+            : "Search worktrees and commands…"}
           aria-label="Search sessions and commands"
           autoFocus
           autoComplete="off"
           spellCheck={false}
-          className="h-full text-[15px] text-primary"
+          className="h-full text-sm text-primary"
         />
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center">
           {search ? (
             <button
               type="button"
-              onClick={() => setSearch("")}
-              className="flex h-11 w-11 items-center justify-center rounded-md text-tertiary hover:bg-hover hover:text-primary active:scale-[0.97]"
+              onClick={clearSearch}
+              className="flex h-9 w-9 items-center justify-center rounded-md text-tertiary hover:bg-hover hover:text-primary active:scale-[0.97]"
               aria-label="Clear search"
               title="Clear search"
             >
@@ -179,97 +352,68 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
         </div>
       </div>
 
-      <CommandMenuUI.List className="max-h-[min(520px,calc(100dvh-12rem))] overflow-y-auto bg-secondary [scroll-padding-block:0.5rem]">
+      <CommandMenuUI.List className="max-h-[min(400px,calc(100dvh-8rem))] overflow-y-auto bg-secondary [scroll-padding-block:0.25rem]">
         <CommandMenuUI.Empty>
           <Search className="mx-auto mb-3 h-5 w-5 text-muted" aria-hidden="true" />
           <p className="text-sm text-secondary">
             {search ? `No results for “${search}”` : "No sessions or commands"}
           </p>
           <p className="mt-1 text-xs text-tertiary">
-            Try a session, branch, repository, or command.
+            {effectiveFilter ? "Try another filter or remove the search text." : "Try a session, branch, repository, or /filter."}
           </p>
         </CommandMenuUI.Empty>
-        {allWorktrees.length > 0 && (
-          <CommandMenuUI.Group heading="Sessions">
-            {allWorktrees.map((wt) => {
-              const isCurrentWorktree = selectedWorktree?.path === wt.path;
-              const prStatus = prStatusByWorktreePath[wt.path];
-              const statuses = getSessionSearchStatuses(
-                processStatusByPath[wt.path] ?? "none",
-                agentSidebarLifecycleEnabled ? agentRunByWorktreePath[wt.path] : undefined,
-                prStatus,
-              );
-              return (
-                <CommandMenuUI.Item
-                  key={wt.path}
-                  onSelect={() => handleSelectWorktree(wt)}
-                  keywords={[
-                    wt.repoName,
-                    wt.branch ?? "",
-                    wt.name,
-                    prStatus?.title ?? "",
-                    prStatus ? `PR ${prStatus.number}` : "",
-                    ...statuses.map(({ label }) => label),
-                    isCurrentWorktree ? "current active" : "",
-                  ]}
-                  className="min-h-16 text-primary"
-                  aria-current={isCurrentWorktree ? "page" : undefined}
-                >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-hover text-tertiary">
-                    <GitBranch className="h-4 w-4" aria-hidden="true" />
-                  </span>
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <span className="truncate font-medium">{wt.branch || wt.name}</span>
-                      {isCurrentWorktree ? (
-                        <span className="shrink-0 text-[11px] text-secondary">
-                          Current
-                        </span>
-                      ) : null}
-                    </div>
-                    <div className="flex min-w-0 items-center gap-1.5 text-xs text-tertiary">
-                      <span className="truncate">{wt.repoName}</span>
-                      {prStatus ? <span className="shrink-0">PR #{prStatus.number}</span> : null}
-                    </div>
-                  </div>
-                  <div className="ml-auto flex max-w-52 shrink-0 flex-col items-end gap-1">
-                    {statuses.map((status) => (
-                      <span
-                        key={status.label}
-                        className="flex items-center gap-1.5 whitespace-nowrap text-[11px] text-secondary"
-                      >
-                        <span
-                          className={cn("h-1.5 w-1.5 rounded-full", statusDotClasses[status.tone])}
-                          aria-hidden="true"
-                        />
-                        {status.label}
-                      </span>
-                    ))}
-                  </div>
-                </CommandMenuUI.Item>
-              );
-            })}
+        {commandSuggestions.length > 0 ? (
+          <CommandMenuUI.Group heading="Filters">
+            {commandSuggestions.map((command) => (
+              <CommandMenuUI.Item
+                key={command.filter}
+                value={`/${command.filter}`}
+                onSelect={() => applyFilter(command.filter)}
+                className="min-h-9 text-primary"
+              >
+                <CommandMenuUI.ItemIcon as={SlidersHorizontal} className="text-tertiary" />
+                <span className="shrink-0">/{command.filter}</span>
+                <span className="min-w-0 flex-1 truncate text-xs text-tertiary">{command.description}</span>
+              </CommandMenuUI.Item>
+            ))}
           </CommandMenuUI.Group>
+        ) : null}
+
+        {effectiveFilter ? (
+          filteredSessions.length > 0 ? (
+            <CommandMenuUI.Group heading={activeFilterLabel}>
+              {filteredSessions.map(renderSession)}
+            </CommandMenuUI.Group>
+          ) : null
+        ) : (
+          <>
+            {attentionSessions.length > 0 ? (
+              <CommandMenuUI.Group heading="Needs attention">
+                {attentionSessions.map(renderSession)}
+              </CommandMenuUI.Group>
+            ) : null}
+            {otherSessions.length > 0 ? (
+              <CommandMenuUI.Group heading={attentionSessions.length > 0 ? "Other sessions" : "Sessions"}>
+                {otherSessions.map(renderSession)}
+              </CommandMenuUI.Group>
+            ) : null}
+          </>
         )}
 
-        <CommandMenuUI.Group heading="Actions">
+        {parsedSearch.commandQuery === null && !effectiveFilter ? <CommandMenuUI.Group heading="Actions">
           <CommandMenuUI.Item onSelect={handleAddRepository} className="text-primary">
             <CommandMenuUI.ItemIcon as={FolderPlus} className="text-tertiary" />
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span>Add repository</span>
-              <span className="text-xs text-tertiary">Open an existing Git repository</span>
-            </span>
+            <span className="shrink-0">Add repository</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-tertiary">Open an existing Git repository</span>
           </CommandMenuUI.Item>
           <CommandMenuUI.Item onSelect={handleNewWorkspace} className="text-primary">
             <CommandMenuUI.ItemIcon as={Plus} className="text-tertiary" />
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span>New workspace</span>
-              <span className="text-xs text-tertiary">Create a session in the current Space</span>
-            </span>
+            <span className="shrink-0">New workspace</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-tertiary">Create a session in the current Space</span>
           </CommandMenuUI.Item>
-        </CommandMenuUI.Group>
+        </CommandMenuUI.Group> : null}
 
-        <CommandMenuUI.Group heading="Navigation">
+        {parsedSearch.commandQuery === null && !effectiveFilter ? <CommandMenuUI.Group heading="Navigation">
           {SHORTCUT_DEFINITIONS.filter(({ id }) => id !== "commandMenu").map((definition) => {
             const Icon = actionIcons[definition.id] ?? Keyboard;
             return (
@@ -287,9 +431,9 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
               </CommandMenuUI.Item>
             );
           })}
-        </CommandMenuUI.Group>
+        </CommandMenuUI.Group> : null}
 
-        <CommandMenuUI.Group heading="Theme">
+        {parsedSearch.commandQuery === null && !effectiveFilter ? <CommandMenuUI.Group heading="Theme">
           <CommandMenuUI.Item onSelect={handleToggleTheme} className="text-primary">
             <CommandMenuUI.ItemIcon
               as={themeMode === "dark" ? Sun : Moon}
@@ -297,23 +441,23 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
             />
             Switch to {themeMode === "dark" ? "light" : "dark"} mode
           </CommandMenuUI.Item>
-        </CommandMenuUI.Group>
+        </CommandMenuUI.Group> : null}
       </CommandMenuUI.List>
 
       <CommandMenuUI.Footer className="border-t border-subtle text-xs text-tertiary">
-        <span>Sessions and commands</span>
-        <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1.5">
+        <span className="flex items-center gap-1">
+          <CommandMenuUI.FooterKeyBox>{activeFilter ? "⌫" : "/"}</CommandMenuUI.FooterKeyBox>
+          {activeFilter ? "Clear" : "Filters"}
+        </span>
+        <div className="flex items-center gap-3">
+          <span className="flex items-center gap-1">
             <CommandMenuUI.FooterKeyBox>↑↓</CommandMenuUI.FooterKeyBox>
-            Navigate
           </span>
-          <span className="flex items-center gap-1.5">
+          <span className="flex items-center gap-1">
             <CommandMenuUI.FooterKeyBox>↵</CommandMenuUI.FooterKeyBox>
-            Open
           </span>
-          <span className="flex items-center gap-1.5">
+          <span className="flex items-center gap-1">
             <CommandMenuUI.FooterKeyBox>esc</CommandMenuUI.FooterKeyBox>
-            Close
           </span>
         </div>
       </CommandMenuUI.Footer>

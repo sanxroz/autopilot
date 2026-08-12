@@ -13,10 +13,14 @@ const CommandDialog = ({
   children,
   className,
   overlayClassName,
+  filter,
+  shouldFilter,
   ...rest
 }: DialogProps & {
   className?: string;
   overlayClassName?: string;
+  filter?: React.ComponentProps<typeof Command>["filter"];
+  shouldFilter?: boolean;
 }) => {
   return (
     <Modal.Root {...rest}>
@@ -27,11 +31,11 @@ const CommandDialog = ({
         )}
         showClose={false}
         className={cn(
-          "flex max-h-full max-w-[680px] flex-col overflow-hidden rounded-xl shadow-2xl motion-reduce:animate-none",
+          "flex max-h-[calc(100dvh-4rem)] max-w-[580px] flex-col overflow-hidden rounded-lg shadow-2xl motion-reduce:animate-none",
           className
         )}
       >
-        <Command className="flex flex-col bg-secondary">
+        <Command className="flex flex-col bg-secondary" filter={filter} shouldFilter={shouldFilter}>
           {children}
         </Command>
       </Modal.Content>
@@ -95,9 +99,9 @@ const CommandGroup = React.forwardRef<
     <Command.Group
       ref={forwardedRef}
       className={cn(
-        "relative border-t border-subtle px-2 py-2.5 first:border-t-0",
-        "[&>[cmdk-group-heading]]:text-[11px] [&>[cmdk-group-heading]]:font-medium",
-        "[&>[cmdk-group-heading]]:mb-1.5 [&>[cmdk-group-heading]]:px-3 [&>[cmdk-group-heading]]:py-1",
+        "relative border-t border-subtle px-1 py-1 first:border-t-0",
+        "[&>[cmdk-group-heading]]:text-[10px] [&>[cmdk-group-heading]]:font-medium",
+        "[&>[cmdk-group-heading]]:px-1.5 [&>[cmdk-group-heading]]:py-0.5",
         "[&>[cmdk-group-heading]]:text-tertiary",
         className
       )}
@@ -115,10 +119,10 @@ const CommandItem = React.forwardRef<
     <Command.Item
       ref={forwardedRef}
       className={cn(
-        "flex items-center gap-3 rounded-lg",
+        "flex items-center gap-2 rounded-md",
         "cursor-pointer text-sm text-primary",
-        "px-3 py-2",
-        "data-[selected=true]:bg-active data-[selected=true]:shadow-[inset_0_0_0_1px_var(--color-border-subtle)]",
+        "px-1.5 py-1",
+        "data-[selected=true]:bg-active",
         className
       )}
       {...rest}
@@ -149,7 +153,7 @@ function CommandFooter({
   return (
     <div
       className={cn(
-        "flex h-11 items-center justify-between gap-3 px-4",
+        "flex h-8 items-center justify-between gap-2 px-2",
         className
       )}
       {...rest}
