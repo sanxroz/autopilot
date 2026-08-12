@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "build:production": "bunx tauri build",
     "preview": "vite preview",
     "tauri": "bun run ./scripts/tauri.mjs",
     "note": "bun run ./scripts/autopilot-note.mjs"
