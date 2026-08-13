@@ -79,7 +79,13 @@ export function getSessionSearchFilters(
 
   if (prStatus) {
     const section = getPrSessionSection(prStatus);
-    if (section === "pr:attention") filters.add("failed");
+    if (
+      prStatus.mergeable === "CONFLICTING" ||
+      prStatus.checks_status === "failure"
+    ) {
+      filters.add("failed");
+    }
+    if (section === "pr:attention") filters.add("attention");
     if (section === "pr:ready") filters.add("ready");
     if (section === "pr:checks") filters.add("checks");
   }

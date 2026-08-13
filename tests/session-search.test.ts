@@ -118,4 +118,23 @@ describe("session search statuses", () => {
       new Set(["running"]),
     );
   });
+
+  test("distinguishes pull request failures from other attention states", () => {
+    expect(getSessionSearchFilters("none", undefined, {
+      ...pullRequest,
+      review_decision: "CHANGES_REQUESTED",
+    })).toEqual(new Set(["attention"]));
+    expect(getSessionSearchFilters("none", undefined, {
+      ...pullRequest,
+      has_unresolved_review_threads: true,
+    })).toEqual(new Set(["attention"]));
+    expect(getSessionSearchFilters("none", undefined, {
+      ...pullRequest,
+      checks_status: "failure",
+    })).toEqual(new Set(["failed", "attention"]));
+    expect(getSessionSearchFilters("none", undefined, {
+      ...pullRequest,
+      mergeable: "CONFLICTING",
+    })).toEqual(new Set(["failed", "attention"]));
+  });
 });

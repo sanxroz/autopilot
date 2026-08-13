@@ -256,6 +256,7 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
           wt.repoName,
           wt.branch ?? "",
           wt.name,
+          wt.path,
           prStatus?.title ?? "",
           prStatus ? `PR ${prStatus.number}` : "",
           ...statuses.map(({ label }) => label),
