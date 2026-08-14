@@ -2145,6 +2145,9 @@ pub fn spawn_terminal_with_command(
     let detected_agent = detect_agent_from_command(&command);
 
     if let Some(agent) = detected_agent {
+        if let Err(error) = super::notes::prepare_autopilot_context(&cwd) {
+            eprintln!("[autopilot] warning: failed to prepare .autopilot.md ({error})");
+        }
         emit_agent_status(
             &app,
             &cwd,
@@ -2170,6 +2173,12 @@ pub fn spawn_terminal_with_command(
     // Run the command inside a shell so it has proper environment
     let shell = get_shell();
     let mut cmd = CommandBuilder::new(&shell);
+    if detected_agent.is_some() {
+        cmd.env(
+            "AUTOPILOT_CONTEXT_FILE",
+            Path::new(&cwd).join(".autopilot.md"),
+        );
+    }
 
     // Build the full command string
     let mut full_command = if args.is_empty() {

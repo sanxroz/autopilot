@@ -14,10 +14,6 @@ resolve_script_dir() {
 }
 
 case "${1:-}" in
-  note)
-    shift
-    exec bun run "$(resolve_script_dir "$0")/scripts/autopilot-note.mjs" "$@"
-    ;;
   recover)
     shift
     exec bun run "$(resolve_script_dir "$0")/scripts/autopilot-recover.mjs" "$@"
@@ -26,10 +22,6 @@ case "${1:-}" in
     cat <<'EOF'
 Usage:
   autopilot recover [--list]
-  autopilot note [--worktree <path>] set --text <markdown>
-  autopilot note [--worktree <path>] set --stdin
-  autopilot note [--worktree <path>] get
-  autopilot note [--worktree <path>] clear
 EOF
     ;;
   *)
