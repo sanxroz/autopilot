@@ -121,7 +121,6 @@ export function Sidebar({
     repoPath: string;
     worktreeName: string;
   } | null>(null);
-  const [isDeletingWorkspace, setIsDeletingWorkspace] = useState(false);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const [activeSpacePath, setActiveSpacePath] = useState<string | null>(
@@ -393,26 +392,20 @@ export function Sidebar({
   };
 
   const closeDeleteWorkspaceDialog = () => {
-    if (isDeletingWorkspace) return;
     setPendingWorkspaceDeletion(null);
   };
 
   const confirmDeleteWorktree = async () => {
-    if (isDeletingWorkspace || !pendingWorkspaceDeletion) return;
+    if (!pendingWorkspaceDeletion) return;
 
+    const { repoPath, worktreeName } = pendingWorkspaceDeletion;
     setError(null);
-    setIsDeletingWorkspace(true);
+    setPendingWorkspaceDeletion(null);
     try {
-      await deleteWorktree(
-        pendingWorkspaceDeletion.repoPath,
-        pendingWorkspaceDeletion.worktreeName,
-      );
-      setPendingWorkspaceDeletion(null);
+      await deleteWorktree(repoPath, worktreeName);
     } catch (e) {
       console.error("Failed to delete worktree:", e);
       setError(String(e));
-    } finally {
-      setIsDeletingWorkspace(false);
     }
   };
 
@@ -1260,7 +1253,7 @@ export function Sidebar({
           if (!open) closeDeleteWorkspaceDialog();
         }}
       >
-        <Modal.Content showClose={!isDeletingWorkspace} className="p-5">
+        <Modal.Content className="p-5">
           <Modal.Title>Delete workspace?</Modal.Title>
           <Modal.Description className="mt-2 leading-5">
             Delete{" "}
@@ -1273,18 +1266,16 @@ export function Sidebar({
             <button
               type="button"
               onClick={closeDeleteWorkspaceDialog}
-              disabled={isDeletingWorkspace}
-              className="min-h-10 rounded-md px-3 text-sm text-secondary transition-colors hover:bg-hover hover:text-primary disabled:opacity-50 motion-reduce:transition-none"
+              className="min-h-10 rounded-md px-3 text-sm text-secondary transition-colors hover:bg-hover hover:text-primary motion-reduce:transition-none"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={() => void confirmDeleteWorktree()}
-              disabled={isDeletingWorkspace}
-              className="min-h-10 rounded-md bg-semantic-error px-3 text-sm font-medium text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40 motion-reduce:transition-none"
+              className="min-h-10 rounded-md bg-semantic-error px-3 text-sm font-medium text-white transition-colors motion-reduce:transition-none"
             >
-              {isDeletingWorkspace ? "Deleting…" : "Delete workspace"}
+              Delete workspace
             </button>
           </div>
         </Modal.Content>
