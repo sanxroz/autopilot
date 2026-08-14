@@ -22,6 +22,8 @@ export interface UseUpdaterReturn {
 }
 
 export function useUpdater(): UseUpdaterReturn {
+  const isDevelopmentBuild =
+    import.meta.env.VITE_AUTOPILOT_DEVELOPMENT === "1";
   const [status, setStatus] = useState<UpdateStatus>("idle");
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [downloadProgress, setDownloadProgress] = useState(0);
@@ -29,6 +31,8 @@ export function useUpdater(): UseUpdaterReturn {
   const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
 
   const checkForUpdates = useCallback(async () => {
+    if (isDevelopmentBuild) return;
+
     try {
       setError(undefined);
       const update = await check();
@@ -46,7 +50,7 @@ export function useUpdater(): UseUpdaterReturn {
       console.error("Failed to check for updates:", err);
       // Don't show error for check failures - just log silently
     }
-  }, []);
+  }, [isDevelopmentBuild]);
 
   const downloadAndInstall = useCallback(async () => {
     if (!pendingUpdate) return;
@@ -104,12 +108,14 @@ export function useUpdater(): UseUpdaterReturn {
 
   // Check for updates on mount (with a small delay to not block startup)
   useEffect(() => {
+    if (isDevelopmentBuild) return;
+
     const timer = setTimeout(() => {
       checkForUpdates();
     }, 3000); // Check 3 seconds after app starts
 
     return () => clearTimeout(timer);
-  }, [checkForUpdates]);
+  }, [checkForUpdates, isDevelopmentBuild]);
 
   return {
     status,

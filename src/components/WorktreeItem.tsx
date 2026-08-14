@@ -82,7 +82,7 @@ interface WorktreeItemProps {
   isSettingUp?: boolean;
   isActive: boolean;
   onSelect: () => void;
-  onDelete: (e: React.MouseEvent) => void;
+  onDelete: () => void;
   className?: string;
 }
 
@@ -268,9 +268,12 @@ export const WorktreeItem = memo(function WorktreeItem({
             )}
             <button
               type="button"
-              onClick={onDelete}
+              onClick={(event) => {
+                event.stopPropagation();
+                onDelete();
+              }}
               className={cn(
-                "invisible absolute inset-y-0 right-0 z-10 rounded-md p-1 text-tertiary transition-colors hover:bg-semantic-error/10 hover:text-semantic-error focus-visible:visible focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:text-semantic-error group-hover:visible group-focus-within:visible",
+                "invisible absolute -inset-y-1 right-0 z-10 flex h-7 w-7 items-center justify-center rounded-md text-tertiary transition-colors hover:bg-semantic-error/10 hover:text-semantic-error focus-visible:visible focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:text-semantic-error group-hover:visible group-focus-within:visible",
                 isActive ? "bg-active" : "bg-hover"
               )}
               title={`Delete ${branch || name} workspace`}
