@@ -89,4 +89,25 @@ describe("sidebar group store synchronization", () => {
     expect(localGroups[0].worktreePaths).toEqual([beta.path, alpha.path]);
     expect(persistedGroups["/repo"]).toHaveLength(1);
   });
+
+  test("local settings writes preserve groups added externally", async () => {
+    const externalGroups = {
+      "/repo": [{ id: "external", name: "External", worktreePaths: [alpha.path] }],
+    };
+    diskValues = new Map([["sidebarGroupsByRepo", externalGroups]]);
+    cacheValues = new Map();
+    reloadHandler = async () => {
+      cacheValues = new Map(diskValues);
+    };
+
+    await useAppStore.getState().setDefaultAIAgent("codex");
+    expect(diskValues.get("sidebarGroupsByRepo")).toEqual(externalGroups);
+
+    const newerExternalGroups = {
+      "/repo": [{ id: "newer", name: "Newer external", worktreePaths: [beta.path] }],
+    };
+    diskValues.set("sidebarGroupsByRepo", newerExternalGroups);
+    await useAppStore.getState().setThemeMode("dark");
+    expect(diskValues.get("sidebarGroupsByRepo")).toEqual(newerExternalGroups);
+  });
 });

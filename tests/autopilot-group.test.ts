@@ -117,7 +117,9 @@ describe("autopilot group", () => {
       writeFileSync(`${settingsPath}.lock`, "");
       const staleTime = new Date(Date.now() - 6000);
       utimesSync(`${settingsPath}.lock`, staleTime, staleTime);
-      expect(run(["group", "get", "--worktree", alphaPath])).toBe("Checkout bug");
+      expect(() => run(["group", "get", "--worktree", alphaPath])).toThrow(
+        /Stale empty Autopilot settings lock/,
+      );
 
       const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
       const groups = Object.values(settings.sidebarGroupsByRepo).flat();

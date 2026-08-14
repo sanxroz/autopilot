@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { mkdir, open, readFile, rename, stat, writeFile, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { link, mkdir, open, readFile, rename, stat, writeFile, unlink } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -51,6 +52,17 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function createLock(lockPath) {
+  const candidatePath = `${lockPath}.${process.pid}.${randomUUID()}.tmp`;
+  await writeFile(candidatePath, `${process.pid}\n`, { encoding: "utf8", flag: "wx" });
+  try {
+    await link(candidatePath, lockPath);
+    return await open(lockPath, "r");
+  } finally {
+    await unlink(candidatePath).catch(() => undefined);
+  }
+}
+
 export async function readSettingsFile(settingsPath) {
   try {
     const raw = await readFile(settingsPath, "utf8");
@@ -76,9 +88,7 @@ export async function acquireLock(lockPath) {
 
   for (;;) {
     try {
-      const lockHandle = await open(lockPath, "wx");
-      await lockHandle.writeFile(`${process.pid}\n`);
-      return lockHandle;
+      return await createLock(lockPath);
     } catch (error) {
       if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") {
         throw error;
@@ -89,26 +99,28 @@ export async function acquireLock(lockPath) {
         if (!lockContents.trim()) {
           const lockStat = await stat(lockPath);
           if (Date.now() - lockStat.mtimeMs >= EMPTY_LOCK_STALE_MS) {
-            await unlink(lockPath);
-            continue;
+            throw new Error(`Stale empty Autopilot settings lock at ${lockPath}. Remove it after confirming no Autopilot CLI process is running.`);
           }
           await sleep(50);
           continue;
         }
         const lockPid = Number(lockContents.trim());
         if (!Number.isInteger(lockPid) || lockPid <= 0) {
-          await unlink(lockPath);
-          continue;
+          throw new Error(`Invalid Autopilot settings lock at ${lockPath}. Remove it after confirming no Autopilot CLI process is running.`);
         }
 
         try {
           process.kill(lockPid, 0);
-        } catch {
-          await unlink(lockPath);
+        } catch (error) {
+          if (error instanceof Error && "code" in error && error.code === "ESRCH") {
+            throw new Error(`Stale Autopilot settings lock for PID ${lockPid} at ${lockPath}. Remove it after confirming that process is no longer running.`);
+          }
+        }
+      } catch (lockError) {
+        if (lockError instanceof Error && "code" in lockError && lockError.code === "ENOENT") {
           continue;
         }
-      } catch {
-        // Keep waiting if the lock is transiently unavailable or unreadable.
+        throw lockError;
       }
 
       await sleep(50);

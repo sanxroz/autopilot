@@ -176,6 +176,13 @@ async function runStoreOperation<T>(operation: () => Promise<T>): Promise<T> {
   return result;
 }
 
+async function runStoreWrite<T>(operation: () => Promise<T>): Promise<T> {
+  return runStoreOperation(async () => {
+    await persistedStore.reload({ ignoreDefaults: true });
+    return operation();
+  });
+}
+
 function isKnownAgent(value: string | undefined): value is AIAgent {
   return !!value && KNOWN_AGENTS.includes(value as AIAgent);
 }
@@ -293,7 +300,7 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
 
 async function savePersistedState(state: PersistedState): Promise<void> {
   try {
-    await runStoreOperation(async () => {
+    await runStoreWrite(async () => {
       await persistedStore.set('repositoryPaths', state.repositoryPaths);
       await persistedStore.save();
     });
@@ -304,7 +311,7 @@ async function savePersistedState(state: PersistedState): Promise<void> {
 
 async function saveWorktreeOrdersByRepo(worktreeOrdersByRepo: Record<string, string[]>): Promise<void> {
   try {
-    await runStoreOperation(async () => {
+    await runStoreWrite(async () => {
       await persistedStore.set('worktreeOrdersByRepo', worktreeOrdersByRepo);
       await persistedStore.save();
     });
@@ -315,7 +322,7 @@ async function saveWorktreeOrdersByRepo(worktreeOrdersByRepo: Record<string, str
 
 async function saveSidebarGroupsByRepo(sidebarGroupsByRepo: Record<string, SidebarWorktreeGroup[]>): Promise<void> {
   try {
-    await runStoreOperation(async () => {
+    await runStoreWrite(async () => {
       await persistedStore.set('sidebarGroupsByRepo', sidebarGroupsByRepo);
       await persistedStore.save();
     });
@@ -329,7 +336,7 @@ async function saveSidebarLayout(
   sidebarGroupsByRepo: Record<string, SidebarWorktreeGroup[]>,
 ): Promise<void> {
   try {
-    await runStoreOperation(async () => {
+    await runStoreWrite(async () => {
       await persistedStore.set('worktreeOrdersByRepo', worktreeOrdersByRepo);
       await persistedStore.set('sidebarGroupsByRepo', sidebarGroupsByRepo);
       await persistedStore.save();
@@ -345,7 +352,7 @@ async function saveAddressedComments(addressedComments: AddressedCommentsMap): P
     for (const [key, set] of Object.entries(addressedComments)) {
       serialized[key] = Array.from(set);
     }
-    await runStoreOperation(async () => {
+    await runStoreWrite(async () => {
       await persistedStore.set('addressedComments', serialized);
       await persistedStore.save();
     });
@@ -356,7 +363,7 @@ async function saveAddressedComments(addressedComments: AddressedCommentsMap): P
 
 async function saveRepoAvatarCacheEntry(repoPath: string, avatarUrl: string | null): Promise<void> {
   try {
-    await runStoreOperation(async () => {
+    await runStoreWrite(async () => {
       const existing = (await persistedStore.get<Record<string, string>>('repoAvatarCache')) || {};
 
       if (avatarUrl) {
@@ -374,7 +381,7 @@ async function saveRepoAvatarCacheEntry(repoPath: string, avatarUrl: string | nu
 }
 
 async function saveStoreValue<T>(key: string, value: T): Promise<void> {
-  await runStoreOperation(async () => {
+  await runStoreWrite(async () => {
     try {
       await persistedStore.set(key, value);
       await persistedStore.save();
@@ -385,7 +392,7 @@ async function saveStoreValue<T>(key: string, value: T): Promise<void> {
 }
 
 async function saveSidebarNotesByWorktreePath(sidebarNotesByWorktreePath: Record<string, string>): Promise<void> {
-  await runStoreOperation(async () => {
+  await runStoreWrite(async () => {
     await persistedStore.set('sidebarNotesByWorktreePath', sidebarNotesByWorktreePath);
     await persistedStore.delete('sidebarNotesMarkdown');
     await persistedStore.save();
@@ -393,7 +400,7 @@ async function saveSidebarNotesByWorktreePath(sidebarNotesByWorktreePath: Record
 }
 
 async function flushSidebarNotesPersistence(): Promise<void> {
-  await runStoreOperation(() => persistedStore.save());
+  await storeOperationQueue;
 }
 
 async function loadSidebarNotesMarkdownFromDisk(worktreePath: string): Promise<string> {
@@ -1234,13 +1241,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setThemeMode: async (mode: ThemeMode) => {
     setGlobalThemeMode(mode);
-    try {
-      const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
-      await store.set('themeMode', mode);
-      await store.save();
-    } catch (e) {
-      console.error('Failed to save theme mode:', e);
-    }
+    await saveStoreValue('themeMode', mode);
   },
 
   setKeyboardShortcut: async (action, shortcut) => {
