@@ -27,7 +27,8 @@ pub fn install_cli_launcher(app: &AppHandle) -> Result<(), String> {
 
     #[cfg(not(target_os = "macos"))]
     {
-        remove_legacy_launcher(&launcher_path).map_err(|error| error.to_string())?;
+        remove_legacy_launcher(&launcher_path, &note_script_path)
+            .map_err(|error| error.to_string())?;
         remove_file_if_present(&note_script_path).map_err(|error| error.to_string())?;
         #[cfg(not(target_os = "windows"))]
         remove_unix_path_blocks(&home_dir, &launcher_dir).map_err(|error| error.to_string())?;
@@ -64,19 +65,135 @@ fn remove_file_if_present(path: &Path) -> Result<(), std::io::Error> {
     }
 }
 
-fn remove_legacy_launcher(path: &Path) -> Result<(), std::io::Error> {
+fn remove_legacy_launcher(path: &Path, note_script_path: &Path) -> Result<(), std::io::Error> {
     let contents = match fs::read(path) {
         Ok(contents) => contents,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
         Err(error) => return Err(error),
     };
-    if contents
-        .windows(NOTE_SCRIPT_NAME.len())
-        .any(|window| window == NOTE_SCRIPT_NAME.as_bytes())
-    {
+    if is_legacy_launcher(&contents, note_script_path) {
         remove_file_if_present(path)?;
     }
     Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn is_legacy_launcher(contents: &[u8], note_script_path: &Path) -> bool {
+    contents == build_legacy_unix_launcher(note_script_path).as_bytes()
+}
+
+#[cfg(target_os = "windows")]
+fn is_legacy_launcher(contents: &[u8], note_script_path: &Path) -> bool {
+    is_legacy_windows_launcher(contents, note_script_path)
+}
+
+#[cfg(any(test, target_os = "windows"))]
+fn is_legacy_windows_launcher(contents: &[u8], note_script_path: &Path) -> bool {
+    contents == build_legacy_windows_launcher(note_script_path, false).as_bytes()
+        || contents == build_legacy_windows_launcher(note_script_path, true).as_bytes()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn build_legacy_unix_launcher(note_script_path: &Path) -> String {
+    format!(
+        r#"#!/bin/sh
+set -eu
+
+case "${{1:-}}" in
+  note)
+    shift
+    exec bun run "{}" "$@"
+    ;;
+  --help|-h|help|"")
+    cat <<'EOF'
+Usage:
+  autopilot note [--worktree <path>] set --text <markdown>
+  autopilot note [--worktree <path>] set --stdin
+  autopilot note [--worktree <path>] get
+  autopilot note [--worktree <path>] clear
+EOF
+    ;;
+  *)
+    printf 'Unknown autopilot command: %s\n' "$1" >&2
+    exit 1
+    ;;
+esac
+"#,
+        note_script_path.display()
+    )
+}
+
+#[cfg(any(test, target_os = "windows"))]
+fn build_legacy_windows_launcher(note_script_path: &Path, original: bool) -> String {
+    let note_route = if original {
+        r#"if /I "%~1"=="note" (
+  shift
+  set "ARGS="
+  :collect_args
+  if "%~1"=="" goto run_note
+  if defined ARGS (
+    set "ARGS=!ARGS! "%~1""
+  ) else (
+    set "ARGS="%~1""
+  )
+  shift
+  goto collect_args
+)
+"#
+    } else {
+        r#"if /I "%~1"=="note" goto note
+"#
+    };
+    let note_handler = if original {
+        ""
+    } else {
+        r#":note
+shift
+set "ARGS="
+:collect_args
+if "%~1"=="" goto run_note
+if defined ARGS (
+  set "ARGS=!ARGS! "%~1""
+) else (
+  set "ARGS="%~1""
+)
+shift
+goto collect_args
+
+"#
+    };
+
+    format!(
+        r#"@echo off
+setlocal EnableExtensions EnableDelayedExpansion
+
+set "SCRIPT_PATH={}"
+
+{}
+if /I "%~1"=="--help" goto help
+if /I "%~1"=="-h" goto help
+if /I "%~1"=="help" goto help
+if "%~1"=="" goto help
+
+echo Unknown autopilot command: %~1 1>&2
+exit /b 1
+
+{}:run_note
+bun run "%SCRIPT_PATH%" !ARGS!
+exit /b %ERRORLEVEL%
+
+:help
+echo Usage:
+echo   autopilot note [--worktree ^<path^>] set --text ^<markdown^>
+echo   autopilot note [--worktree ^<path^>] set --stdin
+echo   autopilot note [--worktree ^<path^>] get
+echo   autopilot note [--worktree ^<path^>] clear
+exit /b 0
+"#,
+        note_script_path.display(),
+        note_route,
+        note_handler,
+    )
 }
 
 fn write_file_if_changed(path: &Path, contents: &str) -> Result<(), std::io::Error> {
@@ -205,9 +322,13 @@ mod tests {
 
     #[cfg(not(target_os = "windows"))]
     use super::{
-        append_block_if_missing, build_unix_launcher, remove_block_if_present, unix_path_block,
+        append_block_if_missing, build_legacy_unix_launcher, build_unix_launcher,
+        remove_block_if_present, unix_path_block,
     };
-    use super::{remove_file_if_present, remove_legacy_launcher};
+    use super::{
+        build_legacy_windows_launcher, is_legacy_windows_launcher, remove_file_if_present,
+        remove_legacy_launcher,
+    };
 
     #[cfg(not(target_os = "windows"))]
     #[test]
@@ -225,14 +346,41 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let legacy_launcher = temp_dir.path().join("autopilot");
         let unrelated_launcher = temp_dir.path().join("other-autopilot");
-        fs::write(&legacy_launcher, "exec autopilot-note.mjs").expect("legacy launcher");
-        fs::write(&unrelated_launcher, "exec another-tool").expect("unrelated launcher");
+        let note_script = temp_dir.path().join("autopilot-note.mjs");
+        #[cfg(not(target_os = "windows"))]
+        let legacy_contents = build_legacy_unix_launcher(&note_script);
+        #[cfg(target_os = "windows")]
+        let legacy_contents = build_legacy_windows_launcher(&note_script, false);
+        fs::write(&legacy_launcher, legacy_contents).expect("legacy launcher");
+        fs::write(
+            &unrelated_launcher,
+            format!("wrapper for {}", note_script.display()),
+        )
+        .expect("unrelated launcher");
 
-        remove_legacy_launcher(&legacy_launcher).expect("legacy cleanup");
-        remove_legacy_launcher(&unrelated_launcher).expect("unrelated cleanup");
+        remove_legacy_launcher(&legacy_launcher, &note_script).expect("legacy cleanup");
+        remove_legacy_launcher(&unrelated_launcher, &note_script).expect("unrelated cleanup");
 
         assert!(!legacy_launcher.exists());
         assert!(unrelated_launcher.exists());
+    }
+
+    #[test]
+    fn recognizes_both_exact_windows_legacy_launchers() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let note_script = temp_dir.path().join("autopilot-note.mjs");
+
+        for original in [true, false] {
+            let contents = build_legacy_windows_launcher(&note_script, original);
+            assert!(is_legacy_windows_launcher(
+                contents.as_bytes(),
+                &note_script
+            ));
+        }
+        assert!(!is_legacy_windows_launcher(
+            format!("wrapper for {}", note_script.display()).as_bytes(),
+            &note_script,
+        ));
     }
 
     #[test]

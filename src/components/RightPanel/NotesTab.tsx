@@ -33,9 +33,37 @@ export function NotesTab({ worktreePath }: NotesTabProps) {
   const lastLocalEditAtRef = useRef(0);
   const localEditVersionRef = useRef(0);
   const hasUnsavedContextRef = useRef(false);
+  const pendingContextSaveVersionRef = useRef<number | null>(null);
 
   latestContextRef.current = contextMarkdown;
   worktreePathRef.current = worktreePath;
+
+  const persistContext = useCallback(
+    (saveWorktreePath: string, markdown: string, editVersion: number) => {
+      pendingContextSaveVersionRef.current = editVersion;
+      void saveAutopilotContext(saveWorktreePath, markdown)
+        .then(() => {
+          if (
+            worktreePathRef.current === saveWorktreePath &&
+            localEditVersionRef.current === editVersion
+          ) {
+            pendingContextSaveVersionRef.current = null;
+            hasUnsavedContextRef.current = false;
+            setContextError(null);
+          }
+        })
+        .catch((error) => {
+          if (
+            worktreePathRef.current === saveWorktreePath &&
+            localEditVersionRef.current === editVersion
+          ) {
+            pendingContextSaveVersionRef.current = null;
+            setContextError(error instanceof Error ? error.message : String(error));
+          }
+        });
+    },
+    [],
+  );
 
   const syncExternalContext = useCallback(async () => {
     if (!worktreePath) {
@@ -55,6 +83,10 @@ export function NotesTab({ worktreePath }: NotesTabProps) {
     }
 
     if (hasUnsavedContextRef.current) {
+      const editVersion = localEditVersionRef.current;
+      if (pendingContextSaveVersionRef.current !== editVersion) {
+        persistContext(worktreePath, latestContextRef.current, editVersion);
+      }
       return;
     }
 
@@ -77,7 +109,7 @@ export function NotesTab({ worktreePath }: NotesTabProps) {
       if (worktreePathRef.current !== worktreePath) return;
       setContextError(error instanceof Error ? error.message : String(error));
     }
-  }, [worktreePath]);
+  }, [persistContext, worktreePath]);
 
   useEffect(() => {
     if (!worktreePath) {
@@ -88,6 +120,7 @@ export function NotesTab({ worktreePath }: NotesTabProps) {
     localEditVersionRef.current += 1;
     lastLocalEditAtRef.current = 0;
     hasUnsavedContextRef.current = false;
+    pendingContextSaveVersionRef.current = null;
     setContextMarkdown("");
     setContextError(null);
     void syncExternalContext();
@@ -135,24 +168,7 @@ export function NotesTab({ worktreePath }: NotesTabProps) {
             latestContextRef.current = markdown;
             setContextMarkdown(markdown);
             setContextError(null);
-            void saveAutopilotContext(worktreePath, markdown)
-              .then(() => {
-                if (
-                  worktreePathRef.current === worktreePath &&
-                  localEditVersionRef.current === editVersion
-                ) {
-                  hasUnsavedContextRef.current = false;
-                  setContextError(null);
-                }
-              })
-              .catch((error) => {
-                if (
-                  worktreePathRef.current === worktreePath &&
-                  localEditVersionRef.current === editVersion
-                ) {
-                  setContextError(error instanceof Error ? error.message : String(error));
-                }
-              });
+            persistContext(worktreePath, markdown, editVersion);
           }}
           placeholder={"# Current work\n\n**Status:** Working\n**Objective:**\n**Current state:**\n**Remaining:**\n**Next action:**\n**Blocked by:** Nothing"}
           className="min-h-0 flex-1 resize-none rounded-lg border border-border-subtle bg-secondary px-3 py-3 text-[13px] leading-6 text-primary outline-none transition-colors placeholder:text-muted focus:border-accent-primary select-text"
