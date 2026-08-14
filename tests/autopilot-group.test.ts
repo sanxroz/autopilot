@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -68,7 +68,7 @@ describe("autopilot group", () => {
     const repoPath = join(fixturePath, "repo");
     const alphaPath = join(fixturePath, "alpha");
     const betaPath = join(fixturePath, "beta");
-    const settingsPath = join(fixturePath, "settings.json");
+    const settingsPath = join(fixturePath, "missing", "nested", "settings.json");
     const env = { ...process.env, AUTOPILOT_SETTINGS_PATH: settingsPath };
     const run = (args: string[]) =>
       execFileSync(AUTOPILOT, args, {
@@ -85,6 +85,8 @@ describe("autopilot group", () => {
       );
       execFileSync("git", ["-C", repoPath, "worktree", "add", "--quiet", "-b", "alpha", alphaPath]);
       execFileSync("git", ["-C", repoPath, "worktree", "add", "--quiet", "-b", "beta", betaPath]);
+
+      expect(run(["group", "get", "--worktree", alphaPath])).toBe("");
 
       const alpha = Bun.spawn([AUTOPILOT, "group", "set", "Timeout fix", "--worktree", alphaPath], { env });
       const beta = Bun.spawn([AUTOPILOT, "group", "set", "Timeout fix", "--worktree", betaPath], { env });
@@ -111,6 +113,11 @@ describe("autopilot group", () => {
       expect(() => run(["group", "set", "   ", "--worktree", alphaPath])).toThrow();
       expect(() => run(["group", "get", "unexpected", "--worktree", alphaPath])).toThrow();
       expect(() => run(["group", "get", "--worktree"])).toThrow();
+
+      writeFileSync(`${settingsPath}.lock`, "");
+      const staleTime = new Date(Date.now() - 6000);
+      utimesSync(`${settingsPath}.lock`, staleTime, staleTime);
+      expect(run(["group", "get", "--worktree", alphaPath])).toBe("Checkout bug");
 
       const settings = JSON.parse(readFileSync(settingsPath, "utf8"));
       const groups = Object.values(settings.sidebarGroupsByRepo).flat();

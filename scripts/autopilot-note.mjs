@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { mkdir, open, readFile, rename, writeFile, unlink } from "node:fs/promises";
+import { mkdir, open, readFile, rename, stat, writeFile, unlink } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
@@ -7,6 +7,7 @@ import path from "node:path";
 const STORE_FILENAME = "autopilot-settings.json";
 const LEGACY_NOTE_KEY = "sidebarNotesMarkdown";
 const NOTES_KEY = "sidebarNotesByWorktreePath";
+const EMPTY_LOCK_STALE_MS = 5000;
 
 export function getSettingsPath() {
   const home = os.homedir();
@@ -71,6 +72,8 @@ export async function readSettingsFile(settingsPath) {
 }
 
 export async function acquireLock(lockPath) {
+  await mkdir(path.dirname(lockPath), { recursive: true });
+
   for (;;) {
     try {
       const lockHandle = await open(lockPath, "wx");
@@ -84,6 +87,11 @@ export async function acquireLock(lockPath) {
       try {
         const lockContents = await readFile(lockPath, "utf8");
         if (!lockContents.trim()) {
+          const lockStat = await stat(lockPath);
+          if (Date.now() - lockStat.mtimeMs >= EMPTY_LOCK_STALE_MS) {
+            await unlink(lockPath);
+            continue;
+          }
           await sleep(50);
           continue;
         }

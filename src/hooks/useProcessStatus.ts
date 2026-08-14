@@ -48,10 +48,14 @@ export function useProcessStatusPolling() {
       try {
         do {
           needsRerunRef.current = false;
-          await Promise.all([
+          const refreshes = await Promise.allSettled([
             refreshProcessStatuses(),
             refreshSidebarGroupsFromDisk(),
           ]);
+          const failedRefresh = refreshes.find(
+            (refresh): refresh is PromiseRejectedResult => refresh.status === 'rejected'
+          );
+          if (failedRefresh) throw failedRefresh.reason;
         } while (needsRerunRef.current);
       } finally {
         if (isStaleRetry) {
