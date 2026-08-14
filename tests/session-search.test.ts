@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { getSessionSearchStatuses } from "../src/lib/session-search";
+import {
+  getSessionSearchFilters,
+  getSessionSearchCommands,
+  getSessionSearchStatuses,
+  parseSessionSearch,
+} from "../src/lib/session-search";
 import type { AgentRunState } from "../src/types";
 import type { PRStatus } from "../src/types/github";
 
@@ -73,5 +78,73 @@ describe("session search statuses", () => {
       { label: "Idle", tone: "muted" },
       { label: "Checks running", tone: "warning" },
     ]);
+  });
+
+  test("parses slash filters without losing the remaining search text", () => {
+    expect(parseSessionSearch("/ready")).toEqual({
+      filter: "ready",
+      query: "",
+      commandQuery: null,
+    });
+    expect(parseSessionSearch("/attention search modal")).toEqual({
+      filter: "attention",
+      query: "search modal",
+      commandQuery: null,
+    });
+    expect(parseSessionSearch("/rea")).toEqual({
+      filter: null,
+      query: "",
+      commandQuery: "rea",
+    });
+    expect(parseSessionSearch("search modal")).toEqual({
+      filter: null,
+      query: "search modal",
+      commandQuery: null,
+    });
+  });
+
+  test("matches slash commands by name instead of incidental description text", () => {
+    expect(getSessionSearchCommands("rea").map(({ filter }) => filter)).toEqual(["ready"]);
+  });
+
+  test("classifies only actionable session states as needing attention", () => {
+    expect(getSessionSearchFilters("none", { ...runningAgent, status: "waiting_input" }, undefined)).toEqual(
+      new Set(["waiting", "attention"]),
+    );
+    expect(getSessionSearchFilters("none", undefined, pullRequest)).toEqual(
+      new Set(["ready", "attention"]),
+    );
+    expect(getSessionSearchFilters("agent_running", runningAgent, undefined)).toEqual(
+      new Set(["running"]),
+    );
+  });
+
+  test("distinguishes pull request failures from other attention states", () => {
+    expect(getSessionSearchFilters("none", undefined, {
+      ...pullRequest,
+      review_decision: "CHANGES_REQUESTED",
+    })).toEqual(new Set(["attention"]));
+    expect(getSessionSearchFilters("none", undefined, {
+      ...pullRequest,
+      has_unresolved_review_threads: true,
+    })).toEqual(new Set(["attention"]));
+    expect(getSessionSearchFilters("none", undefined, {
+      ...pullRequest,
+      checks_status: "failure",
+    })).toEqual(new Set(["failed", "attention"]));
+    expect(getSessionSearchFilters("none", undefined, {
+      ...pullRequest,
+      mergeable: "CONFLICTING",
+    })).toEqual(new Set(["failed", "attention"]));
+    expect(getSessionSearchFilters("none", undefined, {
+      ...pullRequest,
+      state: "closed",
+      checks_status: "failure",
+    })).toEqual(new Set());
+    expect(getSessionSearchFilters("none", undefined, {
+      ...pullRequest,
+      merged: true,
+      mergeable: "CONFLICTING",
+    })).toEqual(new Set());
   });
 });
