@@ -8,7 +8,7 @@ const STORE_FILENAME = "autopilot-settings.json";
 const LEGACY_NOTE_KEY = "sidebarNotesMarkdown";
 const NOTES_KEY = "sidebarNotesByWorktreePath";
 
-function getSettingsPath() {
+export function getSettingsPath() {
   const home = os.homedir();
 
   if (process.env.AUTOPILOT_SETTINGS_PATH) {
@@ -25,11 +25,11 @@ function getSettingsPath() {
   }
 }
 
-function normalizeWorktreePath(worktreePath) {
+export function normalizeWorktreePath(worktreePath) {
   return path.resolve(worktreePath);
 }
 
-function detectCurrentWorktreePath() {
+export function detectCurrentWorktreePath() {
   try {
     const output = execFileSync("git", ["rev-parse", "--show-toplevel"], {
       encoding: "utf8",
@@ -42,7 +42,7 @@ function detectCurrentWorktreePath() {
   }
 }
 
-function isRecord(value) {
+export function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -50,7 +50,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function readSettingsFile(settingsPath) {
+export async function readSettingsFile(settingsPath) {
   try {
     const raw = await readFile(settingsPath, "utf8");
     if (!raw.trim()) {
@@ -70,7 +70,7 @@ async function readSettingsFile(settingsPath) {
   }
 }
 
-async function acquireLock(lockPath) {
+export async function acquireLock(lockPath) {
   for (;;) {
     try {
       const lockHandle = await open(lockPath, "wx");
@@ -83,6 +83,10 @@ async function acquireLock(lockPath) {
 
       try {
         const lockContents = await readFile(lockPath, "utf8");
+        if (!lockContents.trim()) {
+          await sleep(50);
+          continue;
+        }
         const lockPid = Number(lockContents.trim());
         if (!Number.isInteger(lockPid) || lockPid <= 0) {
           await unlink(lockPath);
@@ -104,7 +108,7 @@ async function acquireLock(lockPath) {
   }
 }
 
-async function releaseLock(lockHandle, lockPath) {
+export async function releaseLock(lockHandle, lockPath) {
   await lockHandle.close();
   await unlink(lockPath).catch((error) => {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {
@@ -115,7 +119,7 @@ async function releaseLock(lockHandle, lockPath) {
   });
 }
 
-async function writeSettingsFile(settingsPath, data) {
+export async function writeSettingsFile(settingsPath, data) {
   const directory = path.dirname(settingsPath);
   const tempPath = path.join(directory, `${path.basename(settingsPath)}.${process.pid}.tmp`);
 
@@ -132,27 +136,18 @@ function parseArgs(argv) {
     useStdin: false,
   };
 
-  const [command, ...rest] = argv;
-  if (!command) {
-    return args;
-  }
-
-  if (command === "--help" || command === "-h" || command === "help") {
-    args.command = "help";
-    return args;
-  }
-
-  args.command = command;
-  for (let index = 0; index < rest.length; index += 1) {
-    const arg = rest[index];
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
 
     if (arg === "--worktree" || arg === "-w") {
-      args.worktreePath = rest[++index] ?? "";
+      args.worktreePath = argv[++index] ?? "";
+      if (!args.worktreePath) throw new Error(`${arg} requires a path.`);
       continue;
     }
 
     if (arg === "--text" || arg === "-t") {
-      args.text = rest[++index] ?? "";
+      if (index + 1 >= argv.length) throw new Error(`${arg} requires text.`);
+      args.text = argv[++index];
       continue;
     }
 
@@ -165,6 +160,13 @@ function parseArgs(argv) {
       args.command = "help";
       return args;
     }
+
+    if (!args.command) {
+      args.command = arg;
+      continue;
+    }
+
+    throw new Error(`Unexpected argument: ${arg}`);
   }
 
   return args;
@@ -172,10 +174,10 @@ function parseArgs(argv) {
 
 function printUsage() {
   console.log(`Usage:
-  bun run note -- get [--worktree <path>]
-  bun run note -- set [--worktree <path>] --text <markdown>
-  bun run note -- set [--worktree <path>] --stdin < markdown.txt>
-  bun run note -- clear [--worktree <path>]`);
+  autopilot note get [--worktree <path>]
+  autopilot note set [--worktree <path>] --text <markdown>
+  autopilot note set [--worktree <path>] --stdin < markdown.txt>
+  autopilot note clear [--worktree <path>]`);
 }
 
 async function main() {
@@ -222,7 +224,9 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  });
+}

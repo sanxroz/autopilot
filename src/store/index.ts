@@ -133,6 +133,7 @@ interface AppStore {
   clearPRDataCacheForRepo: (repoPath: string) => void;
   checkGitHubCli: () => Promise<void>;
   refreshProcessStatuses: () => Promise<void>;
+  refreshSidebarGroupsFromDisk: () => Promise<void>;
   getProcessStatus: (worktreePath: string) => ProcessStatus;
   setAgentRunState: (event: AgentStatusEvent) => void;
   clearAgentRunState: (worktreePath: string) => void;
@@ -1466,6 +1467,27 @@ export const useAppStore = create<AppStore>((set, get) => ({
     } catch (e) {
       console.error('Failed to refresh process statuses:', e);
     }
+  },
+
+  refreshSidebarGroupsFromDisk: async () => {
+    await persistedStore.reload({ ignoreDefaults: true });
+    const persistedGroups =
+      (await persistedStore.get<Record<string, SidebarWorktreeGroup[]>>('sidebarGroupsByRepo')) ?? {};
+
+    set((state) => {
+      const sidebarGroupsByRepo = { ...persistedGroups };
+      for (const repo of state.repositories) {
+        const worktreePaths = repo.worktrees
+          .filter((worktree) => worktree.name !== 'main')
+          .map((worktree) => worktree.path);
+        sidebarGroupsByRepo[repo.info.path] = normalizeSidebarGroups(
+          persistedGroups[repo.info.path],
+          worktreePaths,
+          worktreePaths,
+        );
+      }
+      return { sidebarGroupsByRepo };
+    });
   },
 
   getProcessStatus: (worktreePath: string): ProcessStatus => {

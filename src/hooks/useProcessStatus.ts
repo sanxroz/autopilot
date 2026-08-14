@@ -8,6 +8,7 @@ const REFRESH_TIMEOUT = 30000;
 
 export function useProcessStatusPolling() {
   const refreshProcessStatuses = useAppStore((state) => state.refreshProcessStatuses);
+  const refreshSidebarGroupsFromDisk = useAppStore((state) => state.refreshSidebarGroupsFromDisk);
   const isInitialized = useAppStore((state) => state.isInitialized);
   const repositories = useAppStore((state) => state.repositories);
   const hasActiveProcesses = useAppStore((state) =>
@@ -47,7 +48,10 @@ export function useProcessStatusPolling() {
       try {
         do {
           needsRerunRef.current = false;
-          await refreshProcessStatuses();
+          await Promise.all([
+            refreshProcessStatuses(),
+            refreshSidebarGroupsFromDisk(),
+          ]);
         } while (needsRerunRef.current);
       } finally {
         if (isStaleRetry) {
@@ -65,7 +69,7 @@ export function useProcessStatusPolling() {
       inFlightRefreshRef.current = refreshPromise;
     }
     return refreshPromise;
-  }, [refreshProcessStatuses]);
+  }, [refreshProcessStatuses, refreshSidebarGroupsFromDisk]);
 
   useEffect(() => {
     if (!isInitialized || repositories.length === 0) return;

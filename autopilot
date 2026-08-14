@@ -22,10 +22,17 @@ case "${1:-}" in
     shift
     exec bun run "$(resolve_script_dir "$0")/scripts/autopilot-recover.mjs" "$@"
     ;;
+  group)
+    shift
+    exec bun run "$(resolve_script_dir "$0")/scripts/autopilot-group.mjs" "$@"
+    ;;
   --help|-h|help|"")
     cat <<'EOF'
 Usage:
   autopilot recover [--list]
+  autopilot group set <name> [--worktree <path>]
+  autopilot group get [--worktree <path>]
+  autopilot group clear [--worktree <path>]
   autopilot note [--worktree <path>] set --text <markdown>
   autopilot note [--worktree <path>] set --stdin
   autopilot note [--worktree <path>] get
