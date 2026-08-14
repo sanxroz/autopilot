@@ -152,8 +152,6 @@ interface AppStore {
   getAddressedCount: (repoPath: string, prNumber: number) => number;
   clearAddressedComments: (repoPath: string, prNumber: number) => void;
   getSidebarNotesMarkdown: (worktreePath: string | null) => string;
-  loadSidebarNotesMarkdownFromDisk: (worktreePath: string) => Promise<string>;
-  replaceSidebarNotesMarkdown: (worktreePath: string, markdown: string) => void;
   setSidebarNotesMarkdown: (worktreePath: string, markdown: string) => Promise<void>;
   flushSidebarNotesPersistence: () => Promise<void>;
 }
@@ -401,20 +399,6 @@ async function saveSidebarNotesByWorktreePath(sidebarNotesByWorktreePath: Record
 
 async function flushSidebarNotesPersistence(): Promise<void> {
   await storeOperationQueue;
-}
-
-async function loadSidebarNotesMarkdownFromDisk(worktreePath: string): Promise<string> {
-  try {
-    return await runStoreOperation(async () => {
-      await persistedStore.reload({ ignoreDefaults: true });
-      const sidebarNotesByWorktreePath =
-        await persistedStore.get<Record<string, string>>('sidebarNotesByWorktreePath');
-      return sidebarNotesByWorktreePath?.[worktreePath] ?? '';
-    });
-  } catch (error) {
-    console.error('Failed to load sidebar notes from disk:', error);
-    return '';
-  }
 }
 
 async function fetchRepoAvatarUrl(repoPath: string): Promise<string | null> {
@@ -1798,19 +1782,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
 
     return get().sidebarNotesByWorktreePath[worktreePath] ?? '';
-  },
-
-  loadSidebarNotesMarkdownFromDisk: async (worktreePath: string) => {
-    return loadSidebarNotesMarkdownFromDisk(worktreePath);
-  },
-
-  replaceSidebarNotesMarkdown: (worktreePath: string, markdown: string) => {
-    set((state) => ({
-      sidebarNotesByWorktreePath: {
-        ...state.sidebarNotesByWorktreePath,
-        [worktreePath]: markdown,
-      },
-    }));
   },
 
   setSidebarNotesMarkdown: async (worktreePath: string, markdown: string) => {

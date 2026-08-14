@@ -100,15 +100,6 @@ describe("autopilot group", () => {
       expect(run(["group", "get", "--worktree", alphaPath])).toBe("Checkout bug");
       expect(run(["group", "get", "--worktree", betaPath])).toBe("");
 
-      run(["note", "--worktree", alphaPath, "set", "--text", "integration note"]);
-      expect(run(["note", "--worktree", alphaPath, "get"])).toBe("integration note");
-      expect(run(["group", "get", "--worktree", alphaPath])).toBe("Checkout bug");
-      run(["note", "--worktree", alphaPath, "clear"]);
-      expect(run(["note", "--worktree", alphaPath, "get"])).toBe("");
-      run(["note", "set", "--worktree", alphaPath, "--text", "command-first note"]);
-      expect(run(["note", "get", "--worktree", alphaPath])).toBe("command-first note");
-      run(["note", "clear", "--worktree", alphaPath]);
-
       expect(() => run(["group", "set", "Main group", "--worktree", repoPath])).toThrow();
       expect(() => run(["group", "set", "   ", "--worktree", alphaPath])).toThrow();
       expect(() => run(["group", "get", "unexpected", "--worktree", alphaPath])).toThrow();

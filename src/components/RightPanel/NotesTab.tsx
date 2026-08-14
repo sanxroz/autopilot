@@ -1,8 +1,22 @@
-import { useCallback, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAppStore } from "../../store";
 
 const EXTERNAL_NOTE_SYNC_INTERVAL_MS = 2000;
 const LOCAL_EDIT_GRACE_PERIOD_MS = 3000;
+let contextSaveQueue = Promise.resolve();
+
+function saveAutopilotContext(worktreePath: string, markdown: string): Promise<void> {
+  contextSaveQueue = contextSaveQueue
+    .catch(() => undefined)
+    .then(() => invoke("write_autopilot_context", { worktreePath, markdown }));
+  return contextSaveQueue;
+}
+
+async function loadAutopilotContext(worktreePath: string): Promise<string> {
+  await contextSaveQueue.catch(() => undefined);
+  return invoke<string>("read_autopilot_context", { worktreePath });
+}
 
 interface NotesTabProps {
   readonly worktreePath: string | null;
@@ -10,16 +24,48 @@ interface NotesTabProps {
 
 export function NotesTab({ worktreePath }: NotesTabProps) {
   const sidebarNotesMarkdown = useAppStore((state) => state.getSidebarNotesMarkdown(worktreePath));
-  const loadSidebarNotesMarkdownFromDisk = useAppStore((state) => state.loadSidebarNotesMarkdownFromDisk);
-  const replaceSidebarNotesMarkdown = useAppStore((state) => state.replaceSidebarNotesMarkdown);
   const setSidebarNotesMarkdown = useAppStore((state) => state.setSidebarNotesMarkdown);
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const latestMarkdownRef = useRef(sidebarNotesMarkdown);
+  const [contextMarkdown, setContextMarkdown] = useState("");
+  const [contextError, setContextError] = useState<string | null>(null);
+  const contextTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const latestContextRef = useRef(contextMarkdown);
+  const worktreePathRef = useRef(worktreePath);
   const lastLocalEditAtRef = useRef(0);
+  const localEditVersionRef = useRef(0);
+  const hasUnsavedContextRef = useRef(false);
+  const pendingContextSaveVersionRef = useRef<number | null>(null);
 
-  latestMarkdownRef.current = sidebarNotesMarkdown;
+  latestContextRef.current = contextMarkdown;
+  worktreePathRef.current = worktreePath;
 
-  const syncExternalNote = useCallback(async () => {
+  const persistContext = useCallback(
+    (saveWorktreePath: string, markdown: string, editVersion: number) => {
+      pendingContextSaveVersionRef.current = editVersion;
+      void saveAutopilotContext(saveWorktreePath, markdown)
+        .then(() => {
+          if (
+            worktreePathRef.current === saveWorktreePath &&
+            localEditVersionRef.current === editVersion
+          ) {
+            pendingContextSaveVersionRef.current = null;
+            hasUnsavedContextRef.current = false;
+            setContextError(null);
+          }
+        })
+        .catch((error) => {
+          if (
+            worktreePathRef.current === saveWorktreePath &&
+            localEditVersionRef.current === editVersion
+          ) {
+            pendingContextSaveVersionRef.current = null;
+            setContextError(error instanceof Error ? error.message : String(error));
+          }
+        });
+    },
+    [],
+  );
+
+  const syncExternalContext = useCallback(async () => {
     if (!worktreePath) {
       return;
     }
@@ -28,7 +74,7 @@ export function NotesTab({ worktreePath }: NotesTabProps) {
       return;
     }
 
-    if (document.activeElement === textareaRef.current) {
+    if (document.activeElement === contextTextareaRef.current) {
       return;
     }
 
@@ -36,26 +82,56 @@ export function NotesTab({ worktreePath }: NotesTabProps) {
       return;
     }
 
-    const diskMarkdown = await loadSidebarNotesMarkdownFromDisk(worktreePath);
-    if (diskMarkdown !== latestMarkdownRef.current) {
-      replaceSidebarNotesMarkdown(worktreePath, diskMarkdown);
-    }
-  }, [loadSidebarNotesMarkdownFromDisk, replaceSidebarNotesMarkdown, worktreePath]);
-
-  useEffect(() => {
-    if (!worktreePath) {
+    if (hasUnsavedContextRef.current) {
+      const editVersion = localEditVersionRef.current;
+      if (pendingContextSaveVersionRef.current !== editVersion) {
+        persistContext(worktreePath, latestContextRef.current, editVersion);
+      }
       return;
     }
 
-    void syncExternalNote();
+    const editVersion = localEditVersionRef.current;
+    try {
+      const diskMarkdown = await loadAutopilotContext(worktreePath);
+      if (
+        worktreePathRef.current !== worktreePath ||
+        document.activeElement === contextTextareaRef.current ||
+        hasUnsavedContextRef.current ||
+        localEditVersionRef.current !== editVersion
+      ) {
+        return;
+      }
+      if (diskMarkdown !== latestContextRef.current) {
+        setContextMarkdown(diskMarkdown);
+      }
+      setContextError(null);
+    } catch (error) {
+      if (worktreePathRef.current !== worktreePath) return;
+      setContextError(error instanceof Error ? error.message : String(error));
+    }
+  }, [persistContext, worktreePath]);
+
+  useEffect(() => {
+    if (!worktreePath) {
+      setContextMarkdown("");
+      return;
+    }
+
+    localEditVersionRef.current += 1;
+    lastLocalEditAtRef.current = 0;
+    hasUnsavedContextRef.current = false;
+    pendingContextSaveVersionRef.current = null;
+    setContextMarkdown("");
+    setContextError(null);
+    void syncExternalContext();
 
     const intervalId = window.setInterval(() => {
-      void syncExternalNote();
+      void syncExternalContext();
     }, EXTERNAL_NOTE_SYNC_INTERVAL_MS);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState === "visible") {
-        void syncExternalNote();
+        void syncExternalContext();
       }
     };
 
@@ -64,30 +140,62 @@ export function NotesTab({ worktreePath }: NotesTabProps) {
       window.clearInterval(intervalId);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [syncExternalNote, worktreePath]);
+  }, [syncExternalContext, worktreePath]);
 
   if (!worktreePath) {
     return (
       <div className="flex h-full items-center justify-center px-6 text-center text-sm text-secondary">
-        Select a worktree to view its private notes.
+        Select a worktree to view its notes.
       </div>
     );
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col px-4 py-3">
-      <label className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto px-4 py-3">
+      <label className="flex min-h-52 flex-[3] flex-col">
+        <span className="mb-1.5 flex items-baseline justify-between gap-2">
+          <span className="text-xs font-medium text-primary">Current work</span>
+          <span className="font-mono text-[10px] text-tertiary">.autopilot.md</span>
+        </span>
         <textarea
-          ref={textareaRef}
-          value={sidebarNotesMarkdown}
+          ref={contextTextareaRef}
+          value={contextMarkdown}
           onChange={(event) => {
+            const markdown = event.target.value;
+            const editVersion = ++localEditVersionRef.current;
             lastLocalEditAtRef.current = Date.now();
-            void setSidebarNotesMarkdown(worktreePath, event.target.value);
+            hasUnsavedContextRef.current = true;
+            latestContextRef.current = markdown;
+            setContextMarkdown(markdown);
+            setContextError(null);
+            persistContext(worktreePath, markdown, editVersion);
           }}
-          placeholder={"# Notes\n\n- Draft thoughts\n- TODOs\n- Links\n\n```bash\nbun run build\n```"}
+          placeholder={"# Current work\n\n**Status:** Working\n**Objective:**\n**Current state:**\n**Remaining:**\n**Next action:**\n**Blocked by:** Nothing"}
           className="min-h-0 flex-1 resize-none rounded-lg border border-border-subtle bg-secondary px-3 py-3 text-[13px] leading-6 text-primary outline-none transition-colors placeholder:text-muted focus:border-accent-primary select-text"
           style={{ fontFamily: '"Departure Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}
-          aria-label="Notes editor"
+          aria-label="Current work snapshot"
+          aria-invalid={contextError ? true : undefined}
+          aria-describedby={contextError ? "autopilot-context-error" : undefined}
+          spellCheck={false}
+        />
+        {contextError && (
+          <span id="autopilot-context-error" className="mt-1 text-xs text-semantic-error" role="alert">
+            Could not access current work: {contextError}
+          </span>
+        )}
+      </label>
+
+      <label className="flex min-h-40 flex-[2] flex-col">
+        <span className="mb-1.5 text-xs font-medium text-primary">Personal notes</span>
+        <textarea
+          value={sidebarNotesMarkdown}
+          onChange={(event) => {
+            void setSidebarNotesMarkdown(worktreePath, event.target.value);
+          }}
+          placeholder={"Private notes, TODOs, and links"}
+          className="min-h-0 flex-1 resize-none rounded-lg border border-border-subtle bg-secondary px-3 py-3 text-[13px] leading-6 text-primary outline-none transition-colors placeholder:text-muted focus:border-accent-primary select-text"
+          style={{ fontFamily: '"Departure Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' }}
+          aria-label="Personal notes"
           spellCheck={false}
         />
       </label>

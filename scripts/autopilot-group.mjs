@@ -10,7 +10,7 @@ import {
   readSettingsFile,
   releaseLock,
   writeSettingsFile,
-} from "./autopilot-note.mjs";
+} from "./autopilot-settings.mjs";
 
 const GROUPS_KEY = "sidebarGroupsByRepo";
 

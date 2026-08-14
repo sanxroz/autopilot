@@ -1,13 +1,10 @@
-import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { link, mkdir, open, readFile, rename, stat, writeFile, unlink } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
+import { link, mkdir, open, readFile, rename, stat, unlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 const STORE_FILENAME = "autopilot-settings.json";
-const LEGACY_NOTE_KEY = "sidebarNotesMarkdown";
-const NOTES_KEY = "sidebarNotesByWorktreePath";
 const EMPTY_LOCK_STALE_MS = 5000;
 
 export function getSettingsPath() {
@@ -146,107 +143,4 @@ export async function writeSettingsFile(settingsPath, data) {
   await mkdir(directory, { recursive: true });
   await writeFile(tempPath, `${JSON.stringify(data, null, 2)}\n`, "utf8");
   await rename(tempPath, settingsPath);
-}
-
-function parseArgs(argv) {
-  const args = {
-    command: "",
-    worktreePath: "",
-    text: "",
-    useStdin: false,
-  };
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-
-    if (arg === "--worktree" || arg === "-w") {
-      args.worktreePath = argv[++index] ?? "";
-      if (!args.worktreePath) throw new Error(`${arg} requires a path.`);
-      continue;
-    }
-
-    if (arg === "--text" || arg === "-t") {
-      if (index + 1 >= argv.length) throw new Error(`${arg} requires text.`);
-      args.text = argv[++index];
-      continue;
-    }
-
-    if (arg === "--stdin") {
-      args.useStdin = true;
-      continue;
-    }
-
-    if (arg === "--help" || arg === "-h") {
-      args.command = "help";
-      return args;
-    }
-
-    if (!args.command) {
-      args.command = arg;
-      continue;
-    }
-
-    throw new Error(`Unexpected argument: ${arg}`);
-  }
-
-  return args;
-}
-
-function printUsage() {
-  console.log(`Usage:
-  autopilot note get [--worktree <path>]
-  autopilot note set [--worktree <path>] --text <markdown>
-  autopilot note set [--worktree <path>] --stdin < markdown.txt>
-  autopilot note clear [--worktree <path>]`);
-}
-
-async function main() {
-  const { command, worktreePath, text, useStdin } = parseArgs(process.argv.slice(2));
-  const settingsPath = getSettingsPath();
-  const lockPath = `${settingsPath}.lock`;
-
-  if (!command || command === "help") {
-    printUsage();
-    return;
-  }
-
-  const normalizedWorktreePath = normalizeWorktreePath(worktreePath || detectCurrentWorktreePath());
-  const lockHandle = await acquireLock(lockPath);
-
-  try {
-    const settings = await readSettingsFile(settingsPath);
-    const sidebarNotesByWorktreePath = isRecord(settings[NOTES_KEY]) ? { ...settings[NOTES_KEY] } : {};
-
-    if (command === "get") {
-      process.stdout.write(`${sidebarNotesByWorktreePath[normalizedWorktreePath] ?? ""}`);
-      return;
-    }
-
-    if (command === "clear") {
-      delete sidebarNotesByWorktreePath[normalizedWorktreePath];
-      settings[NOTES_KEY] = sidebarNotesByWorktreePath;
-      delete settings[LEGACY_NOTE_KEY];
-      await writeSettingsFile(settingsPath, settings);
-      return;
-    }
-
-    if (command !== "set") {
-      throw new Error(`Unknown command: ${command}`);
-    }
-
-    const noteText = useStdin ? readFileSync(0, "utf8") : text;
-    sidebarNotesByWorktreePath[normalizedWorktreePath] = noteText;
-    settings[NOTES_KEY] = sidebarNotesByWorktreePath;
-    delete settings[LEGACY_NOTE_KEY];
-    await writeSettingsFile(settingsPath, settings);
-  } finally {
-    await releaseLock(lockHandle, lockPath);
-  }
-}
-
-if (import.meta.main) {
-  main().catch((error) => {
-    console.error(error instanceof Error ? error.message : String(error));
-    process.exit(1);
-  });
 }
