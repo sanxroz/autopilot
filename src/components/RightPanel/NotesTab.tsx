@@ -31,6 +31,8 @@ export function NotesTab({ worktreePath }: NotesTabProps) {
   const latestContextRef = useRef(contextMarkdown);
   const worktreePathRef = useRef(worktreePath);
   const lastLocalEditAtRef = useRef(0);
+  const localEditVersionRef = useRef(0);
+  const hasUnsavedContextRef = useRef(false);
 
   latestContextRef.current = contextMarkdown;
   worktreePathRef.current = worktreePath;
@@ -52,9 +54,21 @@ export function NotesTab({ worktreePath }: NotesTabProps) {
       return;
     }
 
+    if (hasUnsavedContextRef.current) {
+      return;
+    }
+
+    const editVersion = localEditVersionRef.current;
     try {
       const diskMarkdown = await loadAutopilotContext(worktreePath);
-      if (worktreePathRef.current !== worktreePath) return;
+      if (
+        worktreePathRef.current !== worktreePath ||
+        document.activeElement === contextTextareaRef.current ||
+        hasUnsavedContextRef.current ||
+        localEditVersionRef.current !== editVersion
+      ) {
+        return;
+      }
       if (diskMarkdown !== latestContextRef.current) {
         setContextMarkdown(diskMarkdown);
       }
@@ -71,6 +85,9 @@ export function NotesTab({ worktreePath }: NotesTabProps) {
       return;
     }
 
+    localEditVersionRef.current += 1;
+    lastLocalEditAtRef.current = 0;
+    hasUnsavedContextRef.current = false;
     setContextMarkdown("");
     setContextError(null);
     void syncExternalContext();
@@ -112,17 +129,29 @@ export function NotesTab({ worktreePath }: NotesTabProps) {
           value={contextMarkdown}
           onChange={(event) => {
             const markdown = event.target.value;
+            const editVersion = ++localEditVersionRef.current;
             lastLocalEditAtRef.current = Date.now();
+            hasUnsavedContextRef.current = true;
             latestContextRef.current = markdown;
             setContextMarkdown(markdown);
             setContextError(null);
             void saveAutopilotContext(worktreePath, markdown)
               .then(() => {
-                if (worktreePathRef.current === worktreePath) setContextError(null);
+                if (
+                  worktreePathRef.current === worktreePath &&
+                  localEditVersionRef.current === editVersion
+                ) {
+                  hasUnsavedContextRef.current = false;
+                  setContextError(null);
+                }
               })
               .catch((error) => {
-                if (worktreePathRef.current !== worktreePath) return;
-                setContextError(error instanceof Error ? error.message : String(error));
+                if (
+                  worktreePathRef.current === worktreePath &&
+                  localEditVersionRef.current === editVersion
+                ) {
+                  setContextError(error instanceof Error ? error.message : String(error));
+                }
               });
           }}
           placeholder={"# Current work\n\n**Status:** Working\n**Objective:**\n**Current state:**\n**Remaining:**\n**Next action:**\n**Blocked by:** Nothing"}
