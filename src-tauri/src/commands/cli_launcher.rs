@@ -142,25 +142,9 @@ mod tests {
     #[cfg(not(target_os = "windows"))]
     use std::io::ErrorKind;
     use std::path::Path;
-    #[cfg(not(target_os = "windows"))]
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[cfg(not(target_os = "windows"))]
     use super::{append_block_if_missing, build_unix_launcher};
-
-    #[cfg(not(target_os = "windows"))]
-    fn make_temp_dir() -> std::path::PathBuf {
-        let unique_suffix = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time before unix epoch")
-            .as_nanos();
-        let path = std::env::temp_dir().join(format!(
-            "autopilot-cli-launcher-test-{}-{unique_suffix}",
-            std::process::id()
-        ));
-        fs::create_dir(&path).expect("temp dir");
-        path
-    }
 
     #[cfg(not(target_os = "windows"))]
     #[test]
@@ -176,8 +160,8 @@ mod tests {
     #[cfg(not(target_os = "windows"))]
     #[test]
     fn append_block_if_missing_creates_a_missing_profile_file() {
-        let temp_dir = make_temp_dir();
-        let profile_path = temp_dir.join(".profile");
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let profile_path = temp_dir.path().join(".profile");
 
         append_block_if_missing(
             &profile_path,
@@ -190,20 +174,18 @@ mod tests {
             contents,
             "# AUTOPILOT PATH\nexport PATH=\"/tmp/bin:$PATH\"\n"
         );
-        fs::remove_dir_all(temp_dir).expect("cleanup temp dir");
     }
 
     #[cfg(not(target_os = "windows"))]
     #[test]
     fn append_block_if_missing_returns_read_errors_instead_of_clobbering() {
-        let temp_dir = make_temp_dir();
+        let temp_dir = tempfile::tempdir().expect("temp dir");
         let error = append_block_if_missing(
-            &temp_dir,
+            temp_dir.path(),
             "\n# AUTOPILOT PATH\nexport PATH=\"/tmp/bin:$PATH\"\n",
         )
         .expect_err("directory reads should fail");
 
         assert_eq!(error.kind(), ErrorKind::IsADirectory);
-        fs::remove_dir_all(temp_dir).expect("cleanup temp dir");
     }
 }
