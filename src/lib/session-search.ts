@@ -80,8 +80,9 @@ export function getSessionSearchFilters(
   if (prStatus) {
     const section = getPrSessionSection(prStatus);
     if (
-      prStatus.mergeable === "CONFLICTING" ||
-      prStatus.checks_status === "failure"
+      section !== "pr:closed" &&
+      (prStatus.mergeable === "CONFLICTING" ||
+        prStatus.checks_status === "failure")
     ) {
       filters.add("failed");
     }

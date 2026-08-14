@@ -136,5 +136,15 @@ describe("session search statuses", () => {
       ...pullRequest,
       mergeable: "CONFLICTING",
     })).toEqual(new Set(["failed", "attention"]));
+    expect(getSessionSearchFilters("none", undefined, {
+      ...pullRequest,
+      state: "closed",
+      checks_status: "failure",
+    })).toEqual(new Set());
+    expect(getSessionSearchFilters("none", undefined, {
+      ...pullRequest,
+      merged: true,
+      mergeable: "CONFLICTING",
+    })).toEqual(new Set());
   });
 });
