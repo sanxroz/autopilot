@@ -5,6 +5,7 @@ pub mod editor;
 pub mod git;
 pub mod github;
 pub mod github_checks;
+pub mod notes;
 pub mod process;
 pub mod terminal;
 pub mod watcher;

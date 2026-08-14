@@ -9,8 +9,7 @@
     "build": "tsc && vite build",
     "build:production": "bunx tauri build",
     "preview": "vite preview",
-    "tauri": "bun run ./scripts/tauri.mjs",
-    "note": "bun run ./scripts/autopilot-note.mjs"
+    "tauri": "bun run ./scripts/tauri.mjs"
   },
   "dependencies": {
     "@git-diff-view/react": "^0.0.36",

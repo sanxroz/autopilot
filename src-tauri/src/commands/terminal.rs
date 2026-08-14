@@ -584,6 +584,19 @@ fn detect_agent_from_command(command: &str) -> Option<&'static str> {
     None
 }
 
+fn prepare_agent_context_path(
+    detected_agent: Option<&str>,
+    cwd: &str,
+) -> Option<std::path::PathBuf> {
+    detected_agent.and_then(|_| {
+        super::notes::prepare_autopilot_context(cwd)
+            .map_err(|error| {
+                eprintln!("[autopilot] warning: failed to prepare .autopilot.md ({error})")
+            })
+            .ok()
+    })
+}
+
 /// Detect OSC 133/633 "command start" (= shell/agent ready for user input).
 fn contains_osc_prompt_ready(data: &str) -> bool {
     data.contains("\x1b]133;B\x07")
@@ -2143,6 +2156,7 @@ pub fn spawn_terminal_with_command(
     let terminal_id = Uuid::new_v4().to_string();
     let session_id = terminal_id.clone();
     let detected_agent = detect_agent_from_command(&command);
+    let context_path = prepare_agent_context_path(detected_agent, &cwd);
 
     if let Some(agent) = detected_agent {
         emit_agent_status(
@@ -2170,6 +2184,9 @@ pub fn spawn_terminal_with_command(
     // Run the command inside a shell so it has proper environment
     let shell = get_shell();
     let mut cmd = CommandBuilder::new(&shell);
+    if let Some(context_path) = context_path {
+        cmd.env("AUTOPILOT_CONTEXT_FILE", context_path);
+    }
 
     // Build the full command string
     let mut full_command = if args.is_empty() {
@@ -2752,6 +2769,29 @@ mod tests {
         assert_eq!(detect_agent_from_command("ls -la"), None);
         assert_eq!(detect_agent_from_command(""), None);
         assert_eq!(detect_agent_from_command("npm start"), None);
+    }
+
+    #[test]
+    fn agent_context_path_requires_successful_preparation() {
+        let missing_parent = tempfile::tempdir().expect("missing parent");
+        let missing = missing_parent.path().join("missing");
+        assert_eq!(
+            prepare_agent_context_path(Some("codex"), &missing.to_string_lossy()),
+            None
+        );
+
+        let repository = tempfile::tempdir().expect("temp dir");
+        git2::Repository::init(repository.path()).expect("repository");
+        assert_eq!(
+            prepare_agent_context_path(Some("codex"), &repository.path().to_string_lossy()),
+            Some(
+                repository
+                    .path()
+                    .canonicalize()
+                    .expect("canonical repository")
+                    .join(".autopilot.md")
+            )
+        );
     }
 
     #[test]
