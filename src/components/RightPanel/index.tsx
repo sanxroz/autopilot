@@ -44,7 +44,7 @@ function PullRequestView({
       prNumber={prStatus.number}
       prStatus={prStatus}
     >
-      <section aria-labelledby="pr-checks-heading" className="border-t border-border-subtle">
+      <section aria-labelledby="pr-checks-heading">
         <div className="px-5 pb-1 pt-4">
           <h2 id="pr-checks-heading" className="text-sm font-semibold text-primary">
             Checks

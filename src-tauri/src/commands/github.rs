@@ -1374,6 +1374,94 @@ pub async fn rerequest_pr_review(
 }
 
 #[tauri::command]
+pub async fn remove_pr_reviewer(
+    repo_path: String,
+    pr_number: u64,
+    reviewer: String,
+) -> Result<bool, String> {
+    let gh_path = find_cli_tool("gh")?;
+    let output = Command::new(&gh_path)
+        .args([
+            "pr",
+            "edit",
+            &pr_number.to_string(),
+            "--remove-reviewer",
+            &reviewer,
+        ])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("Failed to run gh command: {}", e))?;
+
+    if output.status.success() {
+        Ok(true)
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("Failed to remove reviewer: {}", stderr))
+    }
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct ReviewerCandidate {
+    pub login: String,
+    pub avatar_url: String,
+}
+
+fn parse_reviewer_candidates(stdout: &str) -> Result<Vec<ReviewerCandidate>, String> {
+    let mut reviewers = stdout
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(|line| {
+            let (login, avatar_url) = line
+                .split_once('\t')
+                .ok_or_else(|| format!("Invalid reviewer candidate: {}", line))?;
+            if login.is_empty() || avatar_url.is_empty() {
+                return Err(format!("Invalid reviewer candidate: {}", line));
+            }
+            Ok(ReviewerCandidate {
+                login: login.to_owned(),
+                avatar_url: avatar_url.to_owned(),
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    reviewers.sort_unstable_by_key(|reviewer| reviewer.login.to_lowercase());
+    reviewers.dedup_by(|a, b| a.login.eq_ignore_ascii_case(&b.login));
+    Ok(reviewers)
+}
+
+#[tauri::command]
+pub async fn get_pr_reviewer_candidates(
+    repo_path: String,
+) -> Result<Vec<ReviewerCandidate>, String> {
+    let gh_path = find_cli_tool("gh")?;
+    let repo_info = resolve_repo_name_with_owner(&repo_path).await?;
+    let endpoint = format!("repos/{}/collaborators?per_page=100", repo_info);
+    let output = Command::new(&gh_path)
+        .args([
+            "api",
+            &endpoint,
+            "--paginate",
+            "--jq",
+            ".[] | [.login, .avatar_url] | @tsv",
+        ])
+        .current_dir(&repo_path)
+        .output()
+        .map_err(|e| format!("Failed to list repository collaborators: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "Failed to list repository collaborators: {}",
+            stderr
+        ));
+    }
+
+    let stdout = String::from_utf8(output.stdout)
+        .map_err(|e| format!("Invalid UTF-8 collaborator list: {}", e))?;
+    parse_reviewer_candidates(&stdout)
+}
+
+#[tauri::command]
 pub async fn get_repo_from_remote(repo_path: String) -> Result<Option<String>, String> {
     let gh_path = find_cli_tool("gh")?;
     let output = Command::new(&gh_path)
@@ -1414,6 +1502,7 @@ pub struct PRComment {
     pub path: Option<String>,      // For review threads: file path
     pub line: Option<u32>,         // For review threads: line number
     pub review_id: Option<String>, // For review threads: parent review ID
+    pub thread_id: Option<String>, // Stable ID shared by every comment in a review thread
     pub is_resolved: bool,
 }
 
@@ -1474,6 +1563,8 @@ struct GhReviewComment {
     pull_request_review_id: Option<u64>,
     #[serde(default)]
     id: u64,
+    #[serde(default)]
+    in_reply_to_id: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1589,6 +1680,7 @@ struct GraphqlReviewThreads {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GraphqlReviewThread {
+    id: String,
     is_resolved: bool,
     comments: GraphqlThreadComments,
 }
@@ -1641,6 +1733,7 @@ async fn fetch_review_threads_graphql(
                 pullRequest(number: {}) {{ \
                     reviewThreads(last: 100) {{ \
                         nodes {{ \
+                            id \
                             isResolved \
                             comments(first: 100) {{ \
                                 nodes {{ \
@@ -1679,9 +1772,16 @@ async fn fetch_review_threads_graphql(
     let response: GraphqlThreadResponse = serde_json::from_str(&stdout)
         .map_err(|e| format!("Failed to parse GraphQL response: {}", e))?;
 
+    Ok(flatten_review_threads(
+        response.data.repository.pull_request.review_threads,
+    ))
+}
+
+fn flatten_review_threads(review_threads: GraphqlReviewThreads) -> Vec<PRComment> {
     let mut comments = Vec::new();
 
-    for thread in response.data.repository.pull_request.review_threads.nodes {
+    for thread in review_threads.nodes {
+        let thread_id = thread.id;
         let is_resolved = thread.is_resolved;
         for comment in thread.comments.nodes {
             comments.push(PRComment {
@@ -1698,12 +1798,13 @@ async fn fetch_review_threads_graphql(
                 review_id: comment
                     .pull_request_review
                     .map(|r| r.database_id.to_string()),
+                thread_id: Some(thread_id.clone()),
                 is_resolved,
             });
         }
     }
 
-    Ok(comments)
+    comments
 }
 
 #[tauri::command]
@@ -1746,6 +1847,7 @@ pub async fn get_pr_details(repo_path: String, pr_number: u64) -> Result<PRDetai
             path: None,
             line: None,
             review_id: None,
+            thread_id: None,
             is_resolved: false,
         })
         .collect();
@@ -1769,6 +1871,7 @@ pub async fn get_pr_details(repo_path: String, pr_number: u64) -> Result<PRDetai
             path: None,
             line: None,
             review_id: Some(review.id.to_string()),
+            thread_id: None,
             is_resolved: false,
         });
     }
@@ -1790,6 +1893,7 @@ pub async fn get_pr_details(repo_path: String, pr_number: u64) -> Result<PRDetai
                     path: Some(rc.path),
                     line: rc.line.or(rc.original_line),
                     review_id: rc.pull_request_review_id.map(|id| id.to_string()),
+                    thread_id: Some(rc.in_reply_to_id.unwrap_or(rc.id).to_string()),
                     is_resolved: false,
                 })
                 .collect()
@@ -2344,6 +2448,68 @@ mod tests {
             Some("next-page".to_string())
         );
         assert_eq!(review_threads_next_cursor(&final_page), None);
+    }
+
+    #[test]
+    fn review_thread_replies_keep_their_shared_thread_id() {
+        let threads: GraphqlReviewThreads = serde_json::from_value(serde_json::json!({
+            "nodes": [{
+                "id": "thread-1",
+                "isResolved": false,
+                "comments": {
+                    "nodes": [
+                        {
+                            "databaseId": 1,
+                            "author": { "login": "reviewer" },
+                            "body": "Root",
+                            "createdAt": "2026-08-15T12:00:00Z",
+                            "path": "src/app.ts",
+                            "line": 12,
+                            "originalLine": 12,
+                            "pullRequestReview": { "databaseId": 10 }
+                        },
+                        {
+                            "databaseId": 2,
+                            "author": { "login": "author" },
+                            "body": "Reply",
+                            "createdAt": "2026-08-15T12:01:00Z",
+                            "path": "src/app.ts",
+                            "line": 12,
+                            "originalLine": 12,
+                            "pullRequestReview": { "databaseId": 11 }
+                        }
+                    ]
+                }
+            }]
+        }))
+        .expect("expected review threads");
+
+        let comments = flatten_review_threads(threads);
+
+        assert_eq!(comments.len(), 2);
+        assert!(comments
+            .iter()
+            .all(|comment| comment.thread_id.as_deref() == Some("thread-1")));
+    }
+
+    #[test]
+    fn reviewer_candidates_are_sorted_and_deduplicated() {
+        assert_eq!(
+            parse_reviewer_candidates(
+                "zara\thttps://avatars.example/zara\nAlan\thttps://avatars.example/alan\nalan\thttps://avatars.example/duplicate\n\n"
+            ),
+            Ok(vec![
+                ReviewerCandidate {
+                    login: "Alan".to_string(),
+                    avatar_url: "https://avatars.example/alan".to_string(),
+                },
+                ReviewerCandidate {
+                    login: "zara".to_string(),
+                    avatar_url: "https://avatars.example/zara".to_string(),
+                },
+            ])
+        );
+        assert!(parse_reviewer_candidates("missing-avatar-url").is_err());
     }
 
     #[test]
