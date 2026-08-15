@@ -216,6 +216,8 @@ pub fn run() {
             github::submit_pr_review,
             github::close_pr,
             github::rerequest_pr_review,
+            github::remove_pr_reviewer,
+            github::get_pr_reviewer_candidates,
             github::create_pr,
             github::run_cubic_review,
             github::merge_pr,

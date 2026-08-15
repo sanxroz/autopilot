@@ -128,6 +128,7 @@ export interface PRComment {
   path?: string;
   line?: number;
   review_id?: string;
+  thread_id?: string;
   is_resolved?: boolean;
 }
 
