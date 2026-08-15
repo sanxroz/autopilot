@@ -85,6 +85,16 @@ pub fn prepare_autopilot_context(worktree_path: &str) -> Result<PathBuf, String>
     Ok(worktree_path.join(CONTEXT_FILE_NAME))
 }
 
+pub fn initialize_autopilot_context(worktree_path: &str) -> Result<(), String> {
+    let context_path = prepare_autopilot_context(worktree_path)?;
+    OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(context_path)
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn read_autopilot_context(worktree_path: String) -> Result<String, String> {
     let context_path = prepare_autopilot_context(&worktree_path)?;
@@ -184,6 +194,25 @@ mod tests {
             .unwrap()
             .status
             .success());
+
+        fs::remove_dir_all(repository).unwrap();
+    }
+
+    #[test]
+    fn initializes_context_without_overwriting_existing_content() {
+        let repository = make_repository();
+        let worktree_path = repository.to_string_lossy().to_string();
+        let context_path = repository.join(CONTEXT_FILE_NAME);
+
+        initialize_autopilot_context(&worktree_path).unwrap();
+        assert_eq!(fs::read_to_string(&context_path).unwrap(), "");
+
+        fs::write(&context_path, "# Existing context\n").unwrap();
+        initialize_autopilot_context(&worktree_path).unwrap();
+        assert_eq!(
+            fs::read_to_string(&context_path).unwrap(),
+            "# Existing context\n"
+        );
 
         fs::remove_dir_all(repository).unwrap();
     }
