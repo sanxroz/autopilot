@@ -176,8 +176,13 @@ async function runStoreOperation<T>(operation: () => Promise<T>): Promise<T> {
 
 async function runStoreWrite<T>(operation: () => Promise<T>): Promise<T> {
   return runStoreOperation(async () => {
-    await persistedStore.reload({ ignoreDefaults: true });
-    return operation();
+    await invoke('acquire_settings_lock');
+    try {
+      await persistedStore.reload({ ignoreDefaults: true });
+      return await operation();
+    } finally {
+      await invoke('release_settings_lock');
+    }
   });
 }
 

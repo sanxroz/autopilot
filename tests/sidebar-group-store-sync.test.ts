@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import * as tauriCore from "@tauri-apps/api/core";
 import type { Repository, WorktreeInfo } from "../src/types";
 
 let diskValues = new Map<string, unknown>();
@@ -6,6 +7,12 @@ let cacheValues = new Map<string, unknown>();
 let reloadHandler = async () => {
   cacheValues = new Map(diskValues);
 };
+let invokeHandler = async (_command: string) => undefined;
+
+mock.module("@tauri-apps/api/core", () => ({
+  ...tauriCore,
+  invoke: (command: string) => invokeHandler(command),
+}));
 
 const fakeStore = {
   async get<T>(key: string): Promise<T | null> {
@@ -109,5 +116,59 @@ describe("sidebar group store synchronization", () => {
     diskValues.set("sidebarGroupsByRepo", newerExternalGroups);
     await useAppStore.getState().setThemeMode("dark");
     expect(diskValues.get("sidebarGroupsByRepo")).toEqual(newerExternalGroups);
+  });
+
+  test("waits for a CLI settings lock before reloading and saving", async () => {
+    const externalGroups = {
+      "/repo": [{ id: "cli", name: "CLI", worktreePaths: [alpha.path] }],
+    };
+    diskValues = new Map();
+    cacheValues = new Map();
+    reloadHandler = async () => {
+      cacheValues = new Map(diskValues);
+    };
+    let markAcquireStarted!: () => void;
+    const acquireStarted = new Promise<void>((resolve) => {
+      markAcquireStarted = resolve;
+    });
+    let releaseAcquire!: () => void;
+    const acquireGate = new Promise<void>((resolve) => {
+      releaseAcquire = resolve;
+    });
+    const commands: string[] = [];
+    invokeHandler = async (command) => {
+      commands.push(command);
+      if (command === "acquire_settings_lock") {
+        markAcquireStarted();
+        await acquireGate;
+      }
+    };
+
+    const guiWrite = useAppStore.getState().setDefaultAIAgent("claude");
+    await acquireStarted;
+    diskValues.set("sidebarGroupsByRepo", externalGroups);
+    releaseAcquire();
+    await guiWrite;
+
+    expect(diskValues.get("sidebarGroupsByRepo")).toEqual(externalGroups);
+    expect(commands).toEqual(["acquire_settings_lock", "release_settings_lock"]);
+    invokeHandler = async () => undefined;
+  });
+
+  test("releases the settings lock when reloading fails", async () => {
+    const commands: string[] = [];
+    invokeHandler = async (command) => {
+      commands.push(command);
+    };
+    reloadHandler = async () => {
+      throw new Error("reload failed");
+    };
+
+    await expect(useAppStore.getState().setDefaultAIAgent("codex")).rejects.toThrow("reload failed");
+    expect(commands).toEqual(["acquire_settings_lock", "release_settings_lock"]);
+    invokeHandler = async () => undefined;
+    reloadHandler = async () => {
+      cacheValues = new Map(diskValues);
+    };
   });
 });
