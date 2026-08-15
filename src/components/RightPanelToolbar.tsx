@@ -191,7 +191,7 @@ export function RightPanelToolbar({
               }
               onClick={() => onActiveTabChange(tab.id)}
               className={cn(
-                "relative flex h-7 w-7 items-center justify-center rounded-md transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1",
+                "relative flex h-6 w-8 items-center justify-center rounded-md transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1",
                 displayedTab === tab.id
                   ? "text-primary"
                   : "text-muted hover:bg-hover hover:text-secondary",
@@ -211,7 +211,7 @@ export function RightPanelToolbar({
       {worktreePath && (
         <div
           className={cn(
-            "flex h-7 items-center overflow-hidden",
+            "flex h-6 items-center overflow-hidden",
             prStatus && "rounded-md border border-border-subtle",
           )}
         >
@@ -220,7 +220,7 @@ export function RightPanelToolbar({
               href={prStatus.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex h-full items-center gap-1 border-r border-border-subtle px-2 font-mono text-[11px] tabular-nums text-secondary transition-colors hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-[-2px]"
+              className="flex h-full items-center gap-1 border-r border-border-subtle px-2.5 font-mono text-[11px] tabular-nums text-secondary transition-colors hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-[-2px]"
               title={`Open #${prStatus.number} in GitHub`}
               aria-label={`Open pull request #${prStatus.number} in GitHub`}
             >
@@ -285,7 +285,7 @@ export function RightPanelToolbar({
           type="button"
           onClick={handleMerge}
           disabled={isMerging}
-          className="flex h-7 items-center gap-1 rounded-md bg-semantic-success px-1.5 text-[11px] font-medium text-white transition-colors hover:bg-semantic-success/90 active:scale-[0.97] disabled:cursor-wait disabled:opacity-50"
+          className="flex h-6 items-center gap-1 rounded-md bg-semantic-success px-2.5 text-[11px] font-medium text-white transition-colors hover:bg-semantic-success/90 active:scale-[0.97] disabled:cursor-wait disabled:opacity-50"
           title={isMerging ? "Merging pull request…" : "Merge pull request"}
           aria-label={isMerging ? "Merging pull request" : "Merge pull request"}
         >
