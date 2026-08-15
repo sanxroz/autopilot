@@ -2,10 +2,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { Check, Pencil } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import {
   MarkdownErrorBoundary,
   markdownComponents,
+  markdownSanitizeSchema,
 } from "../../lib/markdown-components";
 import { useAppStore } from "../../store";
 
@@ -62,6 +65,9 @@ const currentWorkMarkdownComponents = {
     <blockquote className="my-4 border-l-2 border-border pl-3 italic leading-[1.7] text-secondary">
       {children}
     </blockquote>
+  ),
+  img: ({ alt }: { alt?: string }) => (
+    <span className="text-secondary">{alt || "Image omitted"}</span>
   ),
 };
 
@@ -268,7 +274,11 @@ export function NotesTab({ worktreePath }: NotesTabProps) {
             <article className="h-full overflow-y-auto px-4 py-4 pb-12 antialiased">
               {contextMarkdown ? (
                 <MarkdownErrorBoundary key={contextMarkdown} rawContent={contextMarkdown}>
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={currentWorkMarkdownComponents}>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema]]}
+                    components={currentWorkMarkdownComponents}
+                  >
                     {contextMarkdown}
                   </ReactMarkdown>
                 </MarkdownErrorBoundary>

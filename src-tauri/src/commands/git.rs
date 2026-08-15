@@ -672,7 +672,9 @@ pub async fn create_worktree_auto(repo_path: String) -> Result<WorktreeInfo, Str
 
         repo.worktree(&worktree_name, &wt_path, Some(&opts))
             .map_err(|e| e.message().to_string())?;
-        super::notes::initialize_autopilot_context(&wt_path.to_string_lossy())?;
+        if let Err(error) = super::notes::initialize_autopilot_context(&wt_path.to_string_lossy()) {
+            eprintln!("[autopilot] warning: failed to initialize .autopilot.md ({error})");
+        }
 
         let last_modified = get_last_modified(&wt_path);
         let diff_stats = get_diff_stats_vs_origin_default(&wt_path);
@@ -733,7 +735,9 @@ pub async fn create_worktree(
 
         repo.worktree(&worktree_name, &wt_path, Some(&opts))
             .map_err(|e| e.message().to_string())?;
-        super::notes::initialize_autopilot_context(&wt_path.to_string_lossy())?;
+        if let Err(error) = super::notes::initialize_autopilot_context(&wt_path.to_string_lossy()) {
+            eprintln!("[autopilot] warning: failed to initialize .autopilot.md ({error})");
+        }
 
         let last_modified = get_last_modified(&wt_path);
         let diff_stats = get_diff_stats_vs_origin_default(&wt_path);
