@@ -120,27 +120,42 @@ export function RightPanelToolbar({
 
   useEffect(() => {
     let cancelled = false;
+    let refreshInFlight = false;
 
     setHasCurrentWorkNotes(false);
     if (!worktreePath) return;
 
     const refreshCurrentWorkNotes = async () => {
+      if (refreshInFlight || document.visibilityState !== "visible") return;
+
+      refreshInFlight = true;
       try {
-        const markdown = await invoke<string>("read_autopilot_context", {
+        const hasContent = await invoke<boolean>("has_autopilot_context", {
           worktreePath,
         });
-        if (!cancelled) setHasCurrentWorkNotes(markdown.trim().length > 0);
+        if (!cancelled) setHasCurrentWorkNotes(hasContent);
       } catch {
-        if (!cancelled) setHasCurrentWorkNotes(false);
+        // Preserve the last known state when the file cannot be checked.
+      } finally {
+        refreshInFlight = false;
       }
     };
 
     void refreshCurrentWorkNotes();
-    const intervalId = window.setInterval(refreshCurrentWorkNotes, 2000);
+    const intervalId = window.setInterval(() => {
+      void refreshCurrentWorkNotes();
+    }, 2000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshCurrentWorkNotes();
+      }
+    };
 
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [worktreePath]);
 
