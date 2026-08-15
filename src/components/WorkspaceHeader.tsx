@@ -61,7 +61,7 @@ export function WorkspaceHeader({
       <button
         type="button"
         onClick={onToggleSidebar}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
+        className="flex h-7 w-9 shrink-0 items-center justify-center rounded-md text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
         title={`${sidebarOpen ? "Hide" : "Show"} sidebar (${formatShortcut(sidebarShortcut)})`}
         aria-label={`${sidebarOpen ? "Hide" : "Show"} sidebar, ${formatShortcut(sidebarShortcut)}`}
       >
@@ -71,7 +71,7 @@ export function WorkspaceHeader({
       <button
         type="button"
         onClick={onOpenCommandMenu}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
+        className="flex h-7 w-9 shrink-0 items-center justify-center rounded-md text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
         title={`Command menu (${formatShortcut(commandMenuShortcut)})`}
         aria-label={`Open command menu, ${formatShortcut(commandMenuShortcut)}`}
       >
@@ -95,7 +95,7 @@ export function WorkspaceHeader({
             <div
               key={tab.id}
               className={cn(
-                "group flex h-7 max-w-44 shrink-0 items-center rounded-md transition-colors",
+                "group flex h-6 max-w-44 shrink-0 items-center rounded-md transition-colors",
                 isActive
                   ? "bg-active text-primary shadow-[inset_0_0_0_1px_var(--color-border-default)]"
                   : "text-tertiary hover:bg-hover hover:text-secondary",
@@ -108,7 +108,7 @@ export function WorkspaceHeader({
                 onClick={() => {
                   if (!headerWorktree) setActiveTerminalTab(tab.id);
                 }}
-                className="flex h-full min-w-0 flex-1 items-center px-2.5 text-[12px] font-medium focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
+                className="flex h-full min-w-0 flex-1 items-center px-3 text-[12px] font-medium focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
                 title={label}
               >
                 <span className="truncate">{label}</span>
@@ -133,7 +133,7 @@ export function WorkspaceHeader({
         type="button"
         onClick={() => void createTerminalTab()}
         disabled={!canCreateTab}
-        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sm text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 disabled:cursor-default disabled:text-muted disabled:hover:bg-transparent"
+        className="flex h-6 w-8 shrink-0 items-center justify-center rounded-md text-sm text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 disabled:cursor-default disabled:text-muted disabled:hover:bg-transparent"
         title={
           canCreateTab
             ? "New terminal layout"
@@ -160,7 +160,7 @@ export function WorkspaceHeader({
           type="button"
           onClick={() => setCodeReviewOpen(!codeReviewOpen)}
           className={cn(
-            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2",
+            "flex h-6 w-8 shrink-0 items-center justify-center rounded-md transition-colors active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2",
             codeReviewOpen
               ? "text-primary"
               : "text-secondary hover:bg-hover hover:text-primary",
