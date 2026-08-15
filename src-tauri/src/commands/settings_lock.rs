@@ -155,7 +155,7 @@ pub async fn acquire_settings_lock(
 ) -> Result<(), String> {
     let settings_path = app
         .path()
-        .app_local_data_dir()
+        .app_data_dir()
         .map_err(|error| error.to_string())?
         .join(SETTINGS_FILE_NAME);
     let mut lock_path = settings_path.into_os_string();
