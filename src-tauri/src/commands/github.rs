@@ -1492,7 +1492,7 @@ pub async fn get_pr_reviewer_candidates(
     let (repo_owner, repo_name) = repo_info
         .split_once('/')
         .ok_or_else(|| format!("Invalid GitHub repository: {}", repo_info))?;
-    let teams_query = "query($owner:String!,$repoName:String!,$endCursor:String){organization(login:$owner){teams(first:100,after:$endCursor){nodes{name combinedSlug avatarUrl repositories(first:1,query:$repoName){nodes{nameWithOwner}}}pageInfo{hasNextPage endCursor}}}}";
+    let teams_query = "query($owner:String!,$repoName:String!,$endCursor:String){organization(login:$owner){teams(first:100,after:$endCursor){nodes{name combinedSlug avatarUrl repositories(first:100,query:$repoName){nodes{nameWithOwner}}}pageInfo{hasNextPage endCursor}}}}";
     let teams_jq = format!(
         ".data.organization.teams.nodes[]? | select(any(.repositories.nodes[]?; .nameWithOwner == \"{repo_info}\")) | [\"team\", .combinedSlug, .name, .avatarUrl] | @tsv"
     );
@@ -1511,18 +1511,19 @@ pub async fn get_pr_reviewer_candidates(
             &teams_jq,
         ])
         .current_dir(&repo_path)
-        .output();
-    if let Ok(teams_output) = teams_output {
-        if teams_output.status.success() {
-            if !stdout.is_empty() && !stdout.ends_with('\n') {
-                stdout.push('\n');
-            }
-            stdout.push_str(
-                &String::from_utf8(teams_output.stdout)
-                    .map_err(|e| format!("Invalid UTF-8 team list: {}", e))?,
-            );
-        }
+        .output()
+        .map_err(|e| format!("Failed to list repository teams: {}", e))?;
+    if !teams_output.status.success() {
+        let stderr = String::from_utf8_lossy(&teams_output.stderr);
+        return Err(format!("Failed to list repository teams: {}", stderr));
     }
+    if !stdout.is_empty() && !stdout.ends_with('\n') {
+        stdout.push('\n');
+    }
+    stdout.push_str(
+        &String::from_utf8(teams_output.stdout)
+            .map_err(|e| format!("Invalid UTF-8 team list: {}", e))?,
+    );
     parse_reviewer_candidates(&stdout)
 }
 
