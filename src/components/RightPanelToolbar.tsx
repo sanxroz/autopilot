@@ -3,11 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   ChevronDown,
   ExternalLink,
-  FileText,
   GitBranch,
   GitMerge,
   GitPullRequest,
   Loader,
+  NotepadText,
   AppWindow,
   type LucideIcon,
 } from "lucide-react";
@@ -77,6 +77,10 @@ export function RightPanelToolbar({
   const repositories = useAppStore((state) => state.repositories);
   const installedIdes = useAppStore((state) => state.installedIdes);
   const isLoadingIdes = useAppStore((state) => state.isLoadingInstalledIdes);
+  const personalNotes = useAppStore((state) =>
+    state.getSidebarNotesMarkdown(worktreePath),
+  );
+  const [hasCurrentWorkNotes, setHasCurrentWorkNotes] = useState(false);
   const [openingIdeId, setOpeningIdeId] = useState<string | null>(null);
 
   const repoPath = useMemo(
@@ -114,13 +118,40 @@ export function RightPanelToolbar({
     }
   }, [activeTab, onActiveTabChange, prStatus]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    setHasCurrentWorkNotes(false);
+    if (!worktreePath) return;
+
+    const refreshCurrentWorkNotes = async () => {
+      try {
+        const markdown = await invoke<string>("read_autopilot_context", {
+          worktreePath,
+        });
+        if (!cancelled) setHasCurrentWorkNotes(markdown.trim().length > 0);
+      } catch {
+        if (!cancelled) setHasCurrentWorkNotes(false);
+      }
+    };
+
+    void refreshCurrentWorkNotes();
+    const intervalId = window.setInterval(refreshCurrentWorkNotes, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [worktreePath]);
+
   const tabs: Array<{ id: RightPanelTabId; label: string; icon: LucideIcon }> = [
     { id: "git", label: "Git changes", icon: GitBranch },
     ...(prStatus
       ? [{ id: "pr" as const, label: "Pull request", icon: GitPullRequest }]
       : []),
-    { id: "notes", label: "Notes", icon: FileText },
+    { id: "notes", label: "Notes", icon: NotepadText },
   ];
+  const hasNotes = hasCurrentWorkNotes || personalNotes.trim().length > 0;
   const canMergePR = prStatus ? isReadyToMerge(prStatus) : false;
   const displayedTab = activeTab;
 
@@ -137,17 +168,27 @@ export function RightPanelToolbar({
               type="button"
               role="tab"
               aria-selected={displayedTab === tab.id}
-              aria-label={tab.label}
-              title={tab.label}
+              aria-label={
+                tab.id === "notes" && hasNotes ? "Notes, has content" : tab.label
+              }
+              title={
+                tab.id === "notes" && hasNotes ? "Notes (has content)" : tab.label
+              }
               onClick={() => onActiveTabChange(tab.id)}
               className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-md transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1",
+                "relative flex h-7 w-7 items-center justify-center rounded-md transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1",
                 displayedTab === tab.id
                   ? "text-primary"
                   : "text-muted hover:bg-hover hover:text-secondary",
               )}
             >
               <tab.icon className="h-4 w-4" strokeWidth={1.5} />
+              {tab.id === "notes" && hasNotes && (
+                <span
+                  className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-accent-primary ring-1 ring-[var(--color-bg-primary)]"
+                  aria-hidden="true"
+                />
+              )}
             </button>
         ))}
       </div>
