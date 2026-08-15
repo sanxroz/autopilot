@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   ChevronDown,
   ExternalLink,
@@ -121,12 +122,17 @@ export function RightPanelToolbar({
   useEffect(() => {
     let cancelled = false;
     let refreshInFlight = false;
+    let refreshNeeded = false;
 
     setHasCurrentWorkNotes(false);
     if (!worktreePath) return;
 
     const refreshCurrentWorkNotes = async () => {
-      if (refreshInFlight || document.visibilityState !== "visible") return;
+      if (cancelled || document.visibilityState !== "visible") return;
+      if (refreshInFlight) {
+        refreshNeeded = true;
+        return;
+      }
 
       refreshInFlight = true;
       try {
@@ -138,24 +144,35 @@ export function RightPanelToolbar({
         // Preserve the last known state when the file cannot be checked.
       } finally {
         refreshInFlight = false;
+        if (refreshNeeded) {
+          refreshNeeded = false;
+          void refreshCurrentWorkNotes();
+        }
       }
     };
 
+    const unlistenContextChanged = listen<{ worktree_path: string }>(
+      "autopilot-context-changed",
+      (event) => {
+        if (event.payload.worktree_path === worktreePath) {
+          void refreshCurrentWorkNotes();
+        }
+      },
+    );
     void refreshCurrentWorkNotes();
-    const intervalId = window.setInterval(() => {
-      void refreshCurrentWorkNotes();
-    }, 2000);
-    const handleVisibilityChange = () => {
+    const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") {
         void refreshCurrentWorkNotes();
       }
     };
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("focus", refreshWhenVisible);
     return () => {
       cancelled = true;
-      window.clearInterval(intervalId);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      unlistenContextChanged.then((unlisten) => unlisten());
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("focus", refreshWhenVisible);
     };
   }, [worktreePath]);
 
