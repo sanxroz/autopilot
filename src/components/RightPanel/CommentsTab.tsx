@@ -12,6 +12,11 @@ import { cn } from "../../utils/cn";
 import type { PRStatus, PRComment } from "../../types/github";
 import { groupReviewThreads, type PRReviewThread } from "./pr-activity";
 import {
+  applyReviewerOverrides,
+  clearAcknowledgedReviewerOverrides,
+  type ReviewerOverrides,
+} from "./reviewer-state";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -146,7 +151,7 @@ function ReviewerPicker({
   author: string;
   requestedReviewers: string[];
   reviewStates: ReadonlyMap<string, string | undefined>;
-  onRequestedReviewersChange: (reviewers: string[]) => void;
+  onRequestedReviewerChange: (reviewer: string, requested: boolean) => void;
 }) {
   const [candidates, setCandidates] = useState<ReviewerCandidate[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -183,11 +188,7 @@ function ReviewerPicker({
     setBusyReviewer(reviewer);
     try {
       await invoke(isRequested ? 'remove_pr_reviewer' : 'rerequest_pr_review', { repoPath, prNumber, reviewer });
-      onRequestedReviewersChange(
-        isRequested
-          ? requestedReviewers.filter((name) => name !== reviewer)
-          : [...requestedReviewers, reviewer],
-      );
+      onRequestedReviewerChange(reviewer, !isRequested);
       toast.success(isRequested ? `Removed @${reviewer}` : `Requested review from @${reviewer}`);
     } catch (reviewerError) {
       toast.error(`Couldn’t ${isRequested ? 'remove' : 'add'} @${reviewer}: ${String(reviewerError)}`);
@@ -275,12 +276,39 @@ export function CommentsTab({
 }: CommentsTabProps) {
   const [expandedImage, setExpandedImage] = useState<{ src: string; alt: string } | null>(null);
   const [isDescriptionOpen, setIsDescriptionOpen] = useState(false);
-  const [reviewers, setReviewers] = useState(prStatus?.requested_reviewers ?? []);
+  const [reviewerOverrides, setReviewerOverrides] = useState<{
+    prNumber: number;
+    values: ReviewerOverrides;
+  } | null>(null);
   const { prDetails, isLoading, error, fetchData } = useCachedPRData({ repoPath, prNumber, prStatus });
 
   useEffect(() => {
-    setReviewers(prStatus?.requested_reviewers ?? []);
-  }, [prStatus?.requested_reviewers]);
+    if (!prStatus) return;
+    setReviewerOverrides((current) => {
+      if (!current || current.prNumber !== prStatus.number) return current;
+      const values = clearAcknowledgedReviewerOverrides(current.values, prStatus.requested_reviewers);
+      return Object.keys(values).length > 0 ? { ...current, values } : null;
+    });
+  }, [prStatus]);
+
+  const activeReviewerOverrides = reviewerOverrides?.prNumber === prStatus?.number
+    ? reviewerOverrides.values
+    : {};
+  const reviewers = applyReviewerOverrides(
+    prStatus?.requested_reviewers ?? [],
+    activeReviewerOverrides,
+  );
+
+  const handleRequestedReviewerChange = (reviewer: string, requested: boolean) => {
+    if (!prStatus) return;
+    setReviewerOverrides((current) => ({
+      prNumber: prStatus.number,
+      values: {
+        ...(current?.prNumber === prStatus.number ? current.values : {}),
+        [reviewer.toLowerCase()]: { reviewer, requested },
+      },
+    }));
+  };
 
   const markdownComponents = {
     ...sharedMarkdownComponents,
@@ -445,14 +473,16 @@ export function CommentsTab({
                 <span aria-hidden="true">·</span>
                 <span>{formatDate(prStatus.created_at)}</span>
               </div>
-              <ReviewerPicker
-                repoPath={repoPath}
-                prNumber={prStatus.number}
-                author={prStatus.author}
-                requestedReviewers={reviewers}
-                reviewStates={reviewerReviewStates}
-                onRequestedReviewersChange={setReviewers}
-              />
+              {prStatus.state === "open" && !prStatus.merged && (
+                <ReviewerPicker
+                  repoPath={repoPath}
+                  prNumber={prStatus.number}
+                  author={prStatus.author}
+                  requestedReviewers={reviewers}
+                  reviewStates={reviewerReviewStates}
+                  onRequestedReviewerChange={handleRequestedReviewerChange}
+                />
+              )}
             </div>
 
             <h1 className="mt-3 text-pretty text-[17px] font-semibold leading-6 tracking-[-0.018em] text-primary">
