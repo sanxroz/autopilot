@@ -1270,14 +1270,14 @@ export function Sidebar({
             <button
               type="button"
               onClick={closeDeleteWorkspaceDialog}
-              className="min-h-10 rounded-md px-3 text-sm text-secondary transition-colors hover:bg-hover hover:text-primary motion-reduce:transition-none"
+              className="min-h-8 rounded-md px-4 text-sm text-secondary transition-colors hover:bg-hover hover:text-primary motion-reduce:transition-none"
             >
               Cancel
             </button>
             <button
               type="button"
               onClick={() => void confirmDeleteWorktree()}
-              className="min-h-10 rounded-md bg-semantic-error px-3 text-sm font-medium text-white transition-colors motion-reduce:transition-none"
+              className="min-h-8 rounded-md bg-semantic-error px-4 text-sm font-medium text-white transition-colors motion-reduce:transition-none"
             >
               Delete workspace
             </button>
