@@ -158,8 +158,16 @@ export function RightPanelToolbar({
           void refreshCurrentWorkNotes();
         }
       },
+    ).then(
+      (unlisten) => {
+        void refreshCurrentWorkNotes();
+        return unlisten;
+      },
+      () => {
+        void refreshCurrentWorkNotes();
+        return () => {};
+      },
     );
-    void refreshCurrentWorkNotes();
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") {
         void refreshCurrentWorkNotes();
