@@ -1000,76 +1000,6 @@ export function Sidebar({
                          for (const wt of worktrees) {
                            if (renderedWorktreePaths.has(wt.path)) continue;
 
-                           const sidebarGroup = groupByWorktreePath.get(wt.path);
-                           if (sidebarGroup) {
-                             const groupedWorktrees = sidebarGroup.worktreePaths
-                               .map((worktreePath) =>
-                                 group.worktrees.find((worktree) => worktree.path === worktreePath)
-                               )
-                               .filter(
-                                 (worktree): worktree is WorktreeInfo =>
-                                   worktree !== undefined && includedPaths.has(worktree.path),
-                               );
-
-                             if (groupedWorktrees.length > 0) {
-                               const isEditingGroup =
-                                 editingGroup?.repoPath === group.repoPath &&
-                                 editingGroup.groupId === sidebarGroup.id;
-                               const isGroupDropTarget =
-                                 dropTarget?.repoPath === group.repoPath &&
-                                 dropTarget.kind === "group" &&
-                                 dropTarget.groupId === sidebarGroup.id;
-
-                               for (const groupedWorktree of groupedWorktrees) {
-                                 renderedWorktreePaths.add(groupedWorktree.path);
-                               }
-
-                               elements.push(
-                                 <div
-                                   key={`${sectionId}-${sidebarGroup.id}`}
-                                   data-sidebar-group-drop-target="true"
-                                   data-repo-path={group.repoPath}
-                                   data-group-id={sidebarGroup.id}
-                                 >
-                                   <SidebarWorktreeGroup
-                                     label={sidebarGroup.name}
-                                     count={groupedWorktrees.length}
-                                     isDropTarget={isGroupDropTarget}
-                                     isEditing={isEditingGroup}
-                                     editingValue={
-                                       isEditingGroup ? editingGroup.value : sidebarGroup.name
-                                     }
-                                     onEditingValueChange={(value) =>
-                                       setEditingGroup({
-                                         repoPath: group.repoPath,
-                                         groupId: sidebarGroup.id,
-                                         value,
-                                       })
-                                     }
-                                     onEditingSubmit={() =>
-                                       commitGroupRename(
-                                         group.repoPath,
-                                         sidebarGroup.id,
-                                         isEditingGroup ? editingGroup.value : sidebarGroup.name,
-                                       )
-                                     }
-                                     onEditingCancel={() => setEditingGroup(null)}
-                                     onStartEditing={() =>
-                                       setEditingGroup({
-                                         repoPath: group.repoPath,
-                                         groupId: sidebarGroup.id,
-                                         value: sidebarGroup.name,
-                                       })
-                                     }
-                                   >
-                                     {groupedWorktrees.map(renderItem)}
-                                   </SidebarWorktreeGroup>
-                                 </div>,
-                               );
-                               continue;
-                             }
-                           }
-
                            const stackIndex = stackWorktreePaths.get(wt.path);
                            if (stackIndex !== undefined) {
                              const stack = stacks[stackIndex];
@@ -1109,6 +1039,64 @@ export function Sidebar({
                          return elements;
                        };
 
+                       const renderGroup = (sidebarGroup: SidebarWorktreeGroupModel) => {
+                         const groupedWorktrees = sidebarGroup.worktreePaths
+                           .map((worktreePath) =>
+                             group.worktrees.find((worktree) => worktree.path === worktreePath)
+                           )
+                           .filter((worktree): worktree is WorktreeInfo => worktree !== undefined);
+                         if (groupedWorktrees.length === 0) return null;
+
+                         const isEditingGroup =
+                           editingGroup?.repoPath === group.repoPath &&
+                           editingGroup.groupId === sidebarGroup.id;
+                         const isGroupDropTarget =
+                           dropTarget?.repoPath === group.repoPath &&
+                           dropTarget.kind === "group" &&
+                           dropTarget.groupId === sidebarGroup.id;
+
+                         return (
+                           <div
+                             key={sidebarGroup.id}
+                             data-sidebar-group-drop-target="true"
+                             data-repo-path={group.repoPath}
+                             data-group-id={sidebarGroup.id}
+                           >
+                             <SidebarWorktreeGroup
+                               label={sidebarGroup.name}
+                               count={groupedWorktrees.length}
+                               isDropTarget={isGroupDropTarget}
+                               isEditing={isEditingGroup}
+                               editingValue={isEditingGroup ? editingGroup.value : sidebarGroup.name}
+                               onEditingValueChange={(value) =>
+                                 setEditingGroup({
+                                   repoPath: group.repoPath,
+                                   groupId: sidebarGroup.id,
+                                   value,
+                                 })
+                               }
+                               onEditingSubmit={() =>
+                                 commitGroupRename(
+                                   group.repoPath,
+                                   sidebarGroup.id,
+                                   isEditingGroup ? editingGroup.value : sidebarGroup.name,
+                                 )
+                               }
+                               onEditingCancel={() => setEditingGroup(null)}
+                               onStartEditing={() =>
+                                 setEditingGroup({
+                                   repoPath: group.repoPath,
+                                   groupId: sidebarGroup.id,
+                                   value: sidebarGroup.name,
+                                 })
+                               }
+                             >
+                               {groupedWorktrees.map(renderItem)}
+                             </SidebarWorktreeGroup>
+                           </div>
+                         );
+                       };
+
                        const sections: readonly {
                          id: SessionSection;
                          label: string;
@@ -1119,8 +1107,24 @@ export function Sidebar({
 
                        return (
                          <div className="space-y-2.5 pb-1">
+                           {repoSidebarGroups.length > 0 && (
+                             <section aria-label={`${repoSidebarGroups.length} groups`}>
+                               <div className="flex h-7 items-center px-2.5 pt-0.5">
+                                 <h3 className="min-w-0 flex-1 truncate text-[11px] font-medium text-tertiary">
+                                   Groups
+                                 </h3>
+                                 <span className="font-mono text-[10px] tabular-nums text-tertiary">
+                                   {repoSidebarGroups.length}
+                                 </span>
+                               </div>
+                               <div className="space-y-1">
+                                 {repoSidebarGroups.map(renderGroup)}
+                               </div>
+                             </section>
+                           )}
                            {sections.map((section) => {
                              const worktrees = group.worktrees.filter((worktree) => {
+                               if (groupByWorktreePath.has(worktree.path)) return false;
                                if (sessionMode === "pr") {
                                  return getPrSessionSection(
                                    prStatusByWorktreePath[worktree.path] ?? null,

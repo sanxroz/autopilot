@@ -133,6 +133,7 @@ interface AppStore {
   clearPRDataCacheForRepo: (repoPath: string) => void;
   checkGitHubCli: () => Promise<void>;
   refreshProcessStatuses: () => Promise<void>;
+  refreshSidebarGroupsFromDisk: () => Promise<void>;
   getProcessStatus: (worktreePath: string) => ProcessStatus;
   setAgentRunState: (event: AgentStatusEvent) => void;
   clearAgentRunState: (worktreePath: string) => void;
@@ -157,8 +158,8 @@ interface AppStore {
 
 const STORE_PATH = 'autopilot-settings.json';
 const persistedStore = new LazyStore(STORE_PATH, { autoSave: true, defaults: {} });
-let storeSaveQueue = Promise.resolve();
-let sidebarNotesSaveQueue = Promise.resolve();
+let storeOperationQueue = Promise.resolve();
+let sidebarGroupsRevision = 0;
 let pendingLegacySidebarNotesMarkdown: string | null = null;
 const DEFAULT_AUTO_FETCH_SETTINGS: AutoFetchSettings = {
   enabled: false,
@@ -166,6 +167,24 @@ const DEFAULT_AUTO_FETCH_SETTINGS: AutoFetchSettings = {
 };
 
 const KNOWN_AGENTS: AIAgent[] = ['opencode', 'claude', 'droid', 'amp', 'codex', 'pi'];
+
+async function runStoreOperation<T>(operation: () => Promise<T>): Promise<T> {
+  const result = storeOperationQueue.catch(() => undefined).then(operation);
+  storeOperationQueue = result.then(() => undefined, () => undefined);
+  return result;
+}
+
+async function runStoreWrite<T>(operation: () => Promise<T>): Promise<T> {
+  return runStoreOperation(async () => {
+    await invoke('acquire_settings_lock');
+    try {
+      await persistedStore.reload({ ignoreDefaults: true });
+      return await operation();
+    } finally {
+      await invoke('release_settings_lock');
+    }
+  });
+}
 
 function isKnownAgent(value: string | undefined): value is AIAgent {
   return !!value && KNOWN_AGENTS.includes(value as AIAgent);
@@ -284,9 +303,10 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
 
 async function savePersistedState(state: PersistedState): Promise<void> {
   try {
-    const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
-    await store.set('repositoryPaths', state.repositoryPaths);
-    await store.save();
+    await runStoreWrite(async () => {
+      await persistedStore.set('repositoryPaths', state.repositoryPaths);
+      await persistedStore.save();
+    });
   } catch (e) {
     console.error('Failed to save state:', e);
   }
@@ -294,9 +314,10 @@ async function savePersistedState(state: PersistedState): Promise<void> {
 
 async function saveWorktreeOrdersByRepo(worktreeOrdersByRepo: Record<string, string[]>): Promise<void> {
   try {
-    const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
-    await store.set('worktreeOrdersByRepo', worktreeOrdersByRepo);
-    await store.save();
+    await runStoreWrite(async () => {
+      await persistedStore.set('worktreeOrdersByRepo', worktreeOrdersByRepo);
+      await persistedStore.save();
+    });
   } catch (e) {
     console.error('Failed to save worktree order state:', e);
   }
@@ -304,22 +325,40 @@ async function saveWorktreeOrdersByRepo(worktreeOrdersByRepo: Record<string, str
 
 async function saveSidebarGroupsByRepo(sidebarGroupsByRepo: Record<string, SidebarWorktreeGroup[]>): Promise<void> {
   try {
-    const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
-    await store.set('sidebarGroupsByRepo', sidebarGroupsByRepo);
-    await store.save();
+    await runStoreWrite(async () => {
+      await persistedStore.set('sidebarGroupsByRepo', sidebarGroupsByRepo);
+      await persistedStore.save();
+    });
   } catch (e) {
     console.error('Failed to save sidebar groups state:', e);
   }
 }
+
+async function saveSidebarLayout(
+  worktreeOrdersByRepo: Record<string, string[]>,
+  sidebarGroupsByRepo: Record<string, SidebarWorktreeGroup[]>,
+): Promise<void> {
+  try {
+    await runStoreWrite(async () => {
+      await persistedStore.set('worktreeOrdersByRepo', worktreeOrdersByRepo);
+      await persistedStore.set('sidebarGroupsByRepo', sidebarGroupsByRepo);
+      await persistedStore.save();
+    });
+  } catch (e) {
+    console.error('Failed to save sidebar layout state:', e);
+  }
+}
+
 async function saveAddressedComments(addressedComments: AddressedCommentsMap): Promise<void> {
   try {
-    const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
     const serialized: Record<string, string[]> = {};
     for (const [key, set] of Object.entries(addressedComments)) {
       serialized[key] = Array.from(set);
     }
-    await store.set('addressedComments', serialized);
-    await store.save();
+    await runStoreWrite(async () => {
+      await persistedStore.set('addressedComments', serialized);
+      await persistedStore.save();
+    });
   } catch (e) {
     console.error('Failed to save addressed comments:', e);
   }
@@ -327,24 +366,25 @@ async function saveAddressedComments(addressedComments: AddressedCommentsMap): P
 
 async function saveRepoAvatarCacheEntry(repoPath: string, avatarUrl: string | null): Promise<void> {
   try {
-    const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
-    const existing = (await store.get<Record<string, string>>('repoAvatarCache')) || {};
+    await runStoreWrite(async () => {
+      const existing = (await persistedStore.get<Record<string, string>>('repoAvatarCache')) || {};
 
-    if (avatarUrl) {
-      existing[repoPath] = avatarUrl;
-    } else {
-      delete existing[repoPath];
-    }
+      if (avatarUrl) {
+        existing[repoPath] = avatarUrl;
+      } else {
+        delete existing[repoPath];
+      }
 
-    await store.set('repoAvatarCache', existing);
-    await store.save();
+      await persistedStore.set('repoAvatarCache', existing);
+      await persistedStore.save();
+    });
   } catch (e) {
     console.error('Failed to save repo avatar cache:', e);
   }
 }
 
 async function saveStoreValue<T>(key: string, value: T): Promise<void> {
-  storeSaveQueue = storeSaveQueue.catch(() => undefined).then(async () => {
+  await runStoreWrite(async () => {
     try {
       await persistedStore.set(key, value);
       await persistedStore.save();
@@ -352,21 +392,18 @@ async function saveStoreValue<T>(key: string, value: T): Promise<void> {
       console.error(`Failed to save ${key}:`, e);
     }
   });
-  await storeSaveQueue;
 }
 
 async function saveSidebarNotesByWorktreePath(sidebarNotesByWorktreePath: Record<string, string>): Promise<void> {
-  sidebarNotesSaveQueue = sidebarNotesSaveQueue.catch(() => undefined).then(async () => {
+  await runStoreWrite(async () => {
     await persistedStore.set('sidebarNotesByWorktreePath', sidebarNotesByWorktreePath);
     await persistedStore.delete('sidebarNotesMarkdown');
     await persistedStore.save();
   });
-  await sidebarNotesSaveQueue;
 }
 
 async function flushSidebarNotesPersistence(): Promise<void> {
-  await sidebarNotesSaveQueue.catch(() => undefined);
-  await persistedStore.save();
+  await storeOperationQueue;
 }
 
 async function fetchRepoAvatarUrl(repoPath: string): Promise<string | null> {
@@ -610,6 +647,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   removeRepository: (path: string) => {
+    sidebarGroupsRevision += 1;
     set((state) => {
       const newRepos = state.repositories.filter((r) => r.info.path !== path);
       const { [path]: _removedOrder, ...remainingWorktreeOrders } = state.worktreeOrdersByRepo;
@@ -678,16 +716,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
       };
     });
 
-    if (nextWorktreeOrders) {
-      await saveWorktreeOrdersByRepo(nextWorktreeOrders);
-    }
     if (nextSidebarGroupsByRepo) {
-      await saveSidebarGroupsByRepo(nextSidebarGroupsByRepo);
+      sidebarGroupsRevision += 1;
+    }
+    if (nextWorktreeOrders || nextSidebarGroupsByRepo) {
+      const state = get();
+      await saveSidebarLayout(state.worktreeOrdersByRepo, state.sidebarGroupsByRepo);
     }
   },
 
   reorderWorktrees: async (repoPath: string, orderedWorktreePaths: string[]) => {
     const nextOrder = [...orderedWorktreePaths];
+    sidebarGroupsRevision += 1;
 
     set((state) => {
       const repo = state.repositories.find((item) => item.info.path === repoPath);
@@ -718,8 +758,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       };
     });
 
-    await saveWorktreeOrdersByRepo(get().worktreeOrdersByRepo);
-    await saveSidebarGroupsByRepo(get().sidebarGroupsByRepo);
+    const state = get();
+    await saveSidebarLayout(state.worktreeOrdersByRepo, state.sidebarGroupsByRepo);
   },
 
   createSidebarGroup: async (repoPath: string, sourceWorktreePath: string, targetWorktreePath: string) => {
@@ -765,18 +805,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
       };
     });
 
-    await saveWorktreeOrdersByRepo(get().worktreeOrdersByRepo);
-    await saveSidebarGroupsByRepo(get().sidebarGroupsByRepo);
+    if (createdGroupId) {
+      sidebarGroupsRevision += 1;
+      const state = get();
+      await saveSidebarLayout(state.worktreeOrdersByRepo, state.sidebarGroupsByRepo);
+    }
 
     return createdGroupId;
   },
 
   moveWorktreeInSidebar: async (repoPath: string, drop: SidebarWorktreeDrop) => {
+    let groupsChanged = false;
     set((state) => {
       const repo = state.repositories.find((item) => item.info.path === repoPath);
       if (!repo) {
         return state;
       }
+      groupsChanged = true;
 
       const orderedWorktreePaths = repo.worktrees
         .filter((worktree) => worktree.name !== 'main')
@@ -809,8 +854,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
       };
     });
 
-    await saveWorktreeOrdersByRepo(get().worktreeOrdersByRepo);
-    await saveSidebarGroupsByRepo(get().sidebarGroupsByRepo);
+    if (groupsChanged) {
+      sidebarGroupsRevision += 1;
+      const state = get();
+      await saveSidebarLayout(state.worktreeOrdersByRepo, state.sidebarGroupsByRepo);
+    }
   },
 
   renameSidebarGroup: async (repoPath: string, groupId: string, name: string) => {
@@ -825,7 +873,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
       },
     }));
 
-    await saveSidebarGroupsByRepo(get().sidebarGroupsByRepo);
+    sidebarGroupsRevision += 1;
+    const sidebarGroupsByRepo = get().sidebarGroupsByRepo;
+    await saveSidebarGroupsByRepo(sidebarGroupsByRepo);
   },
 
   updateWorktreeBranch: async (worktreePath: string) => {
@@ -1180,13 +1230,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setThemeMode: async (mode: ThemeMode) => {
     setGlobalThemeMode(mode);
-    try {
-      const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
-      await store.set('themeMode', mode);
-      await store.save();
-    } catch (e) {
-      console.error('Failed to save theme mode:', e);
-    }
+    await saveStoreValue('themeMode', mode);
   },
 
   setKeyboardShortcut: async (action, shortcut) => {
@@ -1452,6 +1496,31 @@ export const useAppStore = create<AppStore>((set, get) => ({
     } catch (e) {
       console.error('Failed to refresh process statuses:', e);
     }
+  },
+
+  refreshSidebarGroupsFromDisk: async () => {
+    const revisionBeforeRefresh = sidebarGroupsRevision;
+    const persistedGroups = await runStoreOperation(async () => {
+      await persistedStore.reload({ ignoreDefaults: true });
+      return (await persistedStore.get<Record<string, SidebarWorktreeGroup[]>>('sidebarGroupsByRepo')) ?? {};
+    });
+
+    if (revisionBeforeRefresh !== sidebarGroupsRevision) return;
+
+    set((state) => {
+      const sidebarGroupsByRepo = { ...persistedGroups };
+      for (const repo of state.repositories) {
+        const worktreePaths = repo.worktrees
+          .filter((worktree) => worktree.name !== 'main')
+          .map((worktree) => worktree.path);
+        sidebarGroupsByRepo[repo.info.path] = normalizeSidebarGroups(
+          persistedGroups[repo.info.path],
+          worktreePaths,
+          worktreePaths,
+        );
+      }
+      return { sidebarGroupsByRepo };
+    });
   },
 
   getProcessStatus: (worktreePath: string): ProcessStatus => {

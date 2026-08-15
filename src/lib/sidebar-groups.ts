@@ -27,7 +27,7 @@ function removePathFromGroups(
       ...group,
       worktreePaths: group.worktreePaths.filter((path) => path !== worktreePath),
     }))
-    .filter((group) => group.worktreePaths.length >= 2);
+    .filter((group) => group.worktreePaths.length >= 1);
 }
 
 function insertPath(
@@ -97,7 +97,7 @@ export function normalizeSidebarGroups(
       uniquePaths.push(path);
     }
 
-    if (uniquePaths.length < 2) {
+    if (uniquePaths.length === 0) {
       continue;
     }
 

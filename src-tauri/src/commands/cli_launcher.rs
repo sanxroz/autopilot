@@ -12,6 +12,8 @@ const LAUNCHER_NAME: &str = "autopilot";
 #[cfg(target_os = "windows")]
 const LAUNCHER_NAME: &str = "autopilot.cmd";
 const NOTE_SCRIPT_NAME: &str = "autopilot-note.mjs";
+const GROUP_SCRIPT_NAME: &str = "autopilot-group.mjs";
+const SETTINGS_SCRIPT_NAME: &str = "autopilot-settings.mjs";
 const RECOVER_SCRIPT_NAME: &str = "autopilot-recover.mjs";
 
 pub fn install_cli_launcher(app: &AppHandle) -> Result<(), String> {
@@ -23,38 +25,61 @@ pub fn install_cli_launcher(app: &AppHandle) -> Result<(), String> {
         .map_err(|error| error.to_string())?;
     let cli_dir = app_data_dir.join("cli");
     let note_script_path = cli_dir.join(NOTE_SCRIPT_NAME);
+    let group_script_path = cli_dir.join(GROUP_SCRIPT_NAME);
+    let settings_script_path = cli_dir.join(SETTINGS_SCRIPT_NAME);
     let launcher_path = launcher_dir.join(LAUNCHER_NAME);
 
-    #[cfg(not(target_os = "macos"))]
-    {
-        remove_legacy_launcher(&launcher_path, &note_script_path)
-            .map_err(|error| error.to_string())?;
-        remove_file_if_present(&note_script_path).map_err(|error| error.to_string())?;
-        #[cfg(not(target_os = "windows"))]
-        remove_unix_path_blocks(&home_dir, &launcher_dir).map_err(|error| error.to_string())?;
-        Ok(())
-    }
+    fs::create_dir_all(&cli_dir).map_err(|error| error.to_string())?;
+    fs::create_dir_all(&launcher_dir).map_err(|error| error.to_string())?;
+    remove_legacy_launcher(&launcher_path, &note_script_path).map_err(|error| error.to_string())?;
+    remove_file_if_present(&note_script_path).map_err(|error| error.to_string())?;
+    write_file_if_changed(
+        &group_script_path,
+        include_str!("../../../scripts/autopilot-group.mjs"),
+    )
+    .map_err(|error| error.to_string())?;
+    write_file_if_changed(
+        &settings_script_path,
+        include_str!("../../../scripts/autopilot-settings.mjs"),
+    )
+    .map_err(|error| error.to_string())?;
 
     #[cfg(target_os = "macos")]
     {
         let recover_script_path = cli_dir.join(RECOVER_SCRIPT_NAME);
-
-        fs::create_dir_all(&cli_dir).map_err(|error| error.to_string())?;
-        fs::create_dir_all(&launcher_dir).map_err(|error| error.to_string())?;
-
         write_file_if_changed(
             &recover_script_path,
             include_str!("../../../scripts/autopilot-recover.mjs"),
         )
         .map_err(|error| error.to_string())?;
-        write_file_if_changed(&launcher_path, &build_unix_launcher(&recover_script_path))
-            .map_err(|error| error.to_string())?;
+        write_file_if_changed(
+            &launcher_path,
+            &build_unix_launcher(&group_script_path, Some(&recover_script_path)),
+        )
+        .map_err(|error| error.to_string())?;
         set_executable(&launcher_path).map_err(|error| error.to_string())?;
         ensure_unix_path_contains(&launcher_dir)?;
-        remove_file_if_present(&note_script_path).map_err(|error| error.to_string())?;
-
-        Ok(())
     }
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        write_file_if_changed(
+            &launcher_path,
+            &build_unix_launcher(&group_script_path, None),
+        )
+        .map_err(|error| error.to_string())?;
+        set_executable(&launcher_path).map_err(|error| error.to_string())?;
+        ensure_unix_path_contains(&launcher_dir)?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        write_file_if_changed(&launcher_path, &build_windows_launcher(&group_script_path))
+            .map_err(|error| error.to_string())?;
+        ensure_windows_path_contains(&launcher_dir)?;
+    }
+
+    Ok(())
 }
 
 fn remove_file_if_present(path: &Path) -> Result<(), std::io::Error> {
@@ -205,20 +230,38 @@ fn write_file_if_changed(path: &Path, contents: &str) -> Result<(), std::io::Err
     }
 }
 
-fn build_unix_launcher(recover_script_path: &Path) -> String {
+fn build_unix_launcher(group_script_path: &Path, recover_script_path: Option<&Path>) -> String {
+    let (recover_route, recover_usage) = match recover_script_path {
+        Some(path) => (
+            format!(
+                r#"  recover)
+    shift
+    exec bun run "{}" "$@"
+    ;;
+"#,
+                path.display()
+            ),
+            "  autopilot recover [--list]\n",
+        ),
+        None => (String::new(), ""),
+    };
+
     format!(
         r#"#!/bin/sh
 set -eu
 
 case "${{1:-}}" in
-  recover)
+  group)
     shift
     exec bun run "{}" "$@"
     ;;
-  --help|-h|help|"")
+{}  --help|-h|help|"")
     cat <<'EOF'
 Usage:
-  autopilot recover [--list]
+  autopilot group [--worktree <path>] set <name>
+  autopilot group [--worktree <path>] get
+  autopilot group [--worktree <path>] clear
+{}
 EOF
     ;;
   *)
@@ -227,7 +270,52 @@ EOF
     ;;
 esac
 "#,
-        recover_script_path.display(),
+        group_script_path.display(),
+        recover_route,
+        recover_usage,
+    )
+}
+
+#[cfg(any(test, target_os = "windows"))]
+fn build_windows_launcher(group_script_path: &Path) -> String {
+    format!(
+        r#"@echo off
+setlocal EnableExtensions EnableDelayedExpansion
+
+if /I "%~1"=="group" goto group
+if /I "%~1"=="--help" goto help
+if /I "%~1"=="-h" goto help
+if /I "%~1"=="help" goto help
+if "%~1"=="" goto help
+
+echo Unknown autopilot command: %~1 1>&2
+exit /b 1
+
+:group
+shift
+set "ARGS="
+:collect_group_args
+if "%~1"=="" goto run_group
+if defined ARGS (
+  set "ARGS=!ARGS! "%~1""
+) else (
+  set "ARGS="%~1""
+)
+shift
+goto collect_group_args
+
+:run_group
+bun run "{}" !ARGS!
+exit /b %ERRORLEVEL%
+
+:help
+echo Usage:
+echo   autopilot group [--worktree ^<path^>] set ^<name^>
+echo   autopilot group [--worktree ^<path^>] get
+echo   autopilot group [--worktree ^<path^>] clear
+exit /b 0
+"#,
+        group_script_path.display(),
     )
 }
 
@@ -239,6 +327,79 @@ fn set_executable(path: &Path) -> Result<(), std::io::Error> {
     let mut permissions = metadata.permissions();
     permissions.set_mode(0o755);
     fs::set_permissions(path, permissions)
+}
+
+#[cfg(target_os = "windows")]
+fn ensure_windows_path_contains(launcher_dir: &Path) -> Result<(), String> {
+    let launcher_dir = launcher_dir.display().to_string();
+    let existing = read_windows_user_path().map_err(|error| error.to_string())?;
+    if path_contains_entry(&existing, &launcher_dir) {
+        return Ok(());
+    }
+
+    let next = if existing.is_empty() {
+        launcher_dir
+    } else {
+        format!("{existing};{launcher_dir}")
+    };
+    write_windows_user_path(&next).map_err(|error| error.to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn read_windows_user_path() -> Result<String, std::io::Error> {
+    use std::process::Command;
+
+    let output = Command::new("reg")
+        .args(["query", r"HKCU\Environment", "/v", "Path"])
+        .output()?;
+    if !output.status.success() {
+        return Ok(String::new());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if let Some((_, value)) = trimmed.split_once("REG_EXPAND_SZ") {
+            return Ok(value.trim().to_string());
+        }
+        if let Some((_, value)) = trimmed.split_once("REG_SZ") {
+            return Ok(value.trim().to_string());
+        }
+    }
+    Ok(String::new())
+}
+
+#[cfg(target_os = "windows")]
+fn write_windows_user_path(path_value: &str) -> Result<(), std::io::Error> {
+    use std::process::Command;
+
+    let status = Command::new("reg")
+        .args([
+            "add",
+            r"HKCU\Environment",
+            "/v",
+            "Path",
+            "/t",
+            "REG_EXPAND_SZ",
+            "/d",
+            path_value,
+            "/f",
+        ])
+        .status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(std::io::Error::other("failed to update user PATH"))
+    }
+}
+
+#[cfg(any(test, target_os = "windows"))]
+fn path_contains_entry(path_value: &str, entry: &str) -> bool {
+    path_value
+        .split(';')
+        .map(str::trim)
+        .filter(|segment| !segment.is_empty())
+        .any(|segment| segment.eq_ignore_ascii_case(entry))
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -266,15 +427,6 @@ fn unix_path_block(launcher_dir: &Path) -> String {
         marker = PATH_BLOCK_MARKER,
         launcher_dir = launcher_dir.display()
     )
-}
-
-#[cfg(not(target_os = "windows"))]
-fn remove_unix_path_blocks(home_dir: &Path, launcher_dir: &Path) -> Result<(), std::io::Error> {
-    let path_block = unix_path_block(launcher_dir);
-    for path in [".profile", ".bashrc", ".zprofile", ".zshrc"] {
-        remove_block_if_present(&home_dir.join(path), &path_block)?;
-    }
-    Ok(())
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -326,19 +478,54 @@ mod tests {
         remove_block_if_present, unix_path_block,
     };
     use super::{
-        build_legacy_windows_launcher, is_legacy_windows_launcher, remove_file_if_present,
-        remove_legacy_launcher,
+        build_legacy_windows_launcher, build_windows_launcher, is_legacy_windows_launcher,
+        path_contains_entry, remove_file_if_present, remove_legacy_launcher,
     };
 
     #[cfg(not(target_os = "windows"))]
     #[test]
-    fn unix_launcher_routes_recovery() {
-        let launcher = build_unix_launcher(Path::new("/tmp/autopilot-recover.mjs"));
+    fn unix_launcher_routes_groups_and_recovery() {
+        let launcher = build_unix_launcher(
+            Path::new("/tmp/autopilot-group.mjs"),
+            Some(Path::new("/tmp/autopilot-recover.mjs")),
+        );
 
+        assert!(launcher.contains("group)\n    shift\n    exec bun run"));
+        assert!(launcher.contains("/tmp/autopilot-group.mjs"));
+        assert!(launcher.contains("autopilot group [--worktree <path>] set <name>"));
         assert!(launcher.contains("recover)\n    shift\n    exec bun run"));
         assert!(launcher.contains("/tmp/autopilot-recover.mjs"));
         assert!(launcher.contains("autopilot recover [--list]"));
         assert!(!launcher.contains("autopilot note"));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn unix_launcher_keeps_groups_when_recovery_is_unavailable() {
+        let launcher = build_unix_launcher(Path::new("/tmp/autopilot-group.mjs"), None);
+
+        assert!(launcher.contains("group)\n    shift\n    exec bun run"));
+        assert!(!launcher.contains("recover)"));
+        assert!(!launcher.contains("autopilot recover"));
+        assert!(!launcher.contains("autopilot note"));
+    }
+
+    #[test]
+    fn windows_launcher_routes_groups_without_notes() {
+        let launcher = build_windows_launcher(Path::new(r"C:\Autopilot\autopilot-group.mjs"));
+
+        assert!(launcher.contains("if /I \"%~1\"==\"group\" goto group"));
+        assert!(launcher.contains("bun run \"C:\\Autopilot\\autopilot-group.mjs\" !ARGS!"));
+        assert!(launcher.contains("autopilot group [--worktree ^<path^>] set ^<name^>"));
+        assert!(!launcher.contains("autopilot note"));
+    }
+
+    #[test]
+    fn windows_path_matching_ignores_case_and_spacing() {
+        assert!(path_contains_entry(
+            r"C:\Users\me\.local\bin; C:\Windows\System32",
+            r"c:\users\me\.LOCAL\BIN"
+        ));
     }
 
     #[test]

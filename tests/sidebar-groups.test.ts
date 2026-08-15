@@ -58,7 +58,7 @@ describe("sidebar worktree groups", () => {
     ]);
   });
 
-  test("ungroups the last remaining item when a two-item group is split", () => {
+  test("keeps a one-item group when another worktree moves out", () => {
     const result = moveWorktreeInSidebar(
       {
         groups: [
@@ -78,7 +78,13 @@ describe("sidebar worktree groups", () => {
     );
 
     expect(result.orderedWorktreePaths).toEqual(["alpha", "gamma", "beta"]);
-    expect(result.groups).toEqual([]);
+    expect(result.groups).toEqual<SidebarWorktreeGroup[]>([
+      {
+        id: "group-1",
+        name: "Review",
+        worktreePaths: ["alpha"],
+      },
+    ]);
   });
 
   test("drops a worktree into an existing group", () => {
@@ -110,7 +116,29 @@ describe("sidebar worktree groups", () => {
     ]);
   });
 
-  test("normalizes away invalid and undersized groups", () => {
+  test("moves a worktree from one group into another", () => {
+    const result = moveWorktreeInSidebar(
+      {
+        groups: [
+          { id: "group-1", name: "First", worktreePaths: ["alpha", "beta"] },
+          { id: "group-2", name: "Second", worktreePaths: ["gamma"] },
+        ],
+        orderedWorktreePaths: ["alpha", "beta", "gamma"],
+      },
+      {
+        sourceWorktreePath: "beta",
+        targetGroupId: "group-2",
+        position: "inside",
+      },
+    );
+
+    expect(result.groups).toEqual<SidebarWorktreeGroup[]>([
+      { id: "group-1", name: "First", worktreePaths: ["alpha"] },
+      { id: "group-2", name: "Second", worktreePaths: ["gamma", "beta"] },
+    ]);
+  });
+
+  test("normalizes away invalid groups and preserves one-item groups", () => {
     const result = normalizeSidebarGroups(
       [
         {
@@ -129,6 +157,11 @@ describe("sidebar worktree groups", () => {
     );
 
     expect(result).toEqual<SidebarWorktreeGroup[]>([
+      {
+        id: "group-1",
+        name: "New group",
+        worktreePaths: ["alpha"],
+      },
       {
         id: "group-2",
         name: "Valid",

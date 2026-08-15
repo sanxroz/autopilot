@@ -65,7 +65,7 @@ export function SidebarWorktreeGroup({
           }
         }}
         aria-expanded={!collapsed}
-        aria-label={`Group: ${label}, ${count} worktrees, ${
+        aria-label={`Group: ${label}, ${count} sessions, ${
           collapsed ? "collapsed" : "expanded"
         }`}
       >
@@ -130,7 +130,7 @@ export function SidebarWorktreeGroup({
           </motion.span>
         </div>
         <div className="text-xs flex items-center gap-1 pl-5 text-secondary">
-          {count} {count === 1 ? "workspace" : "workspaces"}
+          {count} {count === 1 ? "session" : "sessions"}
         </div>
       </div>
 

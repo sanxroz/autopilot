@@ -2,7 +2,9 @@
 
 mod commands;
 
-use commands::{editor, git, github, github_checks, notes, process, terminal, watcher};
+use commands::{
+    editor, git, github, github_checks, notes, process, settings_lock, terminal, watcher,
+};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -166,6 +168,7 @@ pub fn run() {
             Ok(())
         })
         .manage(watcher::WatcherState::default())
+        .manage(settings_lock::SettingsLockState::default())
         .invoke_handler(tauri::generate_handler![
             git::discover_repository,
             git::list_worktrees,
@@ -224,6 +227,8 @@ pub fn run() {
             editor::open_worktree_in_ide,
             process::get_worktree_process_status,
             process::get_all_worktrees_process_status,
+            settings_lock::acquire_settings_lock,
+            settings_lock::release_settings_lock,
             terminal::spawn_terminal,
             terminal::spawn_terminal_with_command,
             terminal::write_to_terminal,
