@@ -103,11 +103,8 @@ pub fn read_autopilot_context(worktree_path: String) -> Result<String, String> {
 pub fn has_autopilot_context(worktree_path: String) -> Result<bool, String> {
     let context_path = validate_worktree(&worktree_path)?.join(CONTEXT_FILE_NAME);
 
-    match fs::metadata(&context_path) {
-        Ok(metadata) if metadata.len() > MAX_CONTEXT_BYTES => Ok(true),
-        Ok(_) => fs::read_to_string(context_path)
-            .map(|markdown| !markdown.trim().is_empty())
-            .map_err(|error| error.to_string()),
+    match fs::read_to_string(context_path) {
+        Ok(markdown) => Ok(!markdown.trim().is_empty()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error.to_string()),
     }
@@ -221,6 +218,13 @@ mod tests {
         let read_error = read_autopilot_context(worktree_path).unwrap_err();
         assert_eq!(read_error, ".autopilot.md is larger than 1 MB");
         assert!(has_autopilot_context(repository.to_string_lossy().to_string()).unwrap());
+
+        fs::write(
+            repository.join(CONTEXT_FILE_NAME),
+            vec![b' '; MAX_CONTEXT_BYTES as usize + 1],
+        )
+        .unwrap();
+        assert!(!has_autopilot_context(repository.to_string_lossy().to_string()).unwrap());
 
         fs::remove_dir_all(repository).unwrap();
     }
