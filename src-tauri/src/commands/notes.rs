@@ -100,6 +100,17 @@ pub fn read_autopilot_context(worktree_path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub fn has_autopilot_context(worktree_path: String) -> Result<bool, String> {
+    let context_path = validate_worktree(&worktree_path)?.join(CONTEXT_FILE_NAME);
+
+    match fs::read_to_string(context_path) {
+        Ok(markdown) => Ok(!markdown.trim().is_empty()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+#[tauri::command]
 pub fn write_autopilot_context(worktree_path: String, markdown: String) -> Result<(), String> {
     if markdown.len() as u64 > MAX_CONTEXT_BYTES {
         return Err(".autopilot.md cannot be larger than 1 MB".to_string());
@@ -145,8 +156,10 @@ mod tests {
         let repository = make_repository();
         let worktree_path = repository.to_string_lossy().to_string();
 
+        assert!(!has_autopilot_context(worktree_path.clone()).unwrap());
         assert_eq!(read_autopilot_context(worktree_path.clone()).unwrap(), "");
         write_autopilot_context(worktree_path.clone(), "# Current work\n".to_string()).unwrap();
+        assert!(has_autopilot_context(worktree_path.clone()).unwrap());
         assert_eq!(
             read_autopilot_context(worktree_path.clone()).unwrap(),
             "# Current work\n"
@@ -204,6 +217,14 @@ mod tests {
         .unwrap();
         let read_error = read_autopilot_context(worktree_path).unwrap_err();
         assert_eq!(read_error, ".autopilot.md is larger than 1 MB");
+        assert!(has_autopilot_context(repository.to_string_lossy().to_string()).unwrap());
+
+        fs::write(
+            repository.join(CONTEXT_FILE_NAME),
+            vec![b' '; MAX_CONTEXT_BYTES as usize + 1],
+        )
+        .unwrap();
+        assert!(!has_autopilot_context(repository.to_string_lossy().to_string()).unwrap());
 
         fs::remove_dir_all(repository).unwrap();
     }

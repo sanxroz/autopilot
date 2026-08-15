@@ -221,6 +221,7 @@ pub fn run() {
             github::merge_pr,
             github::get_assigned_issues,
             github::get_notifications,
+            notes::has_autopilot_context,
             notes::read_autopilot_context,
             notes::write_autopilot_context,
             editor::list_installed_ide_apps,
