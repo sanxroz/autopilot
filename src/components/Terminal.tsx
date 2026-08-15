@@ -2,9 +2,11 @@ import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
+import { WebLinksAddon } from "@xterm/addon-web-links";
 import type { ISearchOptions } from "@xterm/addon-search";
 import { listen } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import "@xterm/xterm/css/xterm.css";
 import { useTheme } from "../hooks/useTheme";
 import { getTheme, subscribeTheme } from "../theme";
@@ -106,12 +108,19 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
   useEffect(() => {
     if (!containerRef.current) return;
 
+    const openTerminalLink = (_event: MouseEvent, uri: string) => {
+      void openUrl(uri).catch((error) => {
+        console.error(`Failed to open terminal link "${uri}":`, error);
+      });
+    };
+
     const term = new XTerm({
       cursorBlink: true,
       fontSize: 13,
       fontFamily: '"SF Mono", ui-monospace, Menlo, Monaco, "Courier New", monospace',
       scrollback: TERMINAL_SCROLLBACK_LINES,
       allowTransparency: true,
+      linkHandler: { activate: openTerminalLink },
       // Required for SearchAddon decorations — registerDecoration is experimental in xterm v6
       allowProposedApi: true,
       theme: {
@@ -144,6 +153,9 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
 
     const searchAddon = new SearchAddon();
     term.loadAddon(searchAddon);
+
+    const webLinksAddon = new WebLinksAddon(openTerminalLink);
+    term.loadAddon(webLinksAddon);
 
     term.open(containerRef.current);
 
