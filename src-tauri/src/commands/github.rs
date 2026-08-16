@@ -1511,19 +1511,25 @@ pub async fn get_pr_reviewer_candidates(
             &teams_jq,
         ])
         .current_dir(&repo_path)
-        .output()
-        .map_err(|e| format!("Failed to list repository teams: {}", e))?;
-    if !teams_output.status.success() {
-        let stderr = String::from_utf8_lossy(&teams_output.stderr);
-        return Err(format!("Failed to list repository teams: {}", stderr));
+        .output();
+    match teams_output {
+        Ok(output) if output.status.success() => {
+            if !stdout.is_empty() && !stdout.ends_with('\n') {
+                stdout.push('\n');
+            }
+            stdout.push_str(
+                &String::from_utf8(output.stdout)
+                    .map_err(|e| format!("Invalid UTF-8 team list: {}", e))?,
+            );
+        }
+        Ok(output) => eprintln!(
+            "[autopilot] warning: failed to list repository teams ({})",
+            String::from_utf8_lossy(&output.stderr)
+        ),
+        Err(error) => {
+            eprintln!("[autopilot] warning: failed to execute repository team lookup ({error})")
+        }
     }
-    if !stdout.is_empty() && !stdout.ends_with('\n') {
-        stdout.push('\n');
-    }
-    stdout.push_str(
-        &String::from_utf8(teams_output.stdout)
-            .map_err(|e| format!("Invalid UTF-8 team list: {}", e))?,
-    );
     parse_reviewer_candidates(&stdout)
 }
 
@@ -2556,6 +2562,19 @@ mod tests {
         assert!(comments
             .iter()
             .all(|comment| comment.thread_id.as_deref() == Some("thread-1")));
+    }
+
+    #[test]
+    fn reviewer_candidates_allow_user_only_results() {
+        assert_eq!(
+            parse_reviewer_candidates("user\talan\tAlan\thttps://avatars.example/alan\n"),
+            Ok(vec![ReviewerCandidate {
+                identifier: "alan".to_string(),
+                display_name: "Alan".to_string(),
+                avatar_url: "https://avatars.example/alan".to_string(),
+                kind: ReviewerCandidateKind::User,
+            }])
+        );
     }
 
     #[test]
