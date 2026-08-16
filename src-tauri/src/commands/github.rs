@@ -206,7 +206,27 @@ fn is_bot_author(author: &str, head_branch: &str) -> bool {
         || branch_lc.starts_with("pi/")
 }
 
-fn map_gh_pr_to_status(pr: GhPRResponse) -> PRStatus {
+fn requested_reviewer_identifier(
+    request: &serde_json::Value,
+    repo_owner: Option<&str>,
+) -> Option<String> {
+    let reviewer = request.get("requestedReviewer").unwrap_or(request);
+    reviewer
+        .get("login")
+        .and_then(|value| value.as_str())
+        .or_else(|| {
+            reviewer
+                .get("combinedSlug")
+                .and_then(|value| value.as_str())
+        })
+        .map(ToString::to_string)
+        .or_else(|| {
+            let slug = reviewer.get("slug")?.as_str()?;
+            Some(format!("{}/{}", repo_owner?, slug))
+        })
+}
+
+fn map_gh_pr_to_status(pr: GhPRResponse, repo_owner: Option<&str>) -> PRStatus {
     let author = pr
         .author
         .map(|a| a.login)
@@ -217,19 +237,7 @@ fn map_gh_pr_to_status(pr: GhPRResponse) -> PRStatus {
     let requested_reviewers = pr
         .review_requests
         .into_iter()
-        .filter_map(|request| {
-            request
-                .get("login")
-                .and_then(|v| v.as_str())
-                .map(ToString::to_string)
-                .or_else(|| {
-                    request
-                        .get("requestedReviewer")
-                        .and_then(|v| v.get("login"))
-                        .and_then(|v| v.as_str())
-                        .map(ToString::to_string)
-                })
-        })
+        .filter_map(|request| requested_reviewer_identifier(&request, repo_owner))
         .collect::<Vec<_>>();
 
     PRStatus {
@@ -339,7 +347,11 @@ pub async fn get_pr_for_branch(
     let prs: Vec<GhPRResponse> =
         serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
-    Ok(prs.into_iter().next().map(map_gh_pr_to_status))
+    let repo_owner = parse_github_owner_repo(&repo_path).map(|(owner, _)| owner);
+    Ok(prs
+        .into_iter()
+        .next()
+        .map(|pr| map_gh_pr_to_status(pr, repo_owner.as_deref())))
 }
 
 #[derive(Debug, Deserialize)]
@@ -453,11 +465,7 @@ fn parse_graphql_pr_node(node: &serde_json::Value) -> Option<PRStatusCandidate> 
         .map(|nodes| {
             nodes
                 .iter()
-                .filter_map(|request| {
-                    request["requestedReviewer"]["login"]
-                        .as_str()
-                        .map(ToString::to_string)
-                })
+                .filter_map(|request| requested_reviewer_identifier(request, None))
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
@@ -727,6 +735,7 @@ fn fetch_prs_graphql(
                                 nodes {{
                                     requestedReviewer {{
                                         ... on User {{ login }}
+                                        ... on Team {{ combinedSlug }}
                                     }}
                                 }}
                             }}
@@ -857,6 +866,7 @@ fn fetch_prs_rest_fallback(
     worktrees: &[WorktreePRLookup],
     branches: &[String],
 ) -> RepoPRStatuses {
+    let repo_owner = parse_github_owner_repo(repo_path).map(|(owner, _)| owner);
     let mut branch_candidates: HashMap<String, Vec<PRStatusCandidate>> = HashMap::new();
     let mut failed_branches = HashSet::new();
 
@@ -886,7 +896,7 @@ fn fetch_prs_rest_fallback(
                             .map(|pr| {
                                 let head_oid = pr.commits.last().map(|commit| commit.oid.clone());
                                 PRStatusCandidate {
-                                    status: map_gh_pr_to_status(pr),
+                                    status: map_gh_pr_to_status(pr, repo_owner.as_deref()),
                                     head_oid,
                                 }
                             })
@@ -985,6 +995,7 @@ pub async fn get_all_open_prs_for_repos(
     let mut results = Vec::new();
 
     for repo in repos {
+        let repo_owner = parse_github_owner_repo(&repo.repo_path).map(|(owner, _)| owner);
         let output = Command::new(&gh_path)
             .args([
                 "pr",
@@ -1003,7 +1014,9 @@ pub async fn get_all_open_prs_for_repos(
             Ok(out) if out.status.success() => {
                 let stdout = String::from_utf8(out.stdout).unwrap_or_default();
                 let prs: Vec<GhPRResponse> = serde_json::from_str(&stdout).unwrap_or_default();
-                prs.into_iter().map(map_gh_pr_to_status).collect()
+                prs.into_iter()
+                    .map(|pr| map_gh_pr_to_status(pr, repo_owner.as_deref()))
+                    .collect()
             }
             Ok(out) => {
                 let stderr = String::from_utf8_lossy(&out.stderr);
@@ -1056,7 +1069,8 @@ pub async fn get_pr_status(repo_path: String, pr_number: u64) -> Result<PRStatus
     let pr: GhPRResponse =
         serde_json::from_str(&stdout).map_err(|e| format!("Failed to parse JSON: {}", e))?;
 
-    Ok(map_gh_pr_to_status(pr))
+    let repo_owner = parse_github_owner_repo(&repo_path).map(|(owner, _)| owner);
+    Ok(map_gh_pr_to_status(pr, repo_owner.as_deref()))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1401,9 +1415,24 @@ pub async fn remove_pr_reviewer(
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ReviewerCandidateKind {
+    User,
+    Team,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct ReviewerCandidate {
-    pub login: String,
+    pub identifier: String,
+    pub display_name: String,
     pub avatar_url: String,
+    pub kind: ReviewerCandidateKind,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct ReviewerCandidateResult {
+    pub candidates: Vec<ReviewerCandidate>,
+    pub teams_unavailable: bool,
 }
 
 fn parse_reviewer_candidates(stdout: &str) -> Result<Vec<ReviewerCandidate>, String> {
@@ -1412,27 +1441,45 @@ fn parse_reviewer_candidates(stdout: &str) -> Result<Vec<ReviewerCandidate>, Str
         .map(str::trim)
         .filter(|line| !line.is_empty())
         .map(|line| {
-            let (login, avatar_url) = line
-                .split_once('\t')
-                .ok_or_else(|| format!("Invalid reviewer candidate: {}", line))?;
-            if login.is_empty() || avatar_url.is_empty() {
+            let fields = line.split('\t').collect::<Vec<_>>();
+            let [kind, identifier, display_name, avatar_url] = fields.as_slice() else {
+                return Err(format!("Invalid reviewer candidate: {}", line));
+            };
+            if identifier.is_empty() || display_name.is_empty() || avatar_url.is_empty() {
                 return Err(format!("Invalid reviewer candidate: {}", line));
             }
+            let kind = match *kind {
+                "user" => ReviewerCandidateKind::User,
+                "team" => ReviewerCandidateKind::Team,
+                _ => return Err(format!("Invalid reviewer candidate: {}", line)),
+            };
             Ok(ReviewerCandidate {
-                login: login.to_owned(),
-                avatar_url: avatar_url.to_owned(),
+                identifier: identifier.to_string(),
+                display_name: display_name.to_string(),
+                avatar_url: avatar_url.to_string(),
+                kind,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    reviewers.sort_unstable_by_key(|reviewer| reviewer.login.to_lowercase());
-    reviewers.dedup_by(|a, b| a.login.eq_ignore_ascii_case(&b.login));
+    reviewers.sort_unstable_by_key(|reviewer| reviewer.identifier.to_lowercase());
+    reviewers.dedup_by(|a, b| a.identifier.eq_ignore_ascii_case(&b.identifier));
     Ok(reviewers)
+}
+
+fn reviewer_candidate_result(
+    stdout: &str,
+    teams_unavailable: bool,
+) -> Result<ReviewerCandidateResult, String> {
+    Ok(ReviewerCandidateResult {
+        candidates: parse_reviewer_candidates(stdout)?,
+        teams_unavailable,
+    })
 }
 
 #[tauri::command]
 pub async fn get_pr_reviewer_candidates(
     repo_path: String,
-) -> Result<Vec<ReviewerCandidate>, String> {
+) -> Result<ReviewerCandidateResult, String> {
     let gh_path = find_cli_tool("gh")?;
     let repo_info = resolve_repo_name_with_owner(&repo_path).await?;
     let endpoint = format!("repos/{}/collaborators?per_page=100", repo_info);
@@ -1442,7 +1489,7 @@ pub async fn get_pr_reviewer_candidates(
             &endpoint,
             "--paginate",
             "--jq",
-            ".[] | [.login, .avatar_url] | @tsv",
+            ".[] | [\"user\", .login, .login, .avatar_url] | @tsv",
         ])
         .current_dir(&repo_path)
         .output()
@@ -1456,9 +1503,55 @@ pub async fn get_pr_reviewer_candidates(
         ));
     }
 
-    let stdout = String::from_utf8(output.stdout)
+    let mut stdout = String::from_utf8(output.stdout)
         .map_err(|e| format!("Invalid UTF-8 collaborator list: {}", e))?;
-    parse_reviewer_candidates(&stdout)
+    let (repo_owner, repo_name) = repo_info
+        .split_once('/')
+        .ok_or_else(|| format!("Invalid GitHub repository: {}", repo_info))?;
+    let teams_query = "query($owner:String!,$repoName:String!,$endCursor:String){organization(login:$owner){teams(first:100,after:$endCursor){nodes{name combinedSlug avatarUrl repositories(first:100,query:$repoName){nodes{nameWithOwner}}}pageInfo{hasNextPage endCursor}}}}";
+    let teams_jq = format!(
+        ".data.organization.teams.nodes[]? | select(any(.repositories.nodes[]?; .nameWithOwner == \"{repo_info}\")) | [\"team\", .combinedSlug, .name, .avatarUrl] | @tsv"
+    );
+    let teams_output = Command::new(&gh_path)
+        .args([
+            "api",
+            "graphql",
+            "--paginate",
+            "-f",
+            &format!("owner={repo_owner}"),
+            "-f",
+            &format!("repoName={repo_name}"),
+            "-f",
+            &format!("query={teams_query}"),
+            "--jq",
+            &teams_jq,
+        ])
+        .current_dir(&repo_path)
+        .output();
+    let mut teams_unavailable = false;
+    match teams_output {
+        Ok(output) if output.status.success() => {
+            if !stdout.is_empty() && !stdout.ends_with('\n') {
+                stdout.push('\n');
+            }
+            stdout.push_str(
+                &String::from_utf8(output.stdout)
+                    .map_err(|e| format!("Invalid UTF-8 team list: {}", e))?,
+            );
+        }
+        Ok(output) => {
+            teams_unavailable = true;
+            eprintln!(
+                "[autopilot] warning: failed to list repository teams ({})",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        Err(error) => {
+            teams_unavailable = true;
+            eprintln!("[autopilot] warning: failed to execute repository team lookup ({error})");
+        }
+    }
+    reviewer_candidate_result(&stdout, teams_unavailable)
 }
 
 #[tauri::command]
@@ -2493,23 +2586,76 @@ mod tests {
     }
 
     #[test]
+    fn reviewer_candidates_allow_user_only_results() {
+        let result =
+            reviewer_candidate_result("user\talan\tAlan\thttps://avatars.example/alan\n", true)
+                .expect("expected partial reviewer candidates");
+
+        assert!(result.teams_unavailable);
+        assert_eq!(
+            result.candidates,
+            vec![ReviewerCandidate {
+                identifier: "alan".to_string(),
+                display_name: "Alan".to_string(),
+                avatar_url: "https://avatars.example/alan".to_string(),
+                kind: ReviewerCandidateKind::User,
+            }]
+        );
+    }
+
+    #[test]
     fn reviewer_candidates_are_sorted_and_deduplicated() {
         assert_eq!(
             parse_reviewer_candidates(
-                "zara\thttps://avatars.example/zara\nAlan\thttps://avatars.example/alan\nalan\thttps://avatars.example/duplicate\n\n"
+                "user\tzara\tzara\thttps://avatars.example/zara\nteam\tacme/frontend\tFrontend\thttps://avatars.example/team\nuser\tAlan\tAlan\thttps://avatars.example/alan\nuser\talan\talan\thttps://avatars.example/duplicate\n\n"
             ),
             Ok(vec![
                 ReviewerCandidate {
-                    login: "Alan".to_string(),
-                    avatar_url: "https://avatars.example/alan".to_string(),
+                    identifier: "acme/frontend".to_string(),
+                    display_name: "Frontend".to_string(),
+                    avatar_url: "https://avatars.example/team".to_string(),
+                    kind: ReviewerCandidateKind::Team,
                 },
                 ReviewerCandidate {
-                    login: "zara".to_string(),
+                    identifier: "Alan".to_string(),
+                    display_name: "Alan".to_string(),
+                    avatar_url: "https://avatars.example/alan".to_string(),
+                    kind: ReviewerCandidateKind::User,
+                },
+                ReviewerCandidate {
+                    identifier: "zara".to_string(),
+                    display_name: "zara".to_string(),
                     avatar_url: "https://avatars.example/zara".to_string(),
+                    kind: ReviewerCandidateKind::User,
                 },
             ])
         );
         assert!(parse_reviewer_candidates("missing-avatar-url").is_err());
+    }
+
+    #[test]
+    fn requested_reviewer_identifiers_preserve_users_and_teams() {
+        assert_eq!(
+            requested_reviewer_identifier(
+                &serde_json::json!({ "requestedReviewer": { "login": "alice" } }),
+                None,
+            ),
+            Some("alice".to_string()),
+        );
+        assert_eq!(
+            requested_reviewer_identifier(
+                &serde_json::json!({ "requestedReviewer": { "combinedSlug": "acme/frontend" } }),
+                None,
+            ),
+            Some("acme/frontend".to_string()),
+        );
+        assert_eq!(
+            requested_reviewer_identifier(
+                &serde_json::json!({ "__typename": "Team", "slug": "frontend" }),
+                Some("acme"),
+            ),
+            Some("acme/frontend".to_string()),
+        );
     }
 
     #[test]

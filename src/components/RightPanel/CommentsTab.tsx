@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Loader, MessageSquare, Copy, Check, X, CheckCircle2, Code2, ChevronDown, UserPlus, GitPullRequest } from "lucide-react";
+import { Loader, MessageSquare, Copy, Check, X, CheckCircle2, Code2, ChevronDown, UserPlus, GitPullRequest, Users } from "lucide-react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -13,7 +13,10 @@ import type { PRStatus, PRComment } from "../../types/github";
 import { groupReviewThreads, type PRReviewThread } from "./pr-activity";
 import {
   applyReviewerOverrides,
+  buildReviewerOptions,
   clearAcknowledgedReviewerOverrides,
+  fallbackReviewerCandidate,
+  type ReviewerCandidate,
   type ReviewerOverrides,
 } from "./reviewer-state";
 import {
@@ -22,6 +25,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+
+interface ReviewerCandidateResult {
+  candidates: ReviewerCandidate[];
+  teams_unavailable: boolean;
+}
 
 function getInitials(name: string): string {
   const parts = name.split(/[\s-_]+/).filter(p => p.length > 0);
@@ -112,18 +120,19 @@ function ImageModal({ src, alt, onClose }: { src: string; alt: string; onClose: 
   );
 }
 
-function GithubAvatar({ name, avatarUrl }: { name: string; avatarUrl?: string }) {
+function GithubAvatar({ name, avatarUrl, isTeam = false }: { name: string; avatarUrl?: string; isTeam?: boolean }) {
   const [failed, setFailed] = useState(false);
+  const imageSrc = avatarUrl || (!isTeam ? `https://github.com/${name}.png?size=40` : undefined);
 
   useEffect(() => setFailed(false), [name, avatarUrl]);
 
   return (
     <div className="flex size-5 shrink-0 items-center justify-center overflow-hidden rounded-full bg-tertiary text-[8px] font-medium text-secondary">
-      {failed ? (
-        getInitials(name)
+      {failed || !imageSrc ? (
+        isTeam ? <Users className="size-3" /> : getInitials(name)
       ) : (
         <img
-          src={avatarUrl ?? `https://github.com/${name}.png?size=40`}
+          src={imageSrc}
           alt=""
           className="size-full object-cover"
           onError={() => setFailed(true)}
@@ -133,18 +142,13 @@ function GithubAvatar({ name, avatarUrl }: { name: string; avatarUrl?: string })
   );
 }
 
-interface ReviewerCandidate {
-  login: string;
-  avatar_url: string;
-}
-
 function ReviewerPicker({
   repoPath,
   prNumber,
   author,
   requestedReviewers,
   reviewStates,
-  onRequestedReviewersChange,
+  onRequestedReviewerChange,
 }: {
   repoPath: string | null;
   prNumber: number;
@@ -156,24 +160,28 @@ function ReviewerPicker({
   const [candidates, setCandidates] = useState<ReviewerCandidate[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [teamsUnavailable, setTeamsUnavailable] = useState(false);
   const [busyReviewer, setBusyReviewer] = useState<string | null>(null);
   const currentReviewers = [...new Set([...requestedReviewers, ...reviewStates.keys()])];
-  const avatarUrls = new Map(candidates?.map((candidate) => [candidate.login, candidate.avatar_url]));
-  const options = [...new Set([...(candidates ?? []).map((candidate) => candidate.login), ...currentReviewers])]
-    .filter((reviewer) => reviewer.toLowerCase() !== author.toLowerCase())
-    .sort((a, b) => {
-      const requestedDifference = Number(requestedReviewers.includes(b)) - Number(requestedReviewers.includes(a));
-      return requestedDifference || a.localeCompare(b);
-    });
+  const candidatesByIdentifier = new Map(
+    candidates?.map((candidate) => [candidate.identifier.toLowerCase(), candidate]),
+  );
+  const candidateFor = (reviewer: string) => (
+    candidatesByIdentifier.get(reviewer.toLowerCase()) ?? fallbackReviewerCandidate(reviewer)
+  );
+  const options = buildReviewerOptions(candidates ?? [], currentReviewers, requestedReviewers, author);
 
   const loadCandidates = async (open: boolean) => {
-    if (!open || (candidates !== null && !loadError) || isLoading || !repoPath) return;
+    if (!open || (candidates !== null && !loadError && !teamsUnavailable) || isLoading || !repoPath) return;
     setIsLoading(true);
     setLoadError(false);
+    setTeamsUnavailable(false);
     try {
-      setCandidates(await invoke<ReviewerCandidate[]>('get_pr_reviewer_candidates', { repoPath }));
+      const result = await invoke<ReviewerCandidateResult>('get_pr_reviewer_candidates', { repoPath });
+      setCandidates(result.candidates);
+      setTeamsUnavailable(result.teams_unavailable);
     } catch {
-      setCandidates([]);
+      setCandidates((current) => current ?? []);
       setLoadError(true);
     } finally {
       setIsLoading(false);
@@ -207,11 +215,18 @@ function ReviewerPicker({
         >
           {currentReviewers.length > 0 ? (
             <span className="flex -space-x-1.5">
-              {currentReviewers.slice(0, 3).map((reviewer) => (
-                <span key={reviewer} className="rounded-full ring-2 ring-bg-primary">
-                  <GithubAvatar name={reviewer} avatarUrl={avatarUrls.get(reviewer)} />
-                </span>
-              ))}
+              {currentReviewers.slice(0, 3).map((reviewer) => {
+                const candidate = candidateFor(reviewer);
+                return (
+                  <span key={reviewer} className="rounded-full ring-2 ring-bg-primary">
+                    <GithubAvatar
+                      name={candidate.display_name}
+                      avatarUrl={candidate.avatar_url}
+                      isTeam={candidate.kind === "team"}
+                    />
+                  </span>
+                );
+              })}
             </span>
           ) : (
             <UserPlus className="size-3.5" />
@@ -231,9 +246,10 @@ function ReviewerPicker({
             Loading…
           </div>
         )}
-        {!isLoading && options.map((reviewer) => {
+        {!isLoading && options.map((candidate) => {
+          const reviewer = candidate.identifier;
           const isRequested = requestedReviewers.includes(reviewer);
-          const reviewState = reviewStates.get(reviewer);
+          const reviewState = candidate.kind === "user" ? reviewStates.get(reviewer) : undefined;
           const status = isRequested
             ? "Requested"
             : reviewState === 'APPROVED'
@@ -244,13 +260,22 @@ function ReviewerPicker({
 
           return (
             <DropdownMenuItem
-              key={reviewer}
+              key={candidate.identifier}
               disabled={busyReviewer !== null}
               onSelect={() => void toggleReviewer(reviewer)}
               className="px-2 py-2 text-xs focus:bg-neutral-800 focus:text-white dark:focus:bg-neutral-800 dark:focus:text-white"
             >
-              <GithubAvatar name={reviewer} avatarUrl={avatarUrls.get(reviewer)} />
-              <span className="min-w-0 flex-1 truncate">{reviewer}</span>
+              <GithubAvatar
+                name={candidate.display_name}
+                avatarUrl={candidate.avatar_url}
+                isTeam={candidate.kind === "team"}
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate">{candidate.display_name}</span>
+                {candidate.kind === "team" && (
+                  <span className="block truncate text-[10px] text-neutral-400">{candidate.identifier} · Team</span>
+                )}
+              </span>
               {status && <span className="shrink-0 text-[10px] text-neutral-400">{status}</span>}
               {busyReviewer === reviewer
                 ? <Loader className="size-3.5 animate-spin text-neutral-400" />
@@ -258,6 +283,11 @@ function ReviewerPicker({
             </DropdownMenuItem>
           );
         })}
+        {!isLoading && teamsUnavailable && (
+          <div role="status" className="px-2 py-2 text-xs text-neutral-400">
+            Teams couldn’t be loaded. Reopen to retry.
+          </div>
+        )}
         {!isLoading && options.length === 0 && (
           <div className="px-2 py-3 text-xs text-neutral-400">
             {loadError ? "Couldn’t load repository collaborators." : "No reviewers available."}

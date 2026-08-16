@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   applyReviewerOverrides,
+  buildReviewerOptions,
   clearAcknowledgedReviewerOverrides,
   type ReviewerOverrides,
 } from "../src/components/RightPanel/reviewer-state";
@@ -24,5 +25,17 @@ describe("reviewer state", () => {
     expect(applyReviewerOverrides(["alice"], overrides)).toEqual([]);
     expect(clearAcknowledgedReviewerOverrides(overrides, ["alice"])).toEqual(overrides);
     expect(clearAcknowledgedReviewerOverrides(overrides, [])).toEqual({});
+  });
+
+  test("keeps requested teams visible and identifies them separately from users", () => {
+    const options = buildReviewerOptions(
+      [{ identifier: "alice", display_name: "alice", avatar_url: "alice.png", kind: "user" }],
+      ["alice", "acme/frontend"],
+      ["acme/frontend"],
+      "author",
+    );
+
+    expect(options.map(({ identifier }) => identifier)).toEqual(["acme/frontend", "alice"]);
+    expect(options[0]).toMatchObject({ display_name: "frontend", kind: "team" });
   });
 });
