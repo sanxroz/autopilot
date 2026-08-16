@@ -1429,6 +1429,12 @@ pub struct ReviewerCandidate {
     pub kind: ReviewerCandidateKind,
 }
 
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct ReviewerCandidateResult {
+    pub candidates: Vec<ReviewerCandidate>,
+    pub teams_unavailable: bool,
+}
+
 fn parse_reviewer_candidates(stdout: &str) -> Result<Vec<ReviewerCandidate>, String> {
     let mut reviewers = stdout
         .lines()
@@ -1460,10 +1466,20 @@ fn parse_reviewer_candidates(stdout: &str) -> Result<Vec<ReviewerCandidate>, Str
     Ok(reviewers)
 }
 
+fn reviewer_candidate_result(
+    stdout: &str,
+    teams_unavailable: bool,
+) -> Result<ReviewerCandidateResult, String> {
+    Ok(ReviewerCandidateResult {
+        candidates: parse_reviewer_candidates(stdout)?,
+        teams_unavailable,
+    })
+}
+
 #[tauri::command]
 pub async fn get_pr_reviewer_candidates(
     repo_path: String,
-) -> Result<Vec<ReviewerCandidate>, String> {
+) -> Result<ReviewerCandidateResult, String> {
     let gh_path = find_cli_tool("gh")?;
     let repo_info = resolve_repo_name_with_owner(&repo_path).await?;
     let endpoint = format!("repos/{}/collaborators?per_page=100", repo_info);
@@ -1512,6 +1528,7 @@ pub async fn get_pr_reviewer_candidates(
         ])
         .current_dir(&repo_path)
         .output();
+    let mut teams_unavailable = false;
     match teams_output {
         Ok(output) if output.status.success() => {
             if !stdout.is_empty() && !stdout.ends_with('\n') {
@@ -1522,15 +1539,19 @@ pub async fn get_pr_reviewer_candidates(
                     .map_err(|e| format!("Invalid UTF-8 team list: {}", e))?,
             );
         }
-        Ok(output) => eprintln!(
-            "[autopilot] warning: failed to list repository teams ({})",
-            String::from_utf8_lossy(&output.stderr)
-        ),
+        Ok(output) => {
+            teams_unavailable = true;
+            eprintln!(
+                "[autopilot] warning: failed to list repository teams ({})",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
         Err(error) => {
-            eprintln!("[autopilot] warning: failed to execute repository team lookup ({error})")
+            teams_unavailable = true;
+            eprintln!("[autopilot] warning: failed to execute repository team lookup ({error})");
         }
     }
-    parse_reviewer_candidates(&stdout)
+    reviewer_candidate_result(&stdout, teams_unavailable)
 }
 
 #[tauri::command]
@@ -2566,14 +2587,19 @@ mod tests {
 
     #[test]
     fn reviewer_candidates_allow_user_only_results() {
+        let result =
+            reviewer_candidate_result("user\talan\tAlan\thttps://avatars.example/alan\n", true)
+                .expect("expected partial reviewer candidates");
+
+        assert!(result.teams_unavailable);
         assert_eq!(
-            parse_reviewer_candidates("user\talan\tAlan\thttps://avatars.example/alan\n"),
-            Ok(vec![ReviewerCandidate {
+            result.candidates,
+            vec![ReviewerCandidate {
                 identifier: "alan".to_string(),
                 display_name: "Alan".to_string(),
                 avatar_url: "https://avatars.example/alan".to_string(),
                 kind: ReviewerCandidateKind::User,
-            }])
+            }]
         );
     }
 

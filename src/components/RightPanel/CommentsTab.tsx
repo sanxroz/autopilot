@@ -26,6 +26,11 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 
+interface ReviewerCandidateResult {
+  candidates: ReviewerCandidate[];
+  teams_unavailable: boolean;
+}
+
 function getInitials(name: string): string {
   const parts = name.split(/[\s-_]+/).filter(p => p.length > 0);
   if (parts.length >= 2) {
@@ -155,6 +160,7 @@ function ReviewerPicker({
   const [candidates, setCandidates] = useState<ReviewerCandidate[] | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
+  const [teamsUnavailable, setTeamsUnavailable] = useState(false);
   const [busyReviewer, setBusyReviewer] = useState<string | null>(null);
   const currentReviewers = [...new Set([...requestedReviewers, ...reviewStates.keys()])];
   const candidatesByIdentifier = new Map(
@@ -166,13 +172,16 @@ function ReviewerPicker({
   const options = buildReviewerOptions(candidates ?? [], currentReviewers, requestedReviewers, author);
 
   const loadCandidates = async (open: boolean) => {
-    if (!open || (candidates !== null && !loadError) || isLoading || !repoPath) return;
+    if (!open || (candidates !== null && !loadError && !teamsUnavailable) || isLoading || !repoPath) return;
     setIsLoading(true);
     setLoadError(false);
+    setTeamsUnavailable(false);
     try {
-      setCandidates(await invoke<ReviewerCandidate[]>('get_pr_reviewer_candidates', { repoPath }));
+      const result = await invoke<ReviewerCandidateResult>('get_pr_reviewer_candidates', { repoPath });
+      setCandidates(result.candidates);
+      setTeamsUnavailable(result.teams_unavailable);
     } catch {
-      setCandidates([]);
+      setCandidates((current) => current ?? []);
       setLoadError(true);
     } finally {
       setIsLoading(false);
@@ -274,6 +283,11 @@ function ReviewerPicker({
             </DropdownMenuItem>
           );
         })}
+        {!isLoading && teamsUnavailable && (
+          <div role="status" className="px-2 py-2 text-xs text-neutral-400">
+            Teams couldn’t be loaded. Reopen to retry.
+          </div>
+        )}
         {!isLoading && options.length === 0 && (
           <div className="px-2 py-3 text-xs text-neutral-400">
             {loadError ? "Couldn’t load repository collaborators." : "No reviewers available."}
