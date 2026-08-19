@@ -322,7 +322,7 @@ export function CommentsTab({
   }, [prStatus]);
 
   const activeReviewerOverrides = reviewerOverrides?.prNumber === prStatus?.number
-    ? reviewerOverrides.values
+    ? reviewerOverrides?.values ?? {}
     : {};
   const reviewers = applyReviewerOverrides(
     prStatus?.requested_reviewers ?? [],
