@@ -547,6 +547,132 @@ fn review_threads_next_cursor(review_threads: &serde_json::Value) -> Option<Stri
         .map(ToString::to_string)
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum GraphqlFetchError {
+    Failed,
+    RateLimited,
+}
+
+const GRAPHQL_PR_SCALAR_FIELDS: &str = r#"
+    number title url state isDraft mergedAt mergeable reviewDecision additions deletions headRefName headRefOid baseRefName
+    author { login }
+    createdAt
+    updatedAt
+"#;
+
+const GRAPHQL_PR_DETAIL_FIELDS: &str = r#"
+    labels(first: 10) { nodes { name } }
+    reviewRequests(first: 10) {
+        nodes {
+            requestedReviewer {
+                ... on User { login }
+                ... on Team { combinedSlug }
+            }
+        }
+    }
+    reviewThreads(first: 100) {
+        nodes { isResolved }
+        pageInfo { hasNextPage endCursor }
+    }
+    commits(last: 1) {
+        nodes {
+            commit {
+                statusCheckRollup {
+                    contexts(first: 50) {
+                        nodes {
+                            __typename
+                            ... on CheckRun { conclusion status }
+                            ... on StatusContext { state }
+                        }
+                    }
+                }
+            }
+        }
+    }
+"#;
+
+fn graphql_string(value: &str) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| format!("\"{}\"", value.replace('"', "\\\"")))
+}
+
+fn graphql_fetch_error(message: &str) -> GraphqlFetchError {
+    let message = message.to_ascii_lowercase();
+    if message.contains("rate limit") || message.contains("rate_limit") {
+        GraphqlFetchError::RateLimited
+    } else {
+        GraphqlFetchError::Failed
+    }
+}
+
+fn run_graphql_query(
+    gh_path: &str,
+    repo_path: &str,
+    query: &str,
+) -> Result<serde_json::Value, GraphqlFetchError> {
+    let output = Command::new(gh_path)
+        .args(["api", "graphql", "-f", &format!("query={query}")])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|error| {
+            eprintln!("Failed to execute GraphQL query in {repo_path}: {error}");
+            GraphqlFetchError::Failed
+        })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        eprintln!("GraphQL query failed in {repo_path}: {stderr}");
+        return Err(graphql_fetch_error(&stderr));
+    }
+
+    let response: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|error| {
+        eprintln!("Failed to parse GraphQL response in {repo_path}: {error}");
+        GraphqlFetchError::Failed
+    })?;
+
+    if let Some(errors) = response.get("errors").filter(|errors| !errors.is_null()) {
+        let errors = errors.to_string();
+        eprintln!("GraphQL returned errors in {repo_path}: {errors}");
+        return Err(graphql_fetch_error(&errors));
+    }
+
+    Ok(response)
+}
+
+fn build_candidate_query(owner: &str, name: &str, branches: &[String]) -> String {
+    let fragments = branches
+        .iter()
+        .enumerate()
+        .map(|(i, branch)| {
+            let branch = graphql_string(branch);
+            format!(
+                r#"b{i}: pullRequests(headRefName: {branch}, first: 20, states: [OPEN, CLOSED, MERGED], orderBy: {{field: UPDATED_AT, direction: DESC}}) {{ nodes {{ {GRAPHQL_PR_SCALAR_FIELDS} }} }}"#
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let owner = graphql_string(owner);
+    let name = graphql_string(name);
+    format!("query {{ repository(owner: {owner}, name: {name}) {{ {fragments} }} }}")
+}
+
+fn build_detail_query(owner: &str, name: &str, pr_numbers: &[u64]) -> String {
+    let fragments = pr_numbers
+        .iter()
+        .enumerate()
+        .map(|(i, number)| {
+            format!(
+                "p{i}: pullRequest(number: {number}) {{ {GRAPHQL_PR_SCALAR_FIELDS} {GRAPHQL_PR_DETAIL_FIELDS} }}"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let owner = graphql_string(owner);
+    let name = graphql_string(name);
+    format!("query {{ repository(owner: {owner}, name: {name}) {{ {fragments} }} }}")
+}
+
 fn fetch_unresolved_review_threads_after(
     gh_path: &str,
     repo_path: &str,
@@ -554,40 +680,24 @@ fn fetch_unresolved_review_threads_after(
     name: &str,
     pr_number: u64,
     mut cursor: String,
-) -> Option<bool> {
+) -> Result<bool, GraphqlFetchError> {
     loop {
-        let owner = serde_json::to_string(owner).ok()?;
-        let name = serde_json::to_string(name).ok()?;
-        let cursor_json = serde_json::to_string(&cursor).ok()?;
+        let owner = graphql_string(owner);
+        let name = graphql_string(name);
+        let cursor_json = graphql_string(&cursor);
         let query = format!(
             "query {{ repository(owner: {owner}, name: {name}) {{ pullRequest(number: {pr_number}) {{ reviewThreads(first: 100, after: {cursor_json}) {{ nodes {{ isResolved }} pageInfo {{ hasNextPage endCursor }} }} }} }} }}"
         );
-        let output = Command::new(gh_path)
-            .args(["api", "graphql", "-f", &format!("query={query}")])
-            .current_dir(repo_path)
-            .output()
-            .ok()?;
-
-        if !output.status.success() {
-            return None;
-        }
-
-        let response: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
-        if response
-            .get("errors")
-            .is_some_and(|errors| !errors.is_null())
-        {
-            return None;
-        }
-
+        let response = run_graphql_query(gh_path, repo_path, &query)?;
         let review_threads = &response["data"]["repository"]["pullRequest"]["reviewThreads"];
+
         if review_threads_have_unresolved(review_threads) {
-            return Some(true);
+            return Ok(true);
         }
 
         match review_threads_next_cursor(review_threads) {
             Some(next_cursor) => cursor = next_cursor,
-            None => return Some(false),
+            None => return Ok(false),
         }
     }
 }
@@ -628,6 +738,24 @@ fn resolve_candidate_for_worktree(
     }
 
     Some(first_open.status.clone())
+}
+
+fn selected_pr_numbers(
+    worktrees: &[WorktreePRLookup],
+    branch_candidates: &HashMap<String, Vec<PRStatusCandidate>>,
+) -> Vec<u64> {
+    let mut numbers = worktrees
+        .iter()
+        .filter_map(|worktree| {
+            branch_candidates
+                .get(&worktree.branch)
+                .and_then(|candidates| resolve_candidate_for_worktree(worktree, candidates))
+                .map(|status| status.number)
+        })
+        .collect::<Vec<_>>();
+    numbers.sort_unstable();
+    numbers.dedup();
+    numbers
 }
 
 fn build_branch_fetch_result(
@@ -675,6 +803,19 @@ fn build_branch_fetch_result(
     }
 }
 
+fn failed_repo_fetch_result(repo_path: String, worktrees: &[WorktreePRLookup]) -> RepoPRStatuses {
+    RepoPRStatuses {
+        repo_path,
+        statuses: Vec::new(),
+        worktree_statuses: Vec::new(),
+        checked_worktrees: Vec::new(),
+        failed_worktrees: worktrees
+            .iter()
+            .map(|worktree| worktree.worktree_path.clone())
+            .collect(),
+    }
+}
+
 fn fetch_all_prs_for_repo(gh_path: &str, repo: RepoWithWorktrees) -> RepoPRStatuses {
     if repo.worktrees.is_empty() {
         return RepoPRStatuses {
@@ -689,7 +830,7 @@ fn fetch_all_prs_for_repo(gh_path: &str, repo: RepoWithWorktrees) -> RepoPRStatu
     let branches = unique_branches(&repo.worktrees);
 
     if let Some((owner, name)) = parse_github_owner_repo(&repo.repo_path) {
-        if let Some(result) = fetch_prs_graphql(
+        match fetch_prs_graphql(
             gh_path,
             &repo.repo_path,
             &owner,
@@ -697,11 +838,57 @@ fn fetch_all_prs_for_repo(gh_path: &str, repo: RepoWithWorktrees) -> RepoPRStatu
             &repo.worktrees,
             &branches,
         ) {
-            return result;
+            Ok(result) => return result,
+            Err(GraphqlFetchError::RateLimited) => {
+                return failed_repo_fetch_result(repo.repo_path, &repo.worktrees)
+            }
+            Err(GraphqlFetchError::Failed) => {}
         }
     }
 
     fetch_prs_rest_fallback(gh_path, &repo.repo_path, &repo.worktrees, &branches)
+}
+
+fn fetch_pr_details(
+    gh_path: &str,
+    repo_path: &str,
+    owner: &str,
+    name: &str,
+    pr_numbers: &[u64],
+) -> Result<HashMap<u64, PRStatusCandidate>, GraphqlFetchError> {
+    let mut details = HashMap::new();
+
+    for chunk in pr_numbers.chunks(25) {
+        let query = build_detail_query(owner, name, chunk);
+        let response = run_graphql_query(gh_path, repo_path, &query)?;
+        let repo_data = &response["data"]["repository"];
+        if repo_data.is_null() {
+            eprintln!("GraphQL returned null repository for {owner}/{name}");
+            return Err(GraphqlFetchError::Failed);
+        }
+
+        for (i, number) in chunk.iter().enumerate() {
+            let alias = format!("p{i}");
+            let node = &repo_data[&alias];
+            let Some(mut candidate) = parse_graphql_pr_node(node) else {
+                eprintln!("Failed to parse GraphQL details for PR {number} in {repo_path}");
+                return Err(GraphqlFetchError::Failed);
+            };
+
+            if !candidate.status.has_unresolved_review_threads {
+                if let Some(cursor) = review_threads_next_cursor(&node["reviewThreads"]) {
+                    candidate.status.has_unresolved_review_threads =
+                        fetch_unresolved_review_threads_after(
+                            gh_path, repo_path, owner, name, *number, cursor,
+                        )?;
+                }
+            }
+
+            details.insert(*number, candidate);
+        }
+    }
+
+    Ok(details)
 }
 
 fn fetch_prs_graphql(
@@ -711,148 +898,59 @@ fn fetch_prs_graphql(
     name: &str,
     worktrees: &[WorktreePRLookup],
     branches: &[String],
-) -> Option<RepoPRStatuses> {
+) -> Result<RepoPRStatuses, GraphqlFetchError> {
     let mut branch_candidates: HashMap<String, Vec<PRStatusCandidate>> = HashMap::new();
     let mut failed_branches = HashSet::new();
 
     for chunk in branches.chunks(25) {
-        let branch_fragments: Vec<String> = chunk
-            .iter()
-            .enumerate()
-            .map(|(i, branch)| {
-                let json_escaped = serde_json::to_string(branch.as_str())
-                    .unwrap_or_else(|_| format!("\"{}\"", branch));
-                let escaped = &json_escaped[1..json_escaped.len() - 1];
-                format!(
-                    r#"b{i}: pullRequests(headRefName: "{escaped}", first: 20, states: [OPEN, CLOSED, MERGED], orderBy: {{field: UPDATED_AT, direction: DESC}}) {{
-                        nodes {{
-                            number title url state isDraft mergedAt mergeable reviewDecision additions deletions headRefName headRefOid baseRefName
-                            author {{ login }}
-                            createdAt
-                            updatedAt
-                            labels(first: 10) {{ nodes {{ name }} }}
-                            reviewRequests(first: 10) {{
-                                nodes {{
-                                    requestedReviewer {{
-                                        ... on User {{ login }}
-                                        ... on Team {{ combinedSlug }}
-                                    }}
-                                }}
-                            }}
-                            reviewThreads(first: 100) {{
-                                nodes {{ isResolved }}
-                                pageInfo {{ hasNextPage endCursor }}
-                            }}
-                            commits(last: 1) {{
-                                nodes {{
-                                    commit {{
-                                        statusCheckRollup {{
-                                            contexts(first: 50) {{
-                                                nodes {{
-                                                    __typename
-                                                    ... on CheckRun {{ conclusion status }}
-                                                    ... on StatusContext {{ state }}
-                                                }}
-                                            }}
-                                        }}
-                                    }}
-                                }}
-                            }}
-                        }}
-                    }}"#
-                )
-            })
-            .collect();
-
-        let owner_escaped = owner.replace('"', "\\\"");
-        let name_escaped = name.replace('"', "\\\"");
-        let query = format!(
-            r#"query {{ repository(owner: "{owner_escaped}", name: "{name_escaped}") {{ {fragments} }} }}"#,
-            fragments = branch_fragments.join("\n")
-        );
-
-        let output = Command::new(gh_path)
-            .args(["api", "graphql", "-f", &format!("query={}", query)])
-            .current_dir(repo_path)
-            .output()
-            .ok()?;
-
-        if !output.status.success() {
-            eprintln!(
-                "GraphQL query failed for {}/{}: {}",
-                owner,
-                name,
-                String::from_utf8_lossy(&output.stderr)
-            );
-            return None; // Fall back to REST
-        }
-
-        let stdout = String::from_utf8(output.stdout).ok()?;
-        let response: serde_json::Value = serde_json::from_str(&stdout).ok()?;
-
-        if response.get("errors").is_some() && !response["errors"].is_null() {
-            eprintln!(
-                "GraphQL returned errors for {}/{}: {}",
-                owner, name, response["errors"]
-            );
-            return None;
-        }
-
+        let query = build_candidate_query(owner, name, chunk);
+        let response = run_graphql_query(gh_path, repo_path, &query)?;
         let repo_data = &response["data"]["repository"];
         if repo_data.is_null() {
-            eprintln!("GraphQL returned null repository for {}/{}", owner, name);
-            return None;
+            eprintln!("GraphQL returned null repository for {owner}/{name}");
+            return Err(GraphqlFetchError::Failed);
         }
 
         for (i, branch) in chunk.iter().enumerate() {
-            let alias = format!("b{}", i);
-            let branch = branch.clone();
-
+            let alias = format!("b{i}");
             if let Some(nodes) = repo_data[&alias]["nodes"].as_array() {
-                let mut parsed = Vec::new();
-                for node in nodes {
-                    let Some(mut candidate) = parse_graphql_pr_node(node) else {
-                        continue;
-                    };
-
-                    if !candidate.status.has_unresolved_review_threads {
-                        if let Some(cursor) = review_threads_next_cursor(&node["reviewThreads"]) {
-                            candidate.status.has_unresolved_review_threads =
-                                fetch_unresolved_review_threads_after(
-                                    gh_path,
-                                    repo_path,
-                                    owner,
-                                    name,
-                                    candidate.status.number,
-                                    cursor,
-                                )?;
-                        }
-                    }
-
-                    parsed.push(candidate);
-                }
+                let parsed = nodes
+                    .iter()
+                    .filter_map(parse_graphql_pr_node)
+                    .collect::<Vec<_>>();
 
                 if parsed.is_empty() && !nodes.is_empty() {
                     eprintln!(
                         "Failed to parse GraphQL PR nodes for branch {} in {}",
                         branch, repo_path
                     );
-                    failed_branches.insert(branch);
+                    failed_branches.insert(branch.clone());
                     continue;
                 }
 
-                branch_candidates.insert(branch, parsed);
+                branch_candidates.insert(branch.clone(), parsed);
             } else {
                 eprintln!(
                     "GraphQL response missing nodes for branch {} in {}",
                     branch, repo_path
                 );
-                failed_branches.insert(branch);
+                failed_branches.insert(branch.clone());
             }
         }
     }
 
-    Some(build_branch_fetch_result(
+    let pr_numbers = selected_pr_numbers(worktrees, &branch_candidates);
+    let details = fetch_pr_details(gh_path, repo_path, owner, name, &pr_numbers)?;
+
+    for candidates in branch_candidates.values_mut() {
+        for candidate in candidates {
+            if let Some(detail) = details.get(&candidate.status.number) {
+                *candidate = detail.clone();
+            }
+        }
+    }
+
+    Ok(build_branch_fetch_result(
         repo_path.to_string(),
         worktrees,
         branch_candidates,
@@ -2541,6 +2639,44 @@ mod tests {
             Some("next-page".to_string())
         );
         assert_eq!(review_threads_next_cursor(&final_page), None);
+    }
+
+    #[test]
+    fn candidate_query_defers_nested_pr_details() {
+        let query = build_candidate_query("owner", "repo", &["feature/with-\"quote".to_string()]);
+
+        assert!(query.contains("headRefName: \"feature/with-\\\"quote\""));
+        assert!(query.contains("headRefOid"));
+        assert!(!query.contains("labels(first:"));
+        assert!(!query.contains("reviewThreads(first:"));
+        assert!(!query.contains("commits(last:"));
+    }
+
+    #[test]
+    fn detail_query_fetches_nested_fields_only_for_selected_prs() {
+        let query = build_detail_query("owner", "repo", &[42, 108]);
+
+        assert!(query.contains("p0: pullRequest(number: 42)"));
+        assert!(query.contains("p1: pullRequest(number: 108)"));
+        assert!(query.contains("labels(first: 10)"));
+        assert!(query.contains("reviewThreads(first: 100)"));
+        assert!(query.contains("commits(last: 1)"));
+    }
+
+    #[test]
+    fn graphql_rate_limit_errors_are_distinct_from_fallback_errors() {
+        assert_eq!(
+            graphql_fetch_error("GraphQL: API rate limit already exceeded"),
+            GraphqlFetchError::RateLimited,
+        );
+        assert_eq!(
+            graphql_fetch_error(r#"[{"type":"RATE_LIMITED"}]"#),
+            GraphqlFetchError::RateLimited,
+        );
+        assert_eq!(
+            graphql_fetch_error("network unavailable"),
+            GraphqlFetchError::Failed,
+        );
     }
 
     #[test]
