@@ -63,7 +63,7 @@ export interface GitHubSettings {
 export const DEFAULT_GITHUB_SETTINGS: GitHubSettings = {
   ghCliAvailable: false,
   ghAuthUser: null,
-  pollingIntervalMs: 60000,
+  pollingIntervalMs: 120000,
 };
 export interface PRCheck {
   name: string;
