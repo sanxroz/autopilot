@@ -1,6 +1,28 @@
 import type { Repository, WorktreeInfo } from "../types";
+import type { SessionSection } from "./session-sections";
 
 const ACTIVE_SPACE_STORAGE_KEY = "autopilot-active-space";
+
+export type SpaceActivity = "attention" | "running" | null;
+
+export function getSpaceActivity(
+  sections: readonly SessionSection[],
+): SpaceActivity {
+  if (
+    sections.some(
+      (section) =>
+        section === "agent:attention" || section === "pr:attention",
+    )
+  ) {
+    return "attention";
+  }
+
+  return sections.some(
+    (section) => section === "agent:running" || section === "pr:checks",
+  )
+    ? "running"
+    : null;
+}
 
 export function findSpaceForWorktree(
   repositories: readonly Repository[],

@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import type { Repository, WorktreeInfo } from "../src/types";
-import { findSpaceForWorktree, resolveActiveSpace } from "../src/lib/spaces";
+import {
+  findSpaceForWorktree,
+  getSpaceActivity,
+  resolveActiveSpace,
+} from "../src/lib/spaces";
 
 const worktree = (name: string, path: string): WorktreeInfo => ({
   name,
@@ -37,5 +41,13 @@ describe("Spaces", () => {
 
   test("an empty repository list has no active Space", () => {
     expect(resolveActiveSpace([], null, "/repos/alpha")).toBeNull();
+  });
+
+  test("attention takes priority in the Space rail activity indicator", () => {
+    expect(getSpaceActivity(["agent:running", "pr:attention"])).toBe(
+      "attention",
+    );
+    expect(getSpaceActivity(["pr:checks"])).toBe("running");
+    expect(getSpaceActivity(["pr:review", "pr:none"])).toBeNull();
   });
 });
