@@ -41,6 +41,7 @@ import {
 } from "../lib/spaces";
 import {
   getAgentSessionSection,
+  getHighestPrioritySessionSection,
   getPrSessionSection,
   type SessionMode,
   type SessionSection,
@@ -1000,6 +1001,27 @@ export function Sidebar({
                          for (const wt of worktrees) {
                            if (renderedWorktreePaths.has(wt.path)) continue;
 
+                           const sidebarGroup = groupByWorktreePath.get(wt.path);
+                           if (sidebarGroup) {
+                             const groupedWorktrees = sidebarGroup.worktreePaths
+                               .map((worktreePath) =>
+                                 group.worktrees.find((worktree) => worktree.path === worktreePath)
+                               )
+                               .filter(
+                                 (worktree): worktree is WorktreeInfo =>
+                                   worktree !== undefined && includedPaths.has(worktree.path),
+                               );
+
+                             if (groupedWorktrees.length > 0) {
+                               for (const groupedWorktree of groupedWorktrees) {
+                                 renderedWorktreePaths.add(groupedWorktree.path);
+                               }
+
+                               elements.push(renderGroup(sidebarGroup));
+                               continue;
+                             }
+                           }
+
                            const stackIndex = stackWorktreePaths.get(wt.path);
                            if (stackIndex !== undefined) {
                              const stack = stacks[stackIndex];
@@ -1039,7 +1061,7 @@ export function Sidebar({
                          return elements;
                        };
 
-                       const renderGroup = (sidebarGroup: SidebarWorktreeGroupModel) => {
+                       function renderGroup(sidebarGroup: SidebarWorktreeGroupModel) {
                          const groupedWorktrees = sidebarGroup.worktreePaths
                            .map((worktreePath) =>
                              group.worktrees.find((worktree) => worktree.path === worktreePath)
@@ -1095,7 +1117,7 @@ export function Sidebar({
                              </SidebarWorktreeGroup>
                            </div>
                          );
-                       };
+                       }
 
                        const sections: readonly {
                          id: SessionSection;
@@ -1105,39 +1127,40 @@ export function Sidebar({
                          ? PR_SESSION_SECTIONS
                          : AGENT_SESSION_SECTIONS;
 
+                       const getWorktreeSection = (worktree: WorktreeInfo): SessionSection =>
+                         sessionMode === "pr"
+                           ? getPrSessionSection(prStatusByWorktreePath[worktree.path] ?? null)
+                           : getAgentSessionSection(
+                               processStatusByPath[worktree.path] || "none",
+                               agentSidebarLifecycleEnabled
+                                 ? agentRunByWorktreePath[worktree.path]
+                                 : undefined,
+                               prStatusByWorktreePath[worktree.path] ?? null,
+                             );
+                       const sectionPriority = sections.map((section) => section.id);
+                       const groupSectionById = new Map(
+                         repoSidebarGroups.map((sidebarGroup) => [
+                           sidebarGroup.id,
+                           getHighestPrioritySessionSection(
+                             sidebarGroup.worktreePaths.flatMap((worktreePath) => {
+                               const worktree = group.worktrees.find(
+                                 (candidate) => candidate.path === worktreePath,
+                               );
+                               return worktree ? [getWorktreeSection(worktree)] : [];
+                             }),
+                             sectionPriority,
+                           ),
+                         ]),
+                       );
+
                        return (
                          <div className="space-y-2.5 pb-1">
-                           {repoSidebarGroups.length > 0 && (
-                             <section aria-label={`${repoSidebarGroups.length} groups`}>
-                               <div className="flex h-7 items-center px-2.5 pt-0.5">
-                                 <h3 className="min-w-0 flex-1 truncate text-[11px] font-medium text-tertiary">
-                                   Groups
-                                 </h3>
-                                 <span className="font-mono text-[10px] tabular-nums text-tertiary">
-                                   {repoSidebarGroups.length}
-                                 </span>
-                               </div>
-                               <div className="space-y-1">
-                                 {repoSidebarGroups.map(renderGroup)}
-                               </div>
-                             </section>
-                           )}
                            {sections.map((section) => {
                              const worktrees = group.worktrees.filter((worktree) => {
-                               if (groupByWorktreePath.has(worktree.path)) return false;
-                               if (sessionMode === "pr") {
-                                 return getPrSessionSection(
-                                   prStatusByWorktreePath[worktree.path] ?? null,
-                                 ) === section.id;
-                               }
-
-                               return getAgentSessionSection(
-                                 processStatusByPath[worktree.path] || "none",
-                                 agentSidebarLifecycleEnabled
-                                   ? agentRunByWorktreePath[worktree.path]
-                                   : undefined,
-                                 prStatusByWorktreePath[worktree.path] ?? null,
-                               ) === section.id;
+                               const sidebarGroup = groupByWorktreePath.get(worktree.path);
+                               return sidebarGroup
+                                 ? groupSectionById.get(sidebarGroup.id) === section.id
+                                 : getWorktreeSection(worktree) === section.id;
                              });
 
                              if (worktrees.length === 0) return null;

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   getAgentSessionSection,
+  getHighestPrioritySessionSection,
   getPrSessionSection,
 } from "../src/lib/session-sections";
 import type { AgentRunState } from "../src/types";
@@ -38,6 +39,30 @@ const agentRun: AgentRunState = {
 };
 
 describe("session sections", () => {
+  test("places a group in its highest-priority member section", () => {
+    const priority = [
+      "agent:attention",
+      "agent:running",
+      "pr:none",
+      "pr:attention",
+      "pr:ready",
+      "pr:checks",
+      "pr:review",
+      "pr:closed",
+    ] as const;
+
+    expect(
+      getHighestPrioritySessionSection(
+        ["agent:running", "agent:attention", "pr:closed"],
+        priority,
+      ),
+    ).toBe("agent:attention");
+    expect(
+      getHighestPrioritySessionSection(["pr:closed", "agent:running"], priority),
+    ).toBe("agent:running");
+    expect(getHighestPrioritySessionSection(["pr:closed"], priority)).toBe("pr:closed");
+  });
+
   test("prioritizes pull requests by required action", () => {
     expect(getPrSessionSection(null)).toBe("pr:none");
     expect(getPrSessionSection(openPr)).toBe("pr:review");

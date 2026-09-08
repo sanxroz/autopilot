@@ -18,6 +18,13 @@ export type AgentSessionSection =
 
 export type SessionSection = PrSessionSection | AgentSessionSection;
 
+export function getHighestPrioritySessionSection(
+  memberSections: readonly SessionSection[],
+  priority: readonly SessionSection[],
+): SessionSection | null {
+  return priority.find((section) => memberSections.includes(section)) ?? null;
+}
+
 export function getPrSessionSection(
   prStatus: PRStatus | null,
 ): PrSessionSection {
