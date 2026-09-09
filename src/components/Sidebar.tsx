@@ -1300,30 +1300,41 @@ export function Sidebar({
         }}
       >
         <Modal.Content className="p-5">
-          <Modal.Title>Delete workspace?</Modal.Title>
-          <Modal.Description className="mt-2 leading-5">
-            Delete{" "}
-            <strong className="font-medium text-primary">
-              {pendingWorkspaceDeletion?.worktreeName}
-            </strong>{" "}
-            and its uncommitted changes? The Git branch will remain.
-          </Modal.Description>
-          <div className="mt-6 flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={closeDeleteWorkspaceDialog}
-              className="min-h-8 rounded-md px-4 text-sm text-secondary transition-colors hover:bg-hover hover:text-primary motion-reduce:transition-none"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={() => void confirmDeleteWorktree()}
-              className="min-h-8 rounded-md bg-semantic-error px-4 text-sm font-medium text-white transition-colors motion-reduce:transition-none"
-            >
-              Delete workspace
-            </button>
-          </div>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void confirmDeleteWorktree();
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              event.currentTarget.requestSubmit();
+            }}
+          >
+            <Modal.Title>Delete workspace?</Modal.Title>
+            <Modal.Description className="mt-2 leading-5">
+              Delete{" "}
+              <strong className="font-medium text-primary">
+                {pendingWorkspaceDeletion?.worktreeName}
+              </strong>{" "}
+              and its uncommitted changes? The Git branch will remain.
+            </Modal.Description>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeDeleteWorkspaceDialog}
+                className="min-h-8 rounded-md px-4 text-sm text-secondary transition-colors hover:bg-hover hover:text-primary motion-reduce:transition-none"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="min-h-8 rounded-md bg-semantic-error px-4 text-sm font-medium text-white transition-colors motion-reduce:transition-none"
+              >
+                Delete workspace
+              </button>
+            </div>
+          </form>
         </Modal.Content>
       </Modal.Root>
       </div>
