@@ -877,7 +877,7 @@ function ProjectsSection({
         <SettingsLabel title="Need a prompt?" />
         <textarea
           readOnly
-          value='Write a post-create shell script for this repo. Keep it idempotent, use POSIX shell, and copy any shared files from `AUTOPILOT_MAIN_WORKTREE_PATH` only when they exist.'
+          value='Write a post-create shell script for this repo. Keep it idempotent, copy shared files from `AUTOPILOT_MAIN_WORKTREE_PATH` only when they exist, and install dependencies with the repository package manager. Do not copy `node_modules` or build output.'
           className="min-h-[88px] w-full rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm leading-6 text-primary outline-none"
         />
       </div>
@@ -906,7 +906,13 @@ function ProjectsSection({
                     event.target.value
                   );
                 }}
-                placeholder={`cp "$AUTOPILOT_MAIN_WORKTREE_PATH/.env" .env\nnpm install`}
+                placeholder={`if [ -f "$AUTOPILOT_MAIN_WORKTREE_PATH/.env" ]; then
+  cp "$AUTOPILOT_MAIN_WORKTREE_PATH/.env" .env
+  chmod 600 .env
+fi
+if [ -f bun.lock ]; then
+  bun install --frozen-lockfile
+fi`}
                 className="min-h-[120px] w-full rounded-lg border border-border bg-secondary px-3 py-2.5 font-mono text-xs text-primary outline-none transition-shadow focus:ring-2 focus:ring-accent-primary focus:ring-offset-2 focus:ring-offset-bg-secondary"
               />
 
