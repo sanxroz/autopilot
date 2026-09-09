@@ -44,10 +44,11 @@ describe("Spaces", () => {
   });
 
   test("attention takes priority in the Space rail activity indicator", () => {
-    expect(getSpaceActivity(["agent:running", "pr:attention"])).toBe(
+    expect(getSpaceActivity(["agent:running", "pr:attention"], [])).toBe(
       "attention",
     );
-    expect(getSpaceActivity(["pr:checks"])).toBe("running");
-    expect(getSpaceActivity(["pr:review", "pr:none"])).toBeNull();
+    expect(getSpaceActivity(["pr:checks"], [])).toBe("running");
+    expect(getSpaceActivity(["pr:none"], ["dev_server"])).toBe("running");
+    expect(getSpaceActivity(["pr:review", "pr:none"], ["none"])).toBeNull();
   });
 });

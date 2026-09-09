@@ -727,7 +727,13 @@ export function Sidebar({
                 prStatusByWorktreePath[worktree.path] ?? null,
               ),
             );
-            const activity = getSpaceActivity(sections);
+            const activity = getSpaceActivity(
+              sections,
+              space.worktrees.map(
+                (worktree) =>
+                  processStatusByPath[worktree.path] || "none",
+              ),
+            );
 
             return (
               <div key={space.repoPath} className="relative flex justify-center">

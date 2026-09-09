@@ -1,4 +1,4 @@
-import type { Repository, WorktreeInfo } from "../types";
+import type { ProcessStatus, Repository, WorktreeInfo } from "../types";
 import type { SessionSection } from "./session-sections";
 
 const ACTIVE_SPACE_STORAGE_KEY = "autopilot-active-space";
@@ -7,6 +7,7 @@ export type SpaceActivity = "attention" | "running" | null;
 
 export function getSpaceActivity(
   sections: readonly SessionSection[],
+  processStatuses: readonly ProcessStatus[],
 ): SpaceActivity {
   if (
     sections.some(
@@ -17,9 +18,10 @@ export function getSpaceActivity(
     return "attention";
   }
 
-  return sections.some(
-    (section) => section === "agent:running" || section === "pr:checks",
-  )
+  return processStatuses.some((status) => status !== "none") ||
+    sections.some(
+      (section) => section === "agent:running" || section === "pr:checks",
+    )
     ? "running"
     : null;
 }
