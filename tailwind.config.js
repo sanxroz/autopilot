@@ -66,6 +66,7 @@ export default {
       },
       backgroundColor: {
         primary: 'var(--color-bg-primary)',
+        sidebar: 'var(--color-bg-sidebar)',
         secondary: 'var(--color-bg-secondary)',
         tertiary: 'var(--color-bg-tertiary)',
         hover: 'var(--color-bg-hover)',

@@ -7,7 +7,6 @@ import {
   Archive,
   Ellipsis,
   User,
-  Folder,
   SquareTerminal,
   Bot,
   GitPullRequest,
@@ -31,10 +30,12 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import {
   findSpaceForWorktree,
+  getSpaceActivity,
   loadActiveSpace,
   resolveActiveSpace,
   saveActiveSpace,
@@ -47,9 +48,10 @@ import {
   type SessionSection,
 } from "../lib/session-sections";
 
-const MIN_WIDTH = 240;
-const MAX_WIDTH = 520;
-const DEFAULT_WIDTH = 312;
+const SPACE_RAIL_WIDTH = 52;
+const MIN_WIDTH = 240 + SPACE_RAIL_WIDTH;
+const MAX_WIDTH = 520 + SPACE_RAIL_WIDTH;
+const DEFAULT_WIDTH = 312 + SPACE_RAIL_WIDTH;
 const DRAG_START_THRESHOLD_PX = 10;
 const GROUP_HOLD_DELAY_MS = 1200;
 const IS_DEVELOPMENT_BUILD =
@@ -285,6 +287,7 @@ export function Sidebar({
   const activeRepoGroups = repoGroups.filter(
     (group) => group.repoPath === resolvedSpacePath,
   );
+  const activeRepoGroup = activeRepoGroups[0] ?? null;
   const selectedWorktreePath = selectedWorktree?.path;
 
   useEffect(() => {
@@ -690,7 +693,7 @@ export function Sidebar({
     >
       <div
         ref={innerRef}
-        className="flex h-full flex-col border-r border-border bg-secondary pt-8 select-none"
+        className="flex h-full border-r border-border bg-sidebar pt-8 select-none"
         style={{
           width: `${width}px`,
           minWidth: `${MIN_WIDTH}px`,
@@ -705,184 +708,200 @@ export function Sidebar({
         )}
       />
 
-      <div className="flex min-h-0 flex-1 flex-col px-1.5 pb-1.5">
-        <section className="shrink-0 pb-1.5" aria-labelledby="spaces-heading">
-          <div className="flex h-8 items-center justify-between px-1.5">
-            <div className="flex min-w-0 items-center gap-2">
-              <h2
-                id="spaces-heading"
-                className="text-xs font-semibold tracking-wide text-tertiary"
-              >
-                Spaces
+      <nav
+        className="flex w-[52px] shrink-0 flex-col rounded-tr-xl bg-primary pb-1.5"
+        aria-label="Spaces"
+      >
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto scrollbar-hide">
+          {repoGroups.map((space) => {
+            const avatarUrl = space.avatarUrl;
+            const showAvatar =
+              avatarUrl !== undefined && !failedAvatarUrls.has(avatarUrl);
+            const isActive = space.repoPath === resolvedSpacePath;
+            const sections = space.worktrees.map((worktree) =>
+              getAgentSessionSection(
+                processStatusByPath[worktree.path] || "none",
+                agentSidebarLifecycleEnabled
+                  ? agentRunByWorktreePath[worktree.path]
+                  : undefined,
+                prStatusByWorktreePath[worktree.path] ?? null,
+              ),
+            );
+            const activity = getSpaceActivity(
+              sections,
+              space.worktrees.map(
+                (worktree) =>
+                  processStatusByPath[worktree.path] || "none",
+              ),
+            );
+
+            return (
+              <div key={space.repoPath} className="relative flex justify-center">
+                <button
+                  type="button"
+                  data-space-path={space.repoPath}
+                  onClick={() => handleSpaceSelect(space.repoPath)}
+                  onFocus={(event) =>
+                    event.currentTarget.scrollIntoView({ block: "nearest" })
+                  }
+                  className={cn(
+                    "relative flex h-11 w-11 items-center justify-center rounded-xl text-tertiary transition-[background-color,color] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 motion-reduce:transition-none",
+                    isActive
+                      ? "bg-active text-primary"
+                      : "hover:bg-hover hover:text-primary",
+                  )}
+                  aria-pressed={isActive}
+                  aria-label={`Show ${space.repoName} sessions${activity === "attention" ? ", needs attention" : activity === "running" ? ", activity running" : ""}`}
+                  title={space.repoName}
+                >
+                  {showAvatar ? (
+                    <img
+                      src={avatarUrl}
+                      alt=""
+                      className="h-7 w-7 rounded-lg"
+                      onError={() => {
+                        setFailedAvatarUrls((current) => {
+                          if (!avatarUrl) return current;
+                          const next = new Set(current);
+                          next.add(avatarUrl);
+                          return next;
+                        });
+                      }}
+                    />
+                  ) : (
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-tertiary text-[10px] font-semibold tracking-tight text-secondary">
+                      {space.repoName.slice(0, 2).toUpperCase()}
+                    </span>
+                  )}
+                  {activity && !isActive && (
+                    <span
+                      className={cn(
+                        "absolute right-1 top-1 h-1.5 w-1.5 rounded-full ring-2 ring-[var(--color-bg-primary)]",
+                        activity === "attention"
+                          ? "bg-semantic-warning"
+                          : "bg-semantic-success",
+                      )}
+                      aria-hidden="true"
+                    />
+                  )}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex shrink-0 justify-center pt-1.5">
+          <button
+            type="button"
+            onClick={handleAddRepository}
+            className="group flex h-11 w-11 items-center justify-center text-tertiary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
+            title="Add Space"
+            aria-label="Add Space"
+          >
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg transition-[background-color,color] group-hover:bg-hover group-hover:text-primary group-active:scale-[0.97] motion-reduce:transition-none">
+              <Plus className="h-3.5 w-3.5" />
+            </span>
+          </button>
+        </div>
+      </nav>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex h-11 shrink-0 items-center gap-1 px-2">
+          <div className="flex min-w-0 flex-1 items-center gap-2 px-1">
+            {activeRepoGroup ? (
+              <h2 className="min-w-0 truncate text-sm font-semibold text-primary">
+                {activeRepoGroup.repoName}
               </h2>
-              {IS_DEVELOPMENT_BUILD && (
-                <span className="rounded bg-semantic-warning-muted px-1.5 py-0.5 text-[10px] font-medium text-semantic-warning">
-                  Development
-                </span>
-              )}
+            ) : (
+              <h2 className="text-sm font-semibold text-tertiary">Spaces</h2>
+            )}
+            {IS_DEVELOPMENT_BUILD && (
+              <span className="rounded bg-semantic-warning-muted px-1.5 py-0.5 text-[10px] font-medium text-semantic-warning">
+                Development
+              </span>
+            )}
+          </div>
+
+          {activeRepoGroup && (
+            <div className="flex shrink-0 items-center">
+              <button
+                type="button"
+                onClick={() => handleCreateWorktree(activeRepoGroup.repoPath)}
+                className="flex h-8 w-8 items-center justify-center rounded-md text-tertiary hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
+                title="New session"
+                aria-label={`Create a new ${activeRepoGroup.repoName} session`}
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  onToggleCaptainTerminal(activeRepoGroup.repoPath)
+                }
+                className={cn(
+                  "flex h-8 w-8 items-center justify-center rounded-md hover:bg-hover focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1",
+                  captainTerminalRepoPath === activeRepoGroup.repoPath
+                    ? "text-accent-primary"
+                    : "text-tertiary hover:text-primary",
+                )}
+                title={`Open ${activeRepoGroup.repoName} captain terminal`}
+                aria-label={`Open ${activeRepoGroup.repoName} captain terminal`}
+                aria-pressed={
+                  captainTerminalRepoPath === activeRepoGroup.repoPath
+                }
+              >
+                <SquareTerminal className="h-3.5 w-3.5" />
+              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    className="flex h-8 w-8 items-center justify-center rounded-md text-tertiary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
+                    title="Space actions"
+                    aria-label={`${activeRepoGroup.repoName} space actions`}
+                  >
+                    <Ellipsis className="h-3.5 w-3.5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onSelect={() =>
+                      setSessionMode(sessionMode === "pr" ? "agent" : "pr")
+                    }
+                  >
+                    {sessionMode === "pr" ? (
+                      <Bot />
+                    ) : (
+                      <GitPullRequest />
+                    )}
+                    {sessionMode === "pr"
+                      ? "Show Agent sessions"
+                      : "Show PR sessions"}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={() =>
+                      handleRemoveRepository(activeRepoGroup.repoPath)
+                    }
+                    className="text-red-500 focus:text-red-500"
+                  >
+                    <Archive />
+                    Archive repository
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
+          )}
+        </div>
+
+        <div className="flex min-h-0 flex-1 flex-col px-1.5 pb-1.5">
+          {repositories.length === 0 && (
             <button
               type="button"
               onClick={handleAddRepository}
-              className="rounded-md p-1 text-tertiary transition-colors hover:bg-hover hover:text-primary motion-reduce:transition-none"
-              title="Add Space"
-              aria-label="Add Space"
+              className="m-1.5 rounded-md px-2.5 py-2 text-left text-xs text-tertiary hover:bg-hover hover:text-primary"
             >
-              <Plus className="h-3.5 w-3.5" />
+              Add a repository to create your first Space.
             </button>
-          </div>
-          <div
-            className="max-h-40 space-y-0.5 overflow-y-auto scrollbar-hide"
-            style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
-          >
-            {repoGroups.map((space) => {
-              const avatarUrl = space.avatarUrl;
-              const showAvatar =
-                avatarUrl !== undefined && !failedAvatarUrls.has(avatarUrl);
-              const isActive = space.repoPath === resolvedSpacePath;
-
-              return (
-                <div
-                  key={space.repoPath}
-                  className={cn(
-                    "group/space flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left transition-colors motion-reduce:transition-none",
-                    isActive
-                      ? "bg-active text-primary"
-                      : "text-secondary hover:bg-hover hover:text-primary",
-                  )}
-                >
-                  <button
-                    type="button"
-                    data-space-path={space.repoPath}
-                    onClick={() => handleSpaceSelect(space.repoPath)}
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                    aria-pressed={isActive}
-                    aria-label={`Show ${space.repoName} sessions`}
-                  >
-                    <span
-                      className={cn(
-                        "h-1.5 w-1.5 shrink-0 rounded-full",
-                        isActive ? "bg-accent-primary" : "bg-border-strong",
-                      )}
-                    />
-                    {showAvatar ? (
-                      <img
-                        src={avatarUrl}
-                        alt=""
-                        className="h-4 w-4 shrink-0 rounded"
-                        onError={() => {
-                          setFailedAvatarUrls((current) => {
-                            if (!avatarUrl) return current;
-                            const next = new Set(current);
-                            next.add(avatarUrl);
-                            return next;
-                          });
-                        }}
-                      />
-                    ) : (
-                      <Folder className="h-4 w-4 shrink-0 text-tertiary" />
-                    )}
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                      {space.repoName}
-                    </span>
-                  </button>
-                  <div className="flex shrink-0 items-center gap-1 opacity-0 group-hover/space:opacity-100 focus-within:opacity-100">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          onClick={(event) => event.stopPropagation()}
-                          className="rounded-md p-1 text-tertiary hover:bg-hover hover:text-primary"
-                          title="Space actions"
-                          aria-label={`${space.repoName} space actions`}
-                        >
-                          <Ellipsis className="h-3.5 w-3.5" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onSelect={handleAddRepository}>
-                          <Plus />
-                          Add Space
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => handleRemoveRepository(space.repoPath)}
-                          className="text-red-500 focus:text-red-500"
-                        >
-                          <Archive />
-                          Archive repository
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleCreateWorktree(space.repoPath);
-                      }}
-                      className="rounded-md p-1 text-tertiary hover:bg-hover hover:text-primary"
-                      title="New session"
-                      aria-label={`Create a new ${space.repoName} session`}
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                    </button>
-                    {isActive && (
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setSessionMode(sessionMode === "pr" ? "agent" : "pr");
-                        }}
-                        className="rounded-md p-1 text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
-                        title={
-                          sessionMode === "pr"
-                            ? "Switch sessions to Agent mode"
-                            : "Switch sessions to PR mode"
-                        }
-                        aria-label={
-                          sessionMode === "pr"
-                            ? "Switch sessions to Agent mode"
-                            : "Switch sessions to PR mode"
-                        }
-                      >
-                        {sessionMode === "pr" ? (
-                          <Bot className="h-3.5 w-3.5" />
-                        ) : (
-                          <GitPullRequest className="h-3.5 w-3.5" />
-                        )}
-                      </button>
-                    )}
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        onToggleCaptainTerminal(space.repoPath);
-                      }}
-                      className={cn(
-                        "rounded-md p-1 hover:bg-hover",
-                        captainTerminalRepoPath === space.repoPath
-                          ? "text-accent-primary"
-                          : "text-tertiary hover:text-primary",
-                      )}
-                      title={`Open ${space.repoName} captain terminal`}
-                      aria-label={`Open ${space.repoName} captain terminal`}
-                      aria-pressed={captainTerminalRepoPath === space.repoPath}
-                    >
-                      <SquareTerminal className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-            {repositories.length === 0 && (
-              <button
-                type="button"
-                onClick={handleAddRepository}
-                className="w-full rounded-md px-2.5 py-2 text-left text-xs text-tertiary hover:bg-hover hover:text-primary"
-              >
-                Add a repository to create your first Space.
-              </button>
-            )}
-          </div>
-        </section>
-
-        <div className="-mx-1.5 h-px shrink-0 bg-border-subtle" />
+          )}
 
         <div className="flex h-8 shrink-0 items-center px-1.5">
           <h2 className="text-xs font-semibold tracking-wide text-tertiary">
@@ -1308,6 +1327,7 @@ export function Sidebar({
         </Modal.Content>
       </Modal.Root>
       </div>
+    </div>
     </div>
   );
 }

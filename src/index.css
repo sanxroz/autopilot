@@ -6,6 +6,7 @@
 :root {
   /* Background colors - Dark theme (default) */
   --color-bg-primary: #000000;
+  --color-bg-sidebar: #202328;
   --color-bg-secondary: #131515;
   --color-bg-tertiary: #1b1c1e;
   --color-bg-hover: #202124;
@@ -56,6 +57,7 @@
 [data-theme="light"] {
   /* Background colors - Light theme */
   --color-bg-primary: #fff;
+  --color-bg-sidebar: #faf9f7;
   --color-bg-secondary: #faf9f9;
   --color-bg-tertiary: #f0efed;
   --color-bg-hover: #ebebeb;
