@@ -1,0 +1,24 @@
+src/components/Terminal.tsx
+  s_36b6da304eeaa7::t_cdf9eddc10fcf9 262-264,266-269
+  s_36b6da304eeaa7::t_edc50aa8259520 335-338
+  s_36b6da304eeaa7::t_ecefddfea21643 218,265,270-271,334,339
+src-tauri/src/commands/terminal.rs
+  s_36b6da304eeaa7::t_e3bd6df3b2aae2 294,305-319,322,1668,1671,1678,1682,1732,3045,3055
+  s_36b6da304eeaa7::t_cdf9eddc10fcf9 3060-3071
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "84a70d1a891154120e8adeab8f1ab0cb45bb037e",
+  "prompts": {},
+  "sessions": {
+    "s_36b6da304eeaa7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08d39-e36d-7262-8437-184c41fc06e0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
