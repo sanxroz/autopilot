@@ -1,0 +1,23 @@
+src/components/Sidebar.tsx
+  s_d3cbc7e9d2f04f::t_c1e5327979080f 796,1239,1243,1252,1254,1256,1259-1286
+  s_d3cbc7e9d2f04f::t_51751df2459a5e 750,907,1197,1200
+  s_d3cbc7e9d2f04f::t_9067471d818a29 696
+  s_d3cbc7e9d2f04f::t_89d105c7ec664f 712,1238
+  s_d3cbc7e9d2f04f::t_47662cd9a9f79d 1240-1242,1244-1247,1249-1250
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "97e25004c42a0eeae8d01efb6fa49fc8440c2a6a",
+  "prompts": {},
+  "sessions": {
+    "s_d3cbc7e9d2f04f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0894d-a9ae-7f83-88e1-71c33a4d91f3",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
