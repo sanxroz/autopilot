@@ -291,6 +291,7 @@ const TERMINAL_WRITE_QUEUE_CAPACITY: usize = 256;
 #[derive(Default)]
 struct TerminalOutputFlowState {
     attached: bool,
+    attachment_id: u64,
     acknowledged_sequence: u64,
 }
 
@@ -301,11 +302,24 @@ struct TerminalOutputFlow {
 }
 
 impl TerminalOutputFlow {
-    fn attach(&self) {
-        self.state.lock().attached = true;
+    fn attach(&self) -> u64 {
+        let mut state = self.state.lock();
+        state.attachment_id = state.attachment_id.wrapping_add(1);
+        state.attached = true;
+        state.attachment_id
     }
 
-    fn detach(&self) {
+    fn detach(&self, attachment_id: u64) {
+        let mut state = self.state.lock();
+        if state.attachment_id != attachment_id {
+            return;
+        }
+        state.attached = false;
+        drop(state);
+        self.acknowledged.notify_all();
+    }
+
+    fn force_detach(&self) {
         self.state.lock().attached = false;
         self.acknowledged.notify_all();
     }
@@ -1651,21 +1665,21 @@ pub fn get_terminal_output(
 pub fn attach_terminal_output(
     state: State<'_, AppState>,
     terminal_id: String,
-) -> Result<(), String> {
+) -> Result<u64, String> {
     let terminals = state.terminals.lock();
     let session = terminals.get(&terminal_id).ok_or("Terminal not found")?;
-    session.output_flow.attach();
-    Ok(())
+    Ok(session.output_flow.attach())
 }
 
 #[tauri::command]
 pub fn detach_terminal_output(
     state: State<'_, AppState>,
     terminal_id: String,
+    attachment_id: u64,
 ) -> Result<(), String> {
     let terminals = state.terminals.lock();
     let session = terminals.get(&terminal_id).ok_or("Terminal not found")?;
-    session.output_flow.detach();
+    session.output_flow.detach(attachment_id);
     Ok(())
 }
 
@@ -1715,7 +1729,7 @@ fn close_terminal_inner(state: &AppState, terminal_id: &str) -> Result<(), Strin
         terminals.remove(terminal_id)
     };
     if let Some(session) = session {
-        session.output_flow.detach();
+        session.output_flow.force_detach();
         if let Some(pid) = session.child.process_id() {
             #[cfg(unix)]
             {
@@ -3028,7 +3042,7 @@ mod tests {
     #[test]
     fn terminal_output_flow_detach_releases_a_waiting_reader() {
         let flow = Arc::new(TerminalOutputFlow::default());
-        flow.attach();
+        let attachment_id = flow.attach();
 
         let waiting_flow = flow.clone();
         let (sender, receiver) = std::sync::mpsc::channel();
@@ -3038,8 +3052,21 @@ mod tests {
                 .unwrap()
         });
 
-        flow.detach();
+        flow.detach(attachment_id);
         assert!(!receiver.recv_timeout(Duration::from_millis(100)).unwrap());
+    }
+
+    #[test]
+    fn terminal_output_flow_ignores_a_stale_detach() {
+        let flow = TerminalOutputFlow::default();
+        let stale_attachment_id = flow.attach();
+        let active_attachment_id = flow.attach();
+
+        flow.detach(stale_attachment_id);
+        assert!(flow.is_attached());
+
+        flow.detach(active_attachment_id);
+        assert!(!flow.is_attached());
     }
 
     #[test]

@@ -215,6 +215,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     let disposed = false;
     let replayLoaded = false;
     let appliedSequence = 0;
+    let attachmentId: number | null = null;
     let unlistenOutput: (() => void) | null = null;
     const replayEvents: TerminalOutput[] = [];
     const outputQueue: TerminalOutput[] = [];
@@ -258,8 +259,16 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
         }
         unlistenOutput = unlisten;
         try {
-          await invoke("attach_terminal_output", { terminalId });
-          if (disposed) return;
+          attachmentId = await invoke<number>("attach_terminal_output", {
+            terminalId,
+          });
+          if (disposed) {
+            void invoke("detach_terminal_output", {
+              terminalId,
+              attachmentId,
+            }).catch(console.error);
+            return;
+          }
           await resizeTerminal();
           if (disposed) return;
           const snapshot = await invoke<TerminalOutputSnapshot>(
@@ -322,7 +331,12 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
 
     return () => {
       disposed = true;
-      void invoke("detach_terminal_output", { terminalId }).catch(console.error);
+      if (attachmentId !== null) {
+        void invoke("detach_terminal_output", {
+          terminalId,
+          attachmentId,
+        }).catch(console.error);
+      }
       unlistenOutput?.();
       unlistenClose.then((fn) => fn());
       outputQueue.length = 0;
