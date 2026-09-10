@@ -693,7 +693,7 @@ export function Sidebar({
     >
       <div
         ref={innerRef}
-        className="flex h-full border-r border-border bg-sidebar pt-8 select-none"
+        className="flex h-full border-r border-border bg-primary pt-8 select-none"
         style={{
           width: `${width}px`,
           minWidth: `${MIN_WIDTH}px`,
@@ -709,7 +709,7 @@ export function Sidebar({
       />
 
       <nav
-        className="flex w-[52px] shrink-0 flex-col rounded-tr-xl bg-primary pb-1.5"
+        className="flex w-[52px] shrink-0 flex-col pb-1.5"
         aria-label="Spaces"
       >
         <div className="min-h-0 flex-1 space-y-1 overflow-y-auto scrollbar-hide">
@@ -747,7 +747,7 @@ export function Sidebar({
                   className={cn(
                     "relative flex h-11 w-11 items-center justify-center rounded-xl text-tertiary transition-[background-color,color] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 motion-reduce:transition-none",
                     isActive
-                      ? "bg-active text-primary"
+                      ? "bg-hover text-primary"
                       : "hover:bg-hover hover:text-primary",
                   )}
                   aria-pressed={isActive}
@@ -793,7 +793,7 @@ export function Sidebar({
           <button
             type="button"
             onClick={handleAddRepository}
-            className="group flex h-11 w-11 items-center justify-center text-tertiary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
+            className="group flex h-11 w-9 items-center justify-center text-tertiary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
             title="Add Space"
             aria-label="Add Space"
           >
@@ -904,7 +904,7 @@ export function Sidebar({
           )}
 
         <div className="flex h-8 shrink-0 items-center px-1.5">
-          <h2 className="text-xs font-semibold tracking-wide text-tertiary">
+          <h2 className="text-xs font-semibold tracking-wide text-secondary">
             Sessions
           </h2>
         </div>
@@ -1194,10 +1194,10 @@ export function Sidebar({
                                      className={cn("h-1.5 w-1.5 rounded-full", section.dot)}
                                      aria-hidden="true"
                                    />
-                                   <h3 className="min-w-0 flex-1 truncate text-[11px] font-medium text-tertiary">
+                                   <h3 className="min-w-0 flex-1 truncate text-[11px] font-medium text-secondary">
                                      {section.label}
                                    </h3>
-                                   <span className="font-mono text-[10px] tabular-nums text-tertiary">
+                                   <span className="font-mono text-[10px] tabular-nums text-secondary">
                                      {worktrees.length}
                                    </span>
                                  </div>
@@ -1235,49 +1235,55 @@ export function Sidebar({
         </div>
       )}
 
-      <div className="px-1.5 pb-1.5">
-        <div className="flex min-h-8 items-center justify-between">
-          <div className="flex items-center gap-1">
+      <div className="pb-1.5">
+        <div className="flex h-11 shrink-0 items-center justify-between">
+          <button
+            type="button"
+            onClick={() => setShortcutsHelpOpen(true)}
+            className="group -ml-2 flex h-11 w-9 items-center justify-center text-tertiary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
+            title="Keyboard shortcuts"
+            aria-label="Show keyboard shortcuts"
+          >
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg transition-[background-color,color] group-hover:bg-hover group-hover:text-primary motion-reduce:transition-none">
+              <CircleHelp className="h-3.5 w-3.5" />
+            </span>
+          </button>
+
+          <div className="flex items-center pr-1">
             <button
-              onClick={toggleSettings}
-              className="p-0.5 rounded-full transition-colors bg-transparent hover:bg-hover"
-              title={githubSettings.ghAuthUser ? `Signed in as ${githubSettings.ghAuthUser}` : "GitHub Setup"}
-              aria-label={githubSettings.ghAuthUser ? `Account settings for ${githubSettings.ghAuthUser}` : "GitHub Setup"}
+              type="button"
+              onClick={handleToggleTheme}
+              className="group flex h-11 w-9 items-center justify-center text-tertiary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
+              aria-label={themeMode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
             >
-              {githubSettings.ghAuthUser ? (
-                <img
-                  src={`https://github.com/${githubSettings.ghAuthUser}.png?size=64`}
-                  alt={githubSettings.ghAuthUser}
-                  className="w-5 h-5 rounded-full"
-                />
-              ) : (
-                <div className="w-5 h-5 rounded-full flex items-center justify-center bg-tertiary">
-                  <User className="w-3.5 h-3.5 text-tertiary" />
-                </div>
-              )}
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg transition-[background-color,color] group-hover:bg-hover group-hover:text-primary motion-reduce:transition-none">
+                {themeMode === "dark" ? (
+                  <Sun className="h-3.5 w-3.5" />
+                ) : (
+                  <Moon className="h-3.5 w-3.5" />
+                )}
+              </span>
             </button>
             <button
               type="button"
-              onClick={() => setShortcutsHelpOpen(true)}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-tertiary transition-colors hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
-              title="Keyboard shortcuts"
-              aria-label="Show keyboard shortcuts"
+              onClick={toggleSettings}
+              className="group flex h-11 w-9 items-center justify-center focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
+              title={githubSettings.ghAuthUser ? `Signed in as ${githubSettings.ghAuthUser}` : "GitHub Setup"}
+              aria-label={githubSettings.ghAuthUser ? `Account settings for ${githubSettings.ghAuthUser}` : "GitHub Setup"}
             >
-              <CircleHelp className="h-3.5 w-3.5" />
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1">
-            <button
-              onClick={handleToggleTheme}
-              className="p-2 transition-colors rounded-md bg-transparent text-tertiary hover:bg-hover hover:text-primary"
-              aria-label={themeMode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-            >
-              {themeMode === "dark" ? (
-                <Sun className="w-3.5 h-3.5" />
-              ) : (
-                <Moon className="w-3.5 h-3.5" />
-              )}
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg transition-colors group-hover:bg-hover motion-reduce:transition-none">
+                {githubSettings.ghAuthUser ? (
+                  <img
+                    src={`https://github.com/${githubSettings.ghAuthUser}.png?size=64`}
+                    alt={githubSettings.ghAuthUser}
+                    className="h-5 w-5 rounded-full"
+                  />
+                ) : (
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-tertiary">
+                    <User className="h-3.5 w-3.5 text-tertiary" />
+                  </span>
+                )}
+              </span>
             </button>
           </div>
         </div>
