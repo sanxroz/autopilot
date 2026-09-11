@@ -144,6 +144,26 @@ describe("terminal layout tabs", () => {
     ]);
   });
 
+  test("a pending terminal is closed when its worktree was deleted", async () => {
+    let resolveSpawn!: (result: { terminal_id: string }) => void;
+    invokeHandler = (command) =>
+      command === "spawn_terminal"
+        ? new Promise<{ terminal_id: string }>((resolve) => {
+            resolveSpawn = resolve;
+          })
+        : Promise.resolve(undefined);
+
+    const addTerminal = useAppStore.getState().addTerminal();
+    useAppStore.setState({ repositories: [], selectedWorktree: null });
+    resolveSpawn({ terminal_id: "orphan-terminal" });
+
+    expect(await addTerminal).toBeNull();
+    expect(invokeMock).toHaveBeenCalledWith("close_terminal", {
+      terminalId: "orphan-terminal",
+    });
+    expect(useAppStore.getState().terminalsByWorktree[worktree.path].tabs).toEqual(tabs);
+  });
+
   test("opening the same URL focuses its existing browser tab", () => {
     useAppStore.getState().openBrowserTab("http://localhost:3000");
     const browserTabId = useAppStore.getState().currentActiveTerminalTabId;

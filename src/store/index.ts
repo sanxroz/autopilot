@@ -1119,6 +1119,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
       isDarkMode: getThemeMode() === 'dark',
     });
 
+    const worktreeStillExists = get().repositories.some((repository) =>
+      repository.worktrees.some((candidate) => candidate.path === worktree.path)
+    );
+    if (!worktreeStillExists) {
+      await invoke('close_terminal', { terminalId: result.terminal_id }).catch(console.error);
+      return null;
+    }
+
     const terminal: TerminalInstance = {
       id: result.terminal_id,
       worktreePath: worktree.path,

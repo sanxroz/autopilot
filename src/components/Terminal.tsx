@@ -303,7 +303,6 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
           );
           if (disposed) return;
           appliedSequence = snapshot.sequence;
-          openLocalUrls(snapshot.data);
           term.write(snapshot.data, () => {
             if (disposed) return;
             void invoke("acknowledge_terminal_output", {
