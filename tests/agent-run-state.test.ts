@@ -1,12 +1,17 @@
 import { describe, expect, test } from "bun:test";
 import {
   AGENT_FINISHED_TTL_MS,
+  applyAgentStatusEvent,
   getNextAgentFinishedDeadline,
   reconcileAgentRunState,
 } from "../src/store/agentRunState";
 import type { AgentRunState } from "../src/types";
 
 describe("agent run state reconciliation", () => {
+  test("uses a 30 minute finished-state display window", () => {
+    expect(AGENT_FINISHED_TTL_MS).toBe(30 * 60 * 1000);
+  });
+
   test("creates a running lifecycle state when polling detects an external agent", () => {
     const result = reconcileAgentRunState("/repo/worktree", "agent_running", undefined, 1000);
 
@@ -36,6 +41,19 @@ describe("agent run state reconciliation", () => {
 
     expect(result?.status).toBe("completed");
     expect(result?.endedAt).toBe(2000);
+  });
+
+  test("preserves waiting input while polling still detects the agent", () => {
+    const waiting: AgentRunState = {
+      worktreePath: "/repo/worktree",
+      sessionId: "terminal-1",
+      status: "waiting_input",
+      startedAt: 1000,
+      lastEventAt: 1100,
+    };
+
+    expect(reconcileAgentRunState("/repo/worktree", "agent_running", waiting, 2000)).toBe(waiting);
+    expect(reconcileAgentRunState("/repo/worktree", "none", waiting, 2000)?.status).toBe("completed");
   });
 
   test("replaces a completed lifecycle state when polling detects a new running process", () => {
@@ -131,5 +149,85 @@ describe("agent run state reconciliation", () => {
         },
       }),
     ).toBe(2000 + AGENT_FINISHED_TTL_MS);
+  });
+
+  test("accepts newer sessions and rejects older or ambiguous events", () => {
+    const current: AgentRunState = {
+      worktreePath: "/repo/worktree",
+      sessionId: "session-1",
+      terminalId: "terminal-1",
+      status: "completed",
+      startedAt: 1000,
+      lastEventAt: 2000,
+      endedAt: 2000,
+      error: "old error",
+    };
+
+    expect(applyAgentStatusEvent(current, {
+      worktreePath: current.worktreePath,
+      sessionId: "session-2",
+      status: "running",
+      timestamp: 1999,
+    })).toBe(current);
+    expect(applyAgentStatusEvent(current, {
+      worktreePath: current.worktreePath,
+      sessionId: "session-2",
+      status: "running",
+      timestamp: 2000,
+    })).toBe(current);
+
+    expect(applyAgentStatusEvent(current, {
+      worktreePath: current.worktreePath,
+      sessionId: "session-2",
+      terminalId: "terminal-2",
+      status: "completed",
+      timestamp: 2001,
+      agent: "codex",
+      message: "Finished quickly",
+    })).toEqual({
+      worktreePath: current.worktreePath,
+      sessionId: "session-2",
+      terminalId: "terminal-2",
+      status: "completed",
+      startedAt: 2001,
+      lastEventAt: 2001,
+      endedAt: 2001,
+      agent: "codex",
+      error: undefined,
+      label: "Finished quickly",
+    });
+  });
+
+  test("preserves same-session start time and drops delayed events", () => {
+    const current: AgentRunState = {
+      worktreePath: "/repo/worktree",
+      sessionId: "session-1",
+      terminalId: "terminal-1",
+      status: "running",
+      startedAt: 1000,
+      lastEventAt: 1500,
+      agent: "codex",
+    };
+
+    expect(applyAgentStatusEvent(current, {
+      worktreePath: current.worktreePath,
+      sessionId: current.sessionId,
+      status: "waiting_input",
+      timestamp: 1499,
+    })).toBe(current);
+    expect(applyAgentStatusEvent(current, {
+      worktreePath: current.worktreePath,
+      sessionId: current.sessionId,
+      status: "error",
+      timestamp: 1600,
+      message: "Failed",
+    })).toMatchObject({
+      status: "error",
+      startedAt: 1000,
+      lastEventAt: 1600,
+      endedAt: 1600,
+      agent: "codex",
+      error: "Failed",
+    });
   });
 });

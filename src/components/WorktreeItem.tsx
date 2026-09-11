@@ -3,10 +3,11 @@ import { CircleAlert, CircleCheck, GitBranch, Loader, Trash2 } from "lucide-reac
 import type { ProcessStatus, DiffStats, AgentRunState } from "../types";
 import type { PRStatus } from "../types/github";
 import { cn } from "../utils/cn";
+import { getSidebarActivityLabel, getWorktreeActivityDisplay } from "../lib/worktree-status";
 
 const PROCESS_STATUS_LABELS: Record<ProcessStatus, string> = {
   dev_server: "Dev server running",
-  agent_running: "",
+  agent_running: "Agent open",
   none: "",
 };
 
@@ -21,13 +22,6 @@ function getProcessStatusColor(status: ProcessStatus): string | null {
 }
 
 type StatusInfo = { label: string; colorClass: string } | null;
-type AgentStatusDisplay = {
-  label: string;
-  colorClass: string;
-  icon: 'spinner' | 'ready' | 'completed' | 'error';
-  title?: string;
-};
-
 function getStatusInfo(prStatus: PRStatus | null): StatusInfo {
   if (!prStatus) return null;
 
@@ -84,44 +78,6 @@ interface WorktreeItemProps {
   onSelect: () => void;
   onDelete: () => void;
   className?: string;
-}
-
-function getAgentStatusDisplay(agentRunState: AgentRunState | undefined): AgentStatusDisplay | null {
-  if (!agentRunState) return null;
-
-  switch (agentRunState.status) {
-    case 'starting':
-    case 'running':
-      return {
-        label: 'Agent running',
-        colorClass: 'text-semantic-warning',
-        icon: 'spinner',
-        title: agentRunState.label,
-      };
-    case 'waiting_input':
-      return {
-        label: 'Waiting for input',
-        colorClass: 'text-semantic-success',
-        icon: 'ready',
-        title: agentRunState.label,
-      };
-    case 'completed':
-      return {
-        label: 'Agent finished',
-        colorClass: 'text-semantic-success',
-        icon: 'completed',
-        title: agentRunState.label,
-      };
-    case 'error':
-      return {
-        label: 'Agent error',
-        colorClass: 'text-semantic-error',
-        icon: 'error',
-        title: agentRunState.error ?? agentRunState.label,
-      };
-    default:
-      return null;
-  }
 }
 
 function formatTimeAgo(dateStr: string | null | undefined): string {
@@ -203,7 +159,8 @@ export const WorktreeItem = memo(function WorktreeItem({
   const statusInfo = getStatusInfo(prStatus);
   const processStatusColorClass = getProcessStatusColor(processStatus);
   const processStatusLabel = PROCESS_STATUS_LABELS[processStatus];
-  const agentStatus = getAgentStatusDisplay(agentRunState);
+  const agentStatus = getWorktreeActivityDisplay(agentRunState, processStatus);
+  const activityStatusLabel = getSidebarActivityLabel(agentStatus, !!prStatus) || (prStatus ? "" : processStatusLabel);
   const secondaryStatusClass =
     processStatus === "agent_running" ? "text-semantic-warning" : "text-secondary";
 
@@ -292,13 +249,13 @@ export const WorktreeItem = memo(function WorktreeItem({
               <span className="font-mono text-xs font-bold">·</span>
             </>
           )}
-          {processStatusLabel && (
+          {activityStatusLabel && (
             <>
               <span
-                className={cn("truncate", secondaryStatusClass)}
-                title={agentStatus?.title || processStatusLabel}
+                className={cn("truncate", agentStatus?.colorClass || secondaryStatusClass)}
+                title={agentStatus?.title || activityStatusLabel}
               >
-                {processStatusLabel}
+                {activityStatusLabel}
               </span>
               <span className="font-mono text-xs font-bold">·</span>
             </>

@@ -33,7 +33,7 @@ import {
   type SidebarWorktreeDrop,
   type SidebarWorktreeGroup,
 } from '../lib/sidebar-groups';
-import { reconcileAgentRunState } from './agentRunState';
+import { applyAgentStatusEvent, reconcileAgentRunState } from './agentRunState';
 import {
   DEFAULT_KEYBOARD_SHORTCUTS,
   mergeKeyboardShortcuts,
@@ -166,8 +166,6 @@ const DEFAULT_AUTO_FETCH_SETTINGS: AutoFetchSettings = {
   intervalMinutes: 5,
 };
 
-const KNOWN_AGENTS: AIAgent[] = ['opencode', 'claude', 'droid', 'amp', 'codex', 'pi'];
-
 async function runStoreOperation<T>(operation: () => Promise<T>): Promise<T> {
   const result = storeOperationQueue.catch(() => undefined).then(operation);
   storeOperationQueue = result.then(() => undefined, () => undefined);
@@ -184,10 +182,6 @@ async function runStoreWrite<T>(operation: () => Promise<T>): Promise<T> {
       await invoke('release_settings_lock');
     }
   });
-}
-
-function isKnownAgent(value: string | undefined): value is AIAgent {
-  return !!value && KNOWN_AGENTS.includes(value as AIAgent);
 }
 
 function getWorktreeSortTimestamp(worktree: WorktreeInfo): number {
@@ -1530,29 +1524,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setAgentRunState: (event: AgentStatusEvent) => {
     set((state) => {
       const current = state.agentRunByWorktreePath[event.worktreePath];
-      const isNewSession = !current || current.sessionId !== event.sessionId;
-      const canStartSession = event.status === 'starting' || event.status === 'running' || event.status === 'waiting_input';
-
-      if (!canStartSession && isNewSession) {
+      const nextState = applyAgentStatusEvent(current, event);
+      if (!nextState || nextState === current) {
         return state;
       }
 
-      const timestamp = event.timestamp || Date.now();
       const fromStatus = current?.status ?? 'idle';
-      const normalizedAgent = isKnownAgent(event.agent) ? event.agent : current?.agent;
-      const nextState: AgentRunState = {
-        worktreePath: event.worktreePath,
-        sessionId: event.sessionId,
-        terminalId: event.terminalId ?? current?.terminalId,
-        status: event.status,
-        startedAt: isNewSession ? timestamp : (current?.startedAt ?? timestamp),
-        lastEventAt: timestamp,
-        agent: normalizedAgent,
-        label: event.message,
-        error: event.status === 'error' ? event.message ?? current?.error : undefined,
-        endedAt: event.status === 'completed' || event.status === 'error' ? timestamp : undefined,
-      };
-
       console.debug('[agent-status]', {
         worktreePath: event.worktreePath,
         sessionId: event.sessionId,

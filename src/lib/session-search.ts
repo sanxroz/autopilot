@@ -104,6 +104,9 @@ export function getSessionSearchStatuses(
   prStatus: PRStatus | undefined,
 ): SessionSearchStatus[] {
   let activity: SessionSearchStatus;
+  const processOnlyAgent = agentRun
+    ? agentRun.sessionId === `process-${agentRun.worktreePath}`
+    : false;
   if (agentRun?.status === "error") {
     activity = { label: "Agent error", tone: "error" };
   } else if (agentRun?.status === "waiting_input") {
@@ -111,11 +114,14 @@ export function getSessionSearchStatuses(
   } else if (agentRun?.status === "completed") {
     activity = { label: "Agent finished", tone: "info" };
   } else if (
-    processStatus === "agent_running" ||
     agentRun?.status === "starting" ||
     agentRun?.status === "running"
   ) {
-    activity = { label: "Agent running", tone: "success" };
+    activity = processOnlyAgent
+      ? { label: "Agent open", tone: "info" }
+      : { label: "Agent running", tone: "success" };
+  } else if (processStatus === "agent_running") {
+    activity = { label: "Agent open", tone: "info" };
   } else if (processStatus === "dev_server") {
     activity = { label: "Dev server", tone: "info" };
   } else {
