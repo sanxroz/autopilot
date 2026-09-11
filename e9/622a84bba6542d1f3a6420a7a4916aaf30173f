@@ -1,0 +1,21 @@
+tests/terminal-tabs.test.ts
+  s_b2522775eee2a0::t_20af1988e3a03f 147-166
+src/store/index.ts
+  s_b2522775eee2a0::t_54677453012944 1122-1128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "e9622a84bba6542d1f3a6420a7a4916aaf30173f",
+  "prompts": {},
+  "sessions": {
+    "s_b2522775eee2a0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09072-4b3b-7c60-a8de-facafeb88c2f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
