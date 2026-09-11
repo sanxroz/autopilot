@@ -1,0 +1,48 @@
+docs/parallel-worktrees-context-plan.md
+  s_3526a51d8115b7::t_ebd180078d2c2d 48,87,93,121
+  s_3526a51d8115b7::t_20ba45049c3ad9 1-47,49-86,88-92,94-120,122-148
+docs/sidebar-status-fix-plan.md
+  s_3526a51d8115b7::t_9c5bf23c8e0e37 1-4,6-49,52-72,74-80,82-88,90-94,96-103
+  s_3526a51d8115b7::t_288afc977467ac 5,50-51,73,89,95
+  s_3526a51d8115b7::t_ebd180078d2c2d 81
+tests/agent-run-state.test.ts
+  s_3526a51d8115b7::t_d3c8b6dcffcf1f 4,11-14,46-58,153-231
+tests/session-search.test.ts
+  s_3526a51d8115b7::t_b82742e255b656 56-66
+src/components/WorktreeItem.tsx
+  s_3526a51d8115b7::t_d3c8b6dcffcf1f 162,252,255-256,258
+  s_3526a51d8115b7::t_ee2e792eca7da0 6,163
+  s_3526a51d8115b7::t_b82742e255b656 10
+src/lib/worktree-status.ts
+  s_3526a51d8115b7::t_b82742e255b656 33,38-40,55,58
+  s_3526a51d8115b7::t_d3c8b6dcffcf1f 1-9,17-32,34-37,41-54,56-57,59-63
+  s_3526a51d8115b7::t_ee2e792eca7da0 10-16
+src/lib/session-search.ts
+  s_3526a51d8115b7::t_b82742e255b656 120-124
+  s_3526a51d8115b7::t_661a1829ed7798 107-109
+src/store/index.ts
+  s_3526a51d8115b7::t_d3c8b6dcffcf1f 36,1527-1528
+tests/worktree-status-display.test.ts
+  s_3526a51d8115b7::t_d3c8b6dcffcf1f 1,3-31,41-43,50-51
+  s_3526a51d8115b7::t_ee2e792eca7da0 2,44-49
+  s_3526a51d8115b7::t_b82742e255b656 32-40
+src/store/agentRunState.ts
+  s_3526a51d8115b7::t_d3c8b6dcffcf1f 1,3-22,24-37
+  s_3526a51d8115b7::t_d257cf9f7aa192 23
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c8c8c03306fceb600b23ba9e6bf5fce809b9eaa1",
+  "prompts": {},
+  "sessions": {
+    "s_3526a51d8115b7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09092-b338-7c52-bf99-81828702c073",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
