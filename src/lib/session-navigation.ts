@@ -17,6 +17,36 @@ export function orderSessionsByPath<T extends { path: string }>(
   });
 }
 
+export function recordRecentWorktreePath(
+  recentPaths: readonly string[],
+  worktreePath: string,
+  limit = 10,
+): string[] {
+  return [worktreePath, ...recentPaths.filter((path) => path !== worktreePath)].slice(0, limit);
+}
+
+export function pruneRecentWorktreePaths(
+  recentPaths: readonly string[],
+  availablePaths: ReadonlySet<string>,
+): string[] {
+  return recentPaths
+    .filter((path, index) => availablePaths.has(path) && recentPaths.indexOf(path) === index)
+    .slice(0, 10);
+}
+
+export function orderRecentSessions<T extends { path: string }>(
+  sessions: readonly T[],
+  recentPaths: readonly string[],
+): T[] {
+  const sessionsByPath = new Map(sessions.map((session) => [session.path, session]));
+  const recent = recentPaths.flatMap((path) => {
+    const session = sessionsByPath.get(path);
+    return session ? [session] : [];
+  });
+  const recentSet = new Set(recent.map((session) => session.path));
+  return [...recent, ...sessions.filter((session) => !recentSet.has(session.path))];
+}
+
 export function cycleItems<T>(
   sessions: readonly T[],
   current: T | null,

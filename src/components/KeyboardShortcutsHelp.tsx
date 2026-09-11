@@ -18,6 +18,8 @@ const SECTIONS: readonly {
       "nextSpace",
       "previousSession",
       "nextSession",
+      "previousRecentSession",
+      "nextRecentSession",
       "previousTerminal",
       "nextTerminal",
       "previousLayout",

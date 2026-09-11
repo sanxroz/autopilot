@@ -225,6 +225,7 @@ pub fn run() {
             github::get_notifications,
             notes::has_autopilot_context,
             notes::read_autopilot_context,
+            notes::read_autopilot_context_summaries,
             notes::write_autopilot_context,
             editor::list_installed_ide_apps,
             editor::open_worktree_in_ide,

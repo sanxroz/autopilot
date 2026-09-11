@@ -25,6 +25,7 @@ import { getShortcutAction, type ShortcutAction } from "./lib/keyboard-shortcuts
 import {
   cycleItems,
   getNavigableSessions,
+  orderRecentSessions,
   orderSessionsByPath,
 } from "./lib/session-navigation";
 
@@ -96,6 +97,17 @@ function App() {
         const sessions = orderSessionsByPath(allSessions, visibleSessionPaths);
         const current = sessions.find((worktree) => worktree.path === state.selectedWorktree?.path) ?? null;
         const session = cycleItems(sessions, current, action === "nextSession" ? 1 : -1);
+        if (session) void state.selectWorktree(session);
+        break;
+      }
+      case "previousRecentSession":
+      case "nextRecentSession": {
+        const sessions = orderRecentSessions(
+          getNavigableSessions(state.repositories),
+          state.recentWorktreePaths,
+        );
+        const current = sessions.find((worktree) => worktree.path === state.selectedWorktree?.path) ?? null;
+        const session = cycleItems(sessions, current, action === "nextRecentSession" ? 1 : -1);
         if (session) void state.selectWorktree(session);
         break;
       }

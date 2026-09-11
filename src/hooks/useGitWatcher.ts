@@ -18,9 +18,11 @@ export function useGitWatcher() {
   const repositories = useAppStore((state) => state.repositories);
   const refreshWorktrees = useAppStore((state) => state.refreshWorktrees);
   const updateWorktreeBranch = useAppStore((state) => state.updateWorktreeBranch);
+  const refreshContextSummaries = useAppStore((state) => state.refreshContextSummaries);
   const isInitialized = useAppStore((state) => state.isInitialized);
   const unlistenHeadRef = useRef<UnlistenFn | null>(null);
   const unlistenWorktreeRef = useRef<UnlistenFn | null>(null);
+  const unlistenContextRef = useRef<UnlistenFn | null>(null);
   const pendingBranchUpdates = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const pendingWorktreeUpdates = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const inFlightRefreshes = useRef<Set<string>>(new Set());
@@ -96,6 +98,16 @@ export function useGitWatcher() {
           debouncedWorktreeRefresh(event.payload.repo_path);
         });
       }
+
+      if (!unlistenContextRef.current) {
+        unlistenContextRef.current = await listen<{ worktree_path: string }>(
+          'autopilot-context-changed',
+          (event) => {
+            if (!mounted) return;
+            void refreshContextSummaries([event.payload.worktree_path]);
+          },
+        );
+      }
     };
 
     setupListeners();
@@ -103,7 +115,7 @@ export function useGitWatcher() {
     return () => {
       mounted = false;
     };
-  }, [isInitialized, debouncedBranchUpdate, debouncedWorktreeRefresh]);
+  }, [isInitialized, debouncedBranchUpdate, debouncedWorktreeRefresh, refreshContextSummaries]);
 
   useEffect(() => {
     if (!isInitialized) return;
@@ -157,6 +169,10 @@ export function useGitWatcher() {
       if (unlistenWorktreeRef.current) {
         unlistenWorktreeRef.current();
         unlistenWorktreeRef.current = null;
+      }
+      if (unlistenContextRef.current) {
+        unlistenContextRef.current();
+        unlistenContextRef.current = null;
       }
       desiredWorktreePaths.current.clear();
       invoke('stop_all_watchers').catch(console.error);
