@@ -1,0 +1,64 @@
+src/components/KeyboardShortcutsHelp.tsx
+  s_3526a51d8115b7::t_26a20cee6fd2bd 21-22
+src/hooks/useGitWatcher.ts
+  s_3526a51d8115b7::t_dfc22324d33c69 21,25,101-110,118,173-175
+src/components/CommandMenu.tsx
+  s_3526a51d8115b7::t_3fc8e23b25ab94 41,89-104,124-125,147,156,159,166,181-184,193,198,239,277,292,306-312,430,435
+  s_3526a51d8115b7::t_c6f9c794752a53 36,148,157
+src-tauri/src/lib.rs
+  s_3526a51d8115b7::t_6d63279a245272 228
+tests/session-mru.test.ts
+  s_3526a51d8115b7::t_b05044fa59dadc 1-29
+src/lib/keyboard-shortcuts.ts
+  s_3526a51d8115b7::t_6bd32a0673a9c3 41-42
+  s_3526a51d8115b7::t_b40951a004c344 11-12
+src/store/index.ts
+  s_3526a51d8115b7::t_bcc29314d6150d 987,1024
+  s_3526a51d8115b7::t_49dfaf94254692 480-481,528,575-586
+  s_3526a51d8115b7::t_d2f3831c0c1404 176-177,281,303,316,422-423
+  s_3526a51d8115b7::t_8c59420b808146 18-19,39-43,62,110-111,146-147
+  s_3526a51d8115b7::t_1eb28bbb1ae44e 664-665,781-783,787
+  s_3526a51d8115b7::t_7340f7a152b790 704-712,774-780,784-785
+  s_3526a51d8115b7::t_8084789faa2449 1565-1614
+src/lib/session-navigation.ts
+  s_3526a51d8115b7::t_b40951a004c344 20-31,35-49
+  s_3526a51d8115b7::t_47578a95694ac0 32-34
+src/App.tsx
+  s_3526a51d8115b7::t_26a20cee6fd2bd 28,101-110
+src/lib/session-search.ts
+  s_3526a51d8115b7::t_b40951a004c344 144-186
+  s_3526a51d8115b7::t_c6f9c794752a53 10-13
+src/types/index.ts
+  s_3526a51d8115b7::t_b40951a004c344 16-26
+tests/session-search.test.ts
+  s_3526a51d8115b7::t_c6f9c794752a53 8,165-169
+  s_3526a51d8115b7::t_b05044fa59dadc 6-7,153-164
+src-tauri/src/commands/notes.rs
+  s_3526a51d8115b7::t_eda5a5f69f3734 412-415,439-442,450-456,466-470
+  s_3526a51d8115b7::t_13ef6ebc79551f 3,11-27,165-186,189-199,205-224,233-239,241-245,253-286,406-408,410-411,416-422,428-438,443-449,473
+  s_3526a51d8115b7::t_15e8f0a999ad28 225-232,457-459
+  s_3526a51d8115b7::t_6d63279a245272 6
+  s_3526a51d8115b7::t_45b3c6efce189c 290,293-294,300-304,460-465
+  s_3526a51d8115b7::t_3004cc6aa250c0 240
+  s_3526a51d8115b7::t_80703d8a1036ea 409
+  s_3526a51d8115b7::t_9d99d82813f8e7 246-252
+  s_3526a51d8115b7::t_6bd32a0673a9c3 187-188,200-202,204,423-427
+tests/keyboard-shortcuts.test.ts
+  s_3526a51d8115b7::t_c6ce6d81d375d4 31-32
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "2cd793a69b4715fc4544f9de44d1255d90dd143c",
+  "prompts": {},
+  "sessions": {
+    "s_3526a51d8115b7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09092-b338-7c52-bf99-81828702c073",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
