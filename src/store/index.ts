@@ -34,6 +34,7 @@ import {
   type SidebarWorktreeGroup,
 } from '../lib/sidebar-groups';
 import { reconcileAgentRunState } from './agentRunState';
+import { isLocalWebUrl } from '../lib/local-web-url';
 import {
   DEFAULT_KEYBOARD_SHORTCUTS,
   mergeKeyboardShortcuts,
@@ -114,6 +115,8 @@ interface AppStore {
   selectWorktree: (worktree: WorktreeInfo) => Promise<void>;
   addTerminal: () => Promise<string | null>;
   createTerminalTab: () => Promise<string | null>;
+  openBrowserTab: (url: string) => void;
+  updateBrowserTabUrl: (tabId: string, url: string) => void;
   closeTerminalTab: (tabId: string) => void;
   addTerminalWithCommand: (command: string) => Promise<string | null>;
   removeTerminal: (terminalId: string) => void;
@@ -1014,6 +1017,55 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return tab.id;
   },
 
+  openBrowserTab: (url: string) => {
+    const state = get();
+    const worktree = state.selectedWorktree;
+    if (!worktree || !isLocalWebUrl(url)) return;
+    const normalizedUrl = new URL(url).href;
+
+    const existing = state.currentTerminalTabs.find((tab) => tab.browserUrl === normalizedUrl);
+    if (existing) {
+      get().setActiveTerminalTab(existing.id);
+      return;
+    }
+
+    const tab: TerminalPane = {
+      id: `browser-${crypto.randomUUID()}`,
+      terminals: [],
+      activeTerminalId: null,
+      browserUrl: normalizedUrl,
+    };
+    const tabs = [...state.currentTerminalTabs, tab];
+
+    set((current) => ({
+      currentTerminalTabs: tabs,
+      currentActiveTerminalTabId: tab.id,
+      currentTerminals: [],
+      currentActiveTerminalId: null,
+      terminalsByWorktree: {
+        ...current.terminalsByWorktree,
+        [worktree.path]: { tabs, activeTabId: tab.id },
+      },
+    }));
+  },
+
+  updateBrowserTabUrl: (tabId: string, url: string) => {
+    const state = get();
+    const worktree = state.selectedWorktree;
+    if (!worktree || !isLocalWebUrl(url)) return;
+
+    const tabs = state.currentTerminalTabs.map((tab) =>
+      tab.id === tabId ? { ...tab, browserUrl: new URL(url).href } : tab,
+    );
+    set((current) => ({
+      currentTerminalTabs: tabs,
+      terminalsByWorktree: {
+        ...current.terminalsByWorktree,
+        [worktree.path]: { tabs, activeTabId: current.currentActiveTerminalTabId },
+      },
+    }));
+  },
+
   closeTerminalTab: (tabId: string) => {
     const state = get();
     const worktree = state.selectedWorktree;
@@ -1052,7 +1104,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const state = get();
     const worktree = state.selectedWorktree;
     if (!worktree) return null;
-    if (!state.currentActiveTerminalTabId) {
+    const activeTab = state.currentTerminalTabs.find(
+      (tab) => tab.id === state.currentActiveTerminalTabId,
+    );
+    if (!activeTab || activeTab.browserUrl) {
       return get().createTerminalTab();
     }
 

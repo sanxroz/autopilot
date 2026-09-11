@@ -6,6 +6,7 @@ import { Terminal } from "./Terminal";
 import type { TerminalHandle } from "./Terminal";
 import { TerminalSearchBar } from "./TerminalSearchBar";
 import { TerminalAnimation } from "./TerminalAnimation";
+import { BrowserPane } from "./BrowserPane";
 
 export function TerminalGrid() {
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
@@ -14,7 +15,11 @@ export function TerminalGrid() {
     (state) => state.currentActiveTerminalId
   );
   const terminalsByWorktree = useAppStore((state) => state.terminalsByWorktree);
+  const activeTab = useAppStore((state) =>
+    state.currentTerminalTabs.find((tab) => tab.id === state.currentActiveTerminalTabId),
+  );
   const setActiveTerminal = useAppStore((state) => state.setActiveTerminal);
+  const updateBrowserTabUrl = useAppStore((state) => state.updateBrowserTabUrl);
   const addTerminal = useAppStore((state) => state.addTerminal);
   const removeTerminal = useAppStore((state) => state.removeTerminal);
   const addRepository = useAppStore((state) => state.addRepository);
@@ -112,6 +117,12 @@ export function TerminalGrid() {
 
   return (
     <div className="flex-1 relative min-w-0 min-h-0 overflow-hidden">
+      {activeTab?.browserUrl && (
+        <BrowserPane
+          initialUrl={activeTab.browserUrl}
+          onNavigate={(url) => updateBrowserTabUrl(activeTab.id, url)}
+        />
+      )}
       {selectedWorktree && visibleTerminals.length > 0 && (
         <div
           className="absolute inset-0 grid gap-[1px]"
@@ -158,7 +169,7 @@ export function TerminalGrid() {
         </div>
       )}
 
-      {(!selectedWorktree || terminals.length === 0) && (
+      {(!selectedWorktree || terminals.length === 0) && !activeTab?.browserUrl && (
         <div className="absolute inset-0 flex items-center justify-center bg-transparent z-10 overflow-hidden">
           <div className="text-center max-w-full px-4">
             <div className="mb-6 hidden md:block">

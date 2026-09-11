@@ -99,6 +99,46 @@ describe("terminal layout tabs", () => {
     expect(useAppStore.getState().currentTerminalTabs).toHaveLength(1);
   });
 
+  test("opening a browser tab preserves the terminal layout", () => {
+    useAppStore.getState().openBrowserTab("http://localhost:3000");
+
+    const state = useAppStore.getState();
+    expect(state.currentTerminalTabs).toHaveLength(3);
+    expect(state.currentTerminalTabs[2].browserUrl).toBe("http://localhost:3000/");
+    expect(state.currentTerminals).toEqual([]);
+    expect(state.terminalsByWorktree[worktree.path].activeTabId).toBe(
+      state.currentTerminalTabs[2].id,
+    );
+  });
+
+  test("opening the same URL focuses its existing browser tab", () => {
+    useAppStore.getState().openBrowserTab("http://localhost:3000");
+    const browserTabId = useAppStore.getState().currentActiveTerminalTabId;
+    useAppStore.getState().setActiveTerminalTab("layout-1");
+
+    useAppStore.getState().openBrowserTab("http://localhost:3000");
+
+    expect(useAppStore.getState().currentActiveTerminalTabId).toBe(browserTabId);
+    expect(useAppStore.getState().currentTerminalTabs).toHaveLength(3);
+  });
+
+  test("rejects external browser tabs", () => {
+    useAppStore.getState().openBrowserTab("https://example.com");
+
+    expect(useAppStore.getState().currentTerminalTabs).toEqual(tabs);
+  });
+
+  test("persists browser navigation in its tab", () => {
+    useAppStore.getState().openBrowserTab("http://localhost:3000");
+    const browserTabId = useAppStore.getState().currentActiveTerminalTabId!;
+
+    useAppStore.getState().updateBrowserTabUrl(browserTabId, "http://localhost:5173/app");
+
+    expect(useAppStore.getState().currentTerminalTabs[2].browserUrl).toBe(
+      "http://localhost:5173/app",
+    );
+  });
+
   test("a pending new tab stays with its originating worktree", async () => {
     const otherWorktree: WorktreeInfo = {
       name: "other",

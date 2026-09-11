@@ -1,4 +1,4 @@
-import { PanelLeft, PanelRight, Search, X } from "lucide-react";
+import { Globe2, PanelLeft, PanelRight, Search, X } from "lucide-react";
 import { useAppStore } from "../store";
 import { formatShortcut } from "../lib/keyboard-shortcuts";
 import type { WorktreeInfo } from "../types";
@@ -85,7 +85,9 @@ export function WorkspaceHeader({
       >
         {visibleTabs.map((tab, index) => {
           const isActive = Boolean(headerWorktree) || tab.id === activeTerminalTabId;
-          const label = index === 0
+          const label = tab.browserUrl
+            ? new URL(tab.browserUrl).host
+            : index === 0
             ? workspaceName ?? "Workspace"
             : `${workspaceName ?? "Workspace"} ${index + 1}`;
 
@@ -108,9 +110,16 @@ export function WorkspaceHeader({
                 onClick={() => {
                   if (!headerWorktree) setActiveTerminalTab(tab.id);
                 }}
-                className="flex h-full min-w-0 flex-1 items-center px-3 text-[12px] font-medium focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
+                className="flex h-full min-w-0 flex-1 items-center gap-1.5 px-3 text-[12px] font-medium focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
                 title={label}
               >
+                {tab.browserUrl && (
+                  <Globe2
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5 shrink-0"
+                    strokeWidth={1.75}
+                  />
+                )}
                 <span className="truncate">{label}</span>
               </button>
               {canClose && (
