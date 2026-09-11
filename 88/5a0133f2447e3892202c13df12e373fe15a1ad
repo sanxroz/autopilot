@@ -1,0 +1,30 @@
+src/components/BrowserPane.tsx
+  s_87fef4c72a25b0::t_8bfa4f89ba5c4d 168
+src/components/Terminal.tsx
+  s_87fef4c72a25b0::t_c2cd38b28beddd 306
+src/components/TerminalGrid.tsx
+  s_87fef4c72a25b0::t_c2cd38b28beddd 122
+tests/terminal-tabs.test.ts
+  s_87fef4c72a25b0::t_491ae2c3a0cb14 114-116,137-139
+  s_87fef4c72a25b0::t_c2cd38b28beddd 112-113,117-136,140-144
+src/store/index.ts
+  s_87fef4c72a25b0::t_c2cd38b28beddd 1113,1128-1134,1136-1138,1142-1144,1146-1154,1159
+src/components/WorkspaceHeader.tsx
+  s_87fef4c72a25b0::t_491ae2c3a0cb14 51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "885a0133f2447e3892202c13df12e373fe15a1ad",
+  "prompts": {},
+  "sessions": {
+    "s_87fef4c72a25b0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08e90-4723-70d2-b0fd-f9c1131b2480",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
