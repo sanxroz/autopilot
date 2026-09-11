@@ -1110,6 +1110,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (!activeTab || activeTab.browserUrl) {
       return get().createTerminalTab();
     }
+    const activeTabId = activeTab.id;
 
     const result = await invoke<{ terminal_id: string }>('spawn_terminal', {
       cwd: worktree.path,
@@ -1124,22 +1125,38 @@ export const useAppStore = create<AppStore>((set, get) => ({
       worktreeName: worktree.name,
     };
 
+    const originatingTabs = get().terminalsByWorktree[worktree.path]?.tabs;
+    const originatingTab = originatingTabs?.find((tab) => tab.id === activeTabId);
+    if (!originatingTab) {
+      await invoke('close_terminal', { terminalId: terminal.id }).catch(console.error);
+      return null;
+    }
+
     set((state) => {
-      const newTerminals = [...state.currentTerminals, terminal];
-      const tabs = state.currentTerminalTabs.map((tab) =>
-        tab.id === state.currentActiveTerminalTabId
+      const newTerminals = [...originatingTab.terminals, terminal];
+      const tabs = originatingTabs.map((tab) =>
+        tab.id === activeTabId
           ? { ...tab, terminals: newTerminals, activeTerminalId: terminal.id }
           : tab
       );
+      const isStillActive =
+        state.selectedWorktree?.path === worktree.path &&
+        state.currentActiveTerminalTabId === activeTabId;
       return {
-        currentTerminalTabs: tabs,
-        currentTerminals: newTerminals,
-        currentActiveTerminalId: terminal.id,
+        ...(state.selectedWorktree?.path === worktree.path
+          ? { currentTerminalTabs: tabs }
+          : {}),
+        ...(isStillActive
+          ? {
+              currentTerminals: newTerminals,
+              currentActiveTerminalId: terminal.id,
+            }
+          : {}),
         terminalsByWorktree: {
           ...state.terminalsByWorktree,
           [worktree.path]: {
             tabs,
-            activeTabId: state.currentActiveTerminalTabId,
+            activeTabId: state.terminalsByWorktree[worktree.path].activeTabId,
           },
         },
       };

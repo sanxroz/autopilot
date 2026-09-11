@@ -119,6 +119,7 @@ export function TerminalGrid() {
     <div className="flex-1 relative min-w-0 min-h-0 overflow-hidden">
       {activeTab?.browserUrl && (
         <BrowserPane
+          key={activeTab.id}
           initialUrl={activeTab.browserUrl}
           onNavigate={(url) => updateBrowserTabUrl(activeTab.id, url)}
         />

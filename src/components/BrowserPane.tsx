@@ -165,6 +165,7 @@ export function BrowserPane({ initialUrl, onNavigate }: BrowserPaneProps) {
         <iframe
           key={`${url}-${reloadKey}`}
           src={url}
+          sandbox="allow-forms allow-same-origin allow-scripts"
           title={`Browser preview of ${url}`}
           className="block border-0 bg-white"
           style={{

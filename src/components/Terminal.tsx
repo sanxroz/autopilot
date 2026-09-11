@@ -227,7 +227,6 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     const outputQueue: TerminalOutput[] = [];
     let isWritingOutput = false;
     let localUrlOutput = "";
-    const openedLocalUrls = new Set<string>();
 
     const openLocalUrls = (data: string) => {
       localUrlOutput += data;
@@ -243,8 +242,6 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       const completeOutput = localUrlOutput.slice(0, lastLineBreak + 1);
       localUrlOutput = localUrlOutput.slice(lastLineBreak + 1);
       for (const url of findLocalWebUrls(completeOutput)) {
-        if (openedLocalUrls.has(url)) continue;
-        openedLocalUrls.add(url);
         useAppStore.getState().openBrowserTab(url);
       }
     };
@@ -306,6 +303,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
           );
           if (disposed) return;
           appliedSequence = snapshot.sequence;
+          openLocalUrls(snapshot.data);
           term.write(snapshot.data, () => {
             if (disposed) return;
             void invoke("acknowledge_terminal_output", {

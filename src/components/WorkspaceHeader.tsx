@@ -48,7 +48,7 @@ export function WorkspaceHeader({
   const canCreateTab = Boolean(selectedWorktree && !headerWorktree);
   const workspaceName = displayedWorktree?.name ?? displayedWorktree?.branch;
   const visibleTabs = headerWorktree
-    ? [{ id: `captain:${headerWorktree.path}` }]
+    ? [{ id: `captain:${headerWorktree.path}`, browserUrl: undefined }]
     : terminalTabs;
 
   return (

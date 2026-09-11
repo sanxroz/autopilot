@@ -109,6 +109,39 @@ describe("terminal layout tabs", () => {
     expect(state.terminalsByWorktree[worktree.path].activeTabId).toBe(
       state.currentTerminalTabs[2].id,
     );
+
+    useAppStore.getState().setActiveTerminalTab("layout-1");
+    expect(
+      useAppStore.getState().currentTerminals.map((terminal) => terminal.id),
+    ).toEqual(["terminal-1", "terminal-2"]);
+  });
+
+  test("a pending terminal stays with its originating layout", async () => {
+    let resolveSpawn!: (result: { terminal_id: string }) => void;
+    invokeHandler = (command) =>
+      command === "spawn_terminal"
+        ? new Promise<{ terminal_id: string }>((resolve) => {
+            resolveSpawn = resolve;
+          })
+        : Promise.resolve(undefined);
+
+    const addTerminal = useAppStore.getState().addTerminal();
+    useAppStore.getState().openBrowserTab("http://localhost:3000");
+    const browserTabId = useAppStore.getState().currentActiveTerminalTabId;
+    resolveSpawn({ terminal_id: "terminal-4" });
+    await addTerminal;
+
+    const state = useAppStore.getState();
+    expect(state.currentActiveTerminalTabId).toBe(browserTabId);
+    expect(state.currentTerminals).toEqual([]);
+    expect(
+      state.currentTerminalTabs.find((tab) => tab.id === browserTabId)?.terminals,
+    ).toEqual([]);
+    expect(state.currentTerminalTabs[0].terminals.map((terminal) => terminal.id)).toEqual([
+      "terminal-1",
+      "terminal-2",
+      "terminal-4",
+    ]);
   });
 
   test("opening the same URL focuses its existing browser tab", () => {
