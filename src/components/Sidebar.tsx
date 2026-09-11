@@ -35,9 +35,11 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import {
+  canStartSpaceDrag,
   findSpaceForWorktree,
   getSpaceActivity,
   loadActiveSpace,
+  ownsSpaceDrag,
   reorderSpacePaths,
   resolveActiveSpace,
   saveActiveSpace,
@@ -185,6 +187,7 @@ export function Sidebar({
   const [spacePreviewOrder, setSpacePreviewOrder] = useState<string[] | null>(null);
   const spaceDragSessionRef = useRef<{
     path: string;
+    pointerId: number;
     startX: number;
     startY: number;
     isDragging: boolean;
@@ -370,10 +373,11 @@ export function Sidebar({
     event: React.PointerEvent<HTMLButtonElement>,
     path: string,
   ) => {
-    if (event.button !== 0) return;
+    if (!canStartSpaceDrag(event, spaceDragSessionRef.current !== null)) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     spaceDragSessionRef.current = {
       path,
+      pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
       isDragging: false,
@@ -383,7 +387,7 @@ export function Sidebar({
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
       const session = spaceDragSessionRef.current;
-      if (!session) return;
+      if (!session || !ownsSpaceDrag(event.pointerId, session.pointerId)) return;
 
       if (!session.isDragging) {
         const distance = Math.max(
@@ -439,11 +443,13 @@ export function Sidebar({
       setSpacePreviewOrder(nextOrder);
     };
 
-    const endSpaceDrag = (commit: boolean) => {
+    const endSpaceDrag = (event: PointerEvent, commit: boolean) => {
       const session = spaceDragSessionRef.current;
+      if (!session || !ownsSpaceDrag(event.pointerId, session.pointerId)) return;
+
       const previewOrder = spacePreviewOrderRef.current;
 
-      if (session?.isDragging && commit) {
+      if (session.isDragging && commit) {
         suppressNextSpaceClickRef.current = true;
         window.setTimeout(() => {
           suppressNextSpaceClickRef.current = false;
@@ -459,8 +465,8 @@ export function Sidebar({
       setSpacePreviewOrder(null);
     };
 
-    const handlePointerUp = () => endSpaceDrag(true);
-    const handlePointerCancel = () => endSpaceDrag(false);
+    const handlePointerUp = (event: PointerEvent) => endSpaceDrag(event, true);
+    const handlePointerCancel = (event: PointerEvent) => endSpaceDrag(event, false);
 
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
