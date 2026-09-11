@@ -17,8 +17,14 @@ use tauri::{Listener, WebviewWindow};
 const MIN_FILE_DESCRIPTOR_LIMIT: libc::rlim_t = 4096;
 
 fn is_allowed_webview_navigation(url: &tauri::Url) -> bool {
-    !matches!(url.scheme(), "http" | "https")
-        || matches!(url.host_str(), Some("localhost" | "127.0.0.1" | "[::1]"))
+    match url.scheme() {
+        "tauri" => url.host_str() == Some("localhost"),
+        "http" | "https" => matches!(
+            url.host_str(),
+            Some("localhost" | "127.0.0.1" | "[::1]" | "tauri.localhost")
+        ),
+        _ => false,
+    }
 }
 
 #[cfg(unix)]
@@ -272,6 +278,7 @@ mod local_navigation_tests {
     fn allows_internal_and_loopback_navigation() {
         for value in [
             "tauri://localhost",
+            "http://tauri.localhost",
             "http://localhost:3000/path",
             "https://127.0.0.1:5173",
             "http://[::1]:8080",
@@ -289,6 +296,10 @@ mod local_navigation_tests {
             "https://example.com",
             "http://localhost.example.com",
             "https://192.168.1.2:3000",
+            "file:///tmp/index.html",
+            "data:text/html,hello",
+            "custom://localhost",
+            "tauri://example.com",
         ] {
             assert!(
                 !is_allowed_webview_navigation(&value.parse().unwrap()),
