@@ -1254,6 +1254,7 @@ export function Sidebar({
               type="button"
               onClick={handleToggleTheme}
               className="group flex h-11 w-9 items-center justify-center text-tertiary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
+              title={themeMode === "dark" ? "Light theme" : "Dark theme"}
               aria-label={themeMode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
             >
               <span className="flex h-7 w-7 items-center justify-center rounded-lg transition-[background-color,color] group-hover:bg-hover group-hover:text-primary motion-reduce:transition-none">

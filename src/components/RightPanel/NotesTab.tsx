@@ -261,6 +261,7 @@ export function NotesTab({ worktreePath }: NotesTabProps) {
               type="button"
               onClick={() => setIsEditingContext(false)}
               className={currentWorkActionClassName}
+              title="Preview current work"
               aria-label="Show rendered current work"
             >
               <Check className="h-3 w-3" />
@@ -290,6 +291,7 @@ export function NotesTab({ worktreePath }: NotesTabProps) {
               type="button"
               onClick={() => setIsEditingContext(true)}
               className={`${currentWorkActionClassName} opacity-0 group-hover/current-work:opacity-100 group-focus-within/current-work:opacity-100`}
+              title="Edit current work"
               aria-label="Edit current work"
             >
               <Pencil className="h-3 w-3" />

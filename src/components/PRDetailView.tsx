@@ -373,6 +373,7 @@ export function PRDetailView({
           <button
             onClick={onBack}
             className="mt-0.5 shrink-0 rounded-md p-1 text-tertiary hover:text-primary hover:bg-hover transition-colors"
+            title="Back to board"
             aria-label="Back to board"
           >
             <ArrowLeft className="size-4" />
@@ -403,6 +404,7 @@ export function PRDetailView({
             target="_blank"
             rel="noopener noreferrer"
             className="shrink-0 rounded-md p-1.5 text-tertiary hover:text-primary hover:bg-hover transition-colors"
+            title="Open in GitHub"
             aria-label="Open in GitHub"
           >
             <ExternalLink className="size-3.5" />
