@@ -15,6 +15,7 @@ const host = env.TAURI_DEV_HOST;
 const explicitDevPort = env.AUTOPILOT_DEV_PORT;
 const explicitHmrPort = env.AUTOPILOT_HMR_PORT;
 const hasAssignedPorts = explicitDevPort !== undefined;
+const localFramePolicy = "frame-src http://localhost:* https://localhost:* http://127.0.0.1:* https://127.0.0.1:* http://[::1]:* https://[::1]:*";
 
 function getPortConfig() {
   if (explicitDevPort) {
@@ -40,6 +41,7 @@ export default defineConfig(async () => ({
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
   server: {
+    headers: { "Content-Security-Policy": localFramePolicy },
     port: devPort,
     strictPort: hasAssignedPorts,
     host: host || false,
