@@ -296,6 +296,7 @@ export function PRMetadataSidebar({
               <button
                 onClick={() => setIsActionsOpen((v) => !v)}
                 className="rounded-r-md border border-l-0 border-border-subtle px-2 py-1.5 text-xs text-secondary transition-colors hover:bg-hover hover:text-primary"
+                title="PR actions"
                 aria-label="Open pull request actions"
               >
                 <ChevronDown className="size-3.5" />

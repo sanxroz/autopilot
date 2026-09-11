@@ -241,6 +241,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             <button
               onClick={onClose}
               className="rounded-md p-1.5 text-tertiary transition-colors hover:bg-hover"
+              title="Close settings"
               aria-label="Close settings"
             >
               <X className="h-3.5 w-3.5" />
@@ -561,6 +562,7 @@ function DebugSection({
             type="button"
             onClick={() => void refreshDiagnostics()}
             disabled={isLoading}
+            title="Refresh diagnostics"
             aria-label="Refresh terminal diagnostics"
             className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary text-secondary hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary disabled:opacity-60"
           >

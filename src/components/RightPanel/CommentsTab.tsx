@@ -106,6 +106,7 @@ function ImageModal({ src, alt, onClose }: { src: string; alt: string; onClose: 
       <button
         onClick={onClose}
         className="absolute top-4 right-4 p-2 rounded-full bg-secondary"
+        title="Close image"
         aria-label="Close image"
       >
         <X className="w-5 h-5 text-primary" />
@@ -211,6 +212,7 @@ function ReviewerPicker({
         <button
           type="button"
           className="relative flex h-7 shrink-0 items-center rounded-md px-1.5 text-tertiary transition-colors after:absolute after:-inset-2 hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
+          title="Manage reviewers"
           aria-label="Manage pull request reviewers"
         >
           {currentReviewers.length > 0 ? (

@@ -473,6 +473,7 @@ export function PRDiffPanel({
             onClick={goToPrev}
             disabled={!hasPrev}
             className="rounded p-1 text-tertiary hover:bg-hover hover:text-primary disabled:opacity-30"
+            title="Previous file"
             aria-label="Previous file"
           >
             <ChevronLeft className="size-3.5" />
@@ -481,6 +482,7 @@ export function PRDiffPanel({
             onClick={goToNext}
             disabled={!hasNext}
             className="rounded p-1 text-tertiary hover:bg-hover hover:text-primary disabled:opacity-30"
+            title="Next file"
             aria-label="Next file"
           >
             <ChevronRight className="size-3.5" />
