@@ -1,0 +1,57 @@
+src/components/TerminalGrid.tsx
+  s_43f8d2d6b785e4::t_d6b78489433c70 9,18-20
+  s_43f8d2d6b785e4::t_c667075e7d9bd1 22,120-125
+  s_43f8d2d6b785e4::t_03b4fa9da86c85 172
+tests/local-web-url.test.ts
+  s_43f8d2d6b785e4::t_d6b78489433c70 1,3-15,33-34
+  s_43f8d2d6b785e4::t_0624887fcef2bc 2,16-32
+src/components/WorkspaceHeader.tsx
+  s_0b450cd4dea20b::t_3e57d77c827544 1,113,116-122
+  s_43f8d2d6b785e4::t_d6b78489433c70 88-90
+src/lib/local-web-url.ts
+  s_43f8d2d6b785e4::t_d6b78489433c70 1,4-11,20
+  s_43f8d2d6b785e4::t_0624887fcef2bc 2-3,12-19
+src/components/Terminal.tsx
+  s_43f8d2d6b785e4::t_d6b78489433c70 14,114-117
+  s_43f8d2d6b785e4::t_0624887fcef2bc 15,229-250,272
+src/components/BrowserPane.tsx
+  s_43f8d2d6b785e4::t_d6b78489433c70 1,3-5,14,26-27,29-30,32-34,50-57,78-79,82-83,91-93,95-97,99-100,102-110,112-114,116-117,124-126,128-130,132,177-180
+  s_0b450cd4dea20b::t_1adaefc797dcf8 2,6-13,15-25,35-49,58-77,80-81,85-90,94,118-123,127,133-176
+  s_43f8d2d6b785e4::t_c667075e7d9bd1 28,31
+  s_43f8d2d6b785e4::t_5920e5639107d7 84,101,115
+  s_43f8d2d6b785e4::t_5acc28e8074f76 98,111,131
+src/store/index.ts
+  s_43f8d2d6b785e4::t_0281e055115103 37,1023-1024,1026,1036
+  s_43f8d2d6b785e4::t_d6b78489433c70 118,1020-1022,1025,1027-1035,1037-1047,1065-1068,1107-1110
+  s_43f8d2d6b785e4::t_c667075e7d9bd1 119,1048-1064
+src/types/index.ts
+  s_43f8d2d6b785e4::t_d6b78489433c70 40
+tests/terminal-tabs.test.ts
+  s_43f8d2d6b785e4::t_d6b78489433c70 102-106,108-122,129-130
+  s_43f8d2d6b785e4::t_0281e055115103 107,123-128
+  s_43f8d2d6b785e4::t_c667075e7d9bd1 131-141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f503d2bce288dbf887b1f014ba96618297bb5e74",
+  "prompts": {},
+  "sessions": {
+    "s_0b450cd4dea20b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08d83-bbc9-7623-bd05-2af2b2a6aa0c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    },
+    "s_43f8d2d6b785e4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08ce7-21d3-7043-83a7-77e282e31084",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
