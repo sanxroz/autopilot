@@ -62,6 +62,24 @@ const repository: Repository = {
 };
 
 describe("sidebar group store synchronization", () => {
+  test("persists reordered Spaces", async () => {
+    const secondRepository: Repository = {
+      ...repository,
+      info: { name: "second", path: "/second" },
+    };
+    diskValues = new Map([["repositoryPaths", ["/repo", "/second"]]]);
+    cacheValues = new Map(diskValues);
+    useAppStore.setState({ repositories: [repository, secondRepository] });
+
+    await useAppStore.getState().reorderRepositories(["/second", "/repo"]);
+
+    expect(useAppStore.getState().repositories.map((repo) => repo.info.path)).toEqual([
+      "/second",
+      "/repo",
+    ]);
+    expect(diskValues.get("repositoryPaths")).toEqual(["/second", "/repo"]);
+  });
+
   test("does not apply a stale refresh over a local group change", async () => {
     diskValues = new Map([["sidebarGroupsByRepo", {}]]);
     cacheValues = new Map(diskValues);

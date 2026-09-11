@@ -104,6 +104,7 @@ interface AppStore {
   preloadInstalledIdes: () => Promise<void>;
   addRepository: (path: string) => Promise<void>;
   removeRepository: (path: string) => void;
+  reorderRepositories: (orderedPaths: string[]) => Promise<void>;
   toggleRepoExpanded: (path: string) => void;
   refreshWorktrees: (repoPath: string) => Promise<void>;
   reorderWorktrees: (repoPath: string, orderedWorktreePaths: string[]) => Promise<void>;
@@ -661,6 +662,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
         worktreeOrdersByRepo: remainingWorktreeOrders,
         sidebarGroupsByRepo: remainingSidebarGroups,
       };
+    });
+  },
+
+  reorderRepositories: async (orderedPaths: string[]) => {
+    const orderIndex = new Map(orderedPaths.map((path, index) => [path, index]));
+    const repositories = [...get().repositories].sort((a, b) => {
+      const aIndex = orderIndex.get(a.info.path);
+      const bIndex = orderIndex.get(b.info.path);
+      if (aIndex === undefined) return bIndex === undefined ? 0 : 1;
+      if (bIndex === undefined) return -1;
+      return aIndex - bIndex;
+    });
+
+    set({ repositories });
+    await savePersistedState({
+      repositoryPaths: repositories.map((repository) => repository.info.path),
     });
   },
 
