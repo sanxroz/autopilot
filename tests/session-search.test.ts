@@ -3,6 +3,9 @@ import {
   getSessionSearchFilters,
   getSessionSearchCommands,
   getSessionSearchStatuses,
+  getSessionAttentionBucket,
+  orderSessionsByAttention,
+  getSessionSearchText,
   parseSessionSearch,
 } from "../src/lib/session-search";
 import type { AgentRunState } from "../src/types";
@@ -157,5 +160,23 @@ describe("session search statuses", () => {
       merged: true,
       mergeable: "CONFLICTING",
     })).toEqual(new Set());
+  });
+
+  test("orders zero-query sessions by actionable attention", () => {
+    const entries = [
+      { processStatus: "none" as const, agentRun: undefined, prStatus: undefined, id: "idle" },
+      { processStatus: "none" as const, agentRun: { ...runningAgent, status: "waiting_input" as const }, prStatus: undefined, id: "waiting" },
+      { processStatus: "none" as const, agentRun: { ...runningAgent, status: "completed" as const }, prStatus: undefined, id: "finished" },
+      { processStatus: "agent_running" as const, agentRun: runningAgent, prStatus: undefined, id: "running" },
+    ];
+    expect(entries.map((entry) => getSessionAttentionBucket(entry.processStatus, entry.agentRun, entry.prStatus)))
+      .toEqual([5, 0, 2, 4]);
+    expect(orderSessionsByAttention(entries).map(({ id }) => id))
+      .toEqual(["waiting", "finished", "running", "idle"]);
+  });
+
+  test("includes handoff previews in text search", () => {
+    expect(getSessionSearchText(["feature/login", "Implement OAuth callback"]))
+      .toContain("implement oauth callback");
   });
 });

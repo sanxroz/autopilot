@@ -33,10 +33,12 @@ import {
   getSessionSearchFilters,
   getSessionSearchCommands,
   getSessionSearchStatuses,
+  getSessionSearchText,
   parseSessionSearch,
   SESSION_SEARCH_COMMANDS,
   type SessionSearchCommand,
   type SessionSearchStatus,
+  orderSessionsByAttention,
 } from "../lib/session-search";
 import { cn } from "../utils/cn";
 import { getNavigableSessions } from "../lib/session-navigation";
@@ -84,6 +86,22 @@ const filterDotClasses: Record<SessionSearchCommand["filter"], string> = {
 const filterBySubstring = (value: string, search: string, keywords?: string[]) =>
   `${value} ${keywords?.join(" ") ?? ""}`.toLowerCase().includes(search.toLowerCase()) ? 1 : 0;
 
+function focusTerminal(terminalId: string | null) {
+  if (!terminalId) return;
+  const terminal = Array.from(document.querySelectorAll<HTMLElement>("[data-terminal-id]"))
+    .find((element) => element.dataset.terminalId === terminalId);
+  terminal?.querySelector<HTMLElement>(".xterm-helper-textarea")?.focus();
+}
+
+function formatSummaryAge(updatedAt: number | null): string | null {
+  if (updatedAt === null) return null;
+  const seconds = Math.max(0, Math.floor((Date.now() - updatedAt) / 1000));
+  if (seconds < 60) return "now";
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+  return `${Math.floor(seconds / 86400)}d`;
+}
+
 export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: CommandMenuProps) {
   const themeMode = useThemeMode();
   const [search, setSearch] = React.useState("");
@@ -103,6 +121,8 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
     (state) => state.agentSidebarLifecycleEnabled,
   );
   const keyboardShortcuts = useAppStore((state) => state.keyboardShortcuts);
+  const contextSummaryByWorktreePath = useAppStore((state) => state.contextSummaryByWorktreePath);
+  const refreshContextSummaries = useAppStore((state) => state.refreshContextSummaries);
 
   const allWorktrees = React.useMemo(() => {
     return getNavigableSessions(repositories.map((repo) => ({
@@ -124,7 +144,8 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
     const processStatus = processStatusByPath[worktree.path] ?? "none";
     const statuses = getSessionSearchStatuses(processStatus, agentRun, prStatus);
     const filters = getSessionSearchFilters(processStatus, agentRun, prStatus);
-    const searchableText = [
+    const contextSummary = contextSummaryByWorktreePath[worktree.path];
+    const searchableText = getSessionSearchText([
       worktree.repoName,
       worktree.branch ?? "",
       worktree.name,
@@ -132,15 +153,17 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
       prStatus?.title ?? "",
       prStatus ? `PR ${prStatus.number}` : "",
       ...statuses.map(({ label }) => label),
-    ].join(" ").toLowerCase();
+      contextSummary?.preview ?? "",
+    ]);
 
-    return { worktree, prStatus, statuses, filters, searchableText };
+    return { worktree, prStatus, statuses, filters, searchableText, contextSummary, processStatus, agentRun };
   }), [
     agentRunByWorktreePath,
     agentSidebarLifecycleEnabled,
     allWorktrees,
     prStatusByWorktreePath,
     processStatusByPath,
+    contextSummaryByWorktreePath,
   ]);
   const effectiveFilter = activeFilter;
 
@@ -155,6 +178,10 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
   }, [effectiveFilter, parsedSearch, sessionEntries]);
   const attentionSessions = filteredSessions.filter(({ filters }) => filters.has("attention"));
   const otherSessions = filteredSessions.filter(({ filters }) => !filters.has("attention"));
+  const zeroQuerySessions = React.useMemo(
+    () => orderSessionsByAttention(filteredSessions),
+    [filteredSessions],
+  );
   const activeFilterLabel = SESSION_SEARCH_COMMANDS.find(
     ({ filter }) => filter === effectiveFilter,
   )?.label;
@@ -163,11 +190,12 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
     : getSessionSearchCommands(parsedSearch.commandQuery);
 
   React.useEffect(() => {
+    if (isOpen) void refreshContextSummaries();
     if (!isOpen) {
       setSearch("");
       setActiveFilter(null);
     }
-  }, [isOpen]);
+  }, [isOpen, refreshContextSummaries]);
 
   const handleAddRepository = async () => {
     onOpenChange(false);
@@ -208,6 +236,7 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
   const handleSelectWorktree = async (worktree: typeof allWorktrees[0]) => {
     onOpenChange(false);
     await selectWorktree(worktree);
+    requestAnimationFrame(() => focusTerminal(useAppStore.getState().currentActiveTerminalId));
   };
 
   const applyFilter = (filter: SessionSearchCommand["filter"]) => {
@@ -245,7 +274,7 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
     requestAnimationFrame(() => inputRef.current?.focus());
   };
 
-  const renderSession = ({ worktree: wt, prStatus, statuses, filters }: typeof sessionEntries[number]) => {
+  const renderSession = ({ worktree: wt, prStatus, statuses, filters, contextSummary }: typeof sessionEntries[number]) => {
     const isCurrentWorktree = selectedWorktree?.path === wt.path;
     const visibleStatuses = statuses.filter(({ label }) => label !== "Idle" || statuses.length === 1);
     return (
@@ -260,6 +289,7 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
           prStatus?.title ?? "",
           prStatus ? `PR ${prStatus.number}` : "",
           ...statuses.map(({ label }) => label),
+          contextSummary?.preview ?? "",
           ...Array.from(filters, (filter) => `/${filter}`),
           isCurrentWorktree ? "current active" : "",
         ]}
@@ -273,6 +303,13 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
           {prStatus ? <span className="shrink-0 text-xs text-tertiary">PR #{prStatus.number}</span> : null}
           {isCurrentWorktree ? <span className="shrink-0 text-[11px] text-secondary">Current</span> : null}
         </div>
+        {contextSummary?.preview ? (
+          <div className="min-w-0 flex-1 truncate text-[11px] text-tertiary">
+            {contextSummary.preview}
+            {contextSummary.hasMore ? " …" : ""}
+            {formatSummaryAge(contextSummary.updatedAt) ? ` · ${formatSummaryAge(contextSummary.updatedAt)}` : ""}
+          </div>
+        ) : null}
         <div className="ml-auto flex max-w-48 shrink-0 items-center gap-2">
           {visibleStatuses.map((status) => (
             <span
@@ -386,16 +423,22 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
               {filteredSessions.map(renderSession)}
             </CommandMenuUI.Group>
           ) : null
+        ) : parsedSearch.query ? (
+          filteredSessions.length > 0 ? (
+            <CommandMenuUI.Group heading="Sessions">
+              {filteredSessions.map(renderSession)}
+            </CommandMenuUI.Group>
+          ) : null
         ) : (
           <>
             {attentionSessions.length > 0 ? (
               <CommandMenuUI.Group heading="Needs attention">
-                {attentionSessions.map(renderSession)}
+                {zeroQuerySessions.filter(({ filters }) => filters.has("attention")).map(renderSession)}
               </CommandMenuUI.Group>
             ) : null}
             {otherSessions.length > 0 ? (
               <CommandMenuUI.Group heading={attentionSessions.length > 0 ? "Other sessions" : "Sessions"}>
-                {otherSessions.map(renderSession)}
+                {zeroQuerySessions.filter(({ filters }) => !filters.has("attention")).map(renderSession)}
               </CommandMenuUI.Group>
             ) : null}
           </>

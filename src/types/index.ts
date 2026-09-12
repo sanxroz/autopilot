@@ -13,6 +13,17 @@ export interface WorktreeInfo {
   readonly diff_stats?: DiffStats;
 }
 
+export interface WorktreeContextSummary {
+  readonly preview: string;
+  readonly updatedAt: number | null;
+  readonly hasMore: boolean;
+}
+
+export interface WorktreeContextSummaryResult {
+  readonly summary: WorktreeContextSummary | null;
+  readonly error: string | null;
+}
+
 export interface InstalledIde {
   readonly id: string;
   readonly name: string;

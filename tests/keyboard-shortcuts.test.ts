@@ -28,6 +28,10 @@ describe("keyboard shortcuts", () => {
 
   test("matches configured actions", () => {
     expect(getShortcutAction(keyEvent("g", { metaKey: true, shiftKey: true }), DEFAULT_KEYBOARD_SHORTCUTS, true)).toBe("showGit");
+    expect(getShortcutAction(keyEvent("Tab", { ctrlKey: true }), DEFAULT_KEYBOARD_SHORTCUTS, true)).toBe("nextRecentSession");
+    expect(getShortcutAction(keyEvent("Tab", { ctrlKey: true, shiftKey: true }), DEFAULT_KEYBOARD_SHORTCUTS, true)).toBe("previousRecentSession");
+    expect(getShortcutAction(keyEvent("Tab", { ctrlKey: true }), DEFAULT_KEYBOARD_SHORTCUTS, false)).toBe("nextRecentSession");
+    expect(getShortcutAction(keyEvent("Tab", { ctrlKey: true, shiftKey: true }), DEFAULT_KEYBOARD_SHORTCUTS, false)).toBe("previousRecentSession");
   });
 
   test("keeps default navigation usable without an arrow-key layer", () => {

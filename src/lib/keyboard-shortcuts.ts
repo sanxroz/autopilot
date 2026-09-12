@@ -8,6 +8,8 @@ export type ShortcutAction =
   | "nextTerminal"
   | "previousSession"
   | "nextSession"
+  | "previousRecentSession"
+  | "nextRecentSession"
   | "previousSpace"
   | "nextSpace"
   | "previousLayout"
@@ -36,6 +38,8 @@ export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
   { id: "nextTerminal", label: "Next terminal", description: "Focus the next terminal pane", defaultShortcut: "Mod+Alt+]", alternateShortcuts: ["Mod+ArrowRight"] },
   { id: "previousSession", label: "Previous session", description: "Select the previous workspace", defaultShortcut: "Mod+[", alternateShortcuts: ["Mod+ArrowUp"] },
   { id: "nextSession", label: "Next session", description: "Select the next workspace", defaultShortcut: "Mod+]", alternateShortcuts: ["Mod+ArrowDown"] },
+  { id: "previousRecentSession", label: "Previous recent session", description: "Switch to the previous recently used workspace", defaultShortcut: "Ctrl+Shift+Tab" },
+  { id: "nextRecentSession", label: "Next recent session", description: "Switch to the next recently used workspace", defaultShortcut: "Ctrl+Tab" },
   { id: "previousSpace", label: "Previous Space", description: "Show sessions in the previous Space", defaultShortcut: "Mod+Alt+Shift+[", alternateShortcuts: ["Mod+Shift+ArrowUp"] },
   { id: "nextSpace", label: "Next Space", description: "Show sessions in the next Space", defaultShortcut: "Mod+Alt+Shift+]", alternateShortcuts: ["Mod+Shift+ArrowDown"] },
   { id: "previousLayout", label: "Previous terminal layout", description: "Switch to the previous terminal layout", defaultShortcut: "Mod+Shift+[", alternateShortcuts: ["Mod+Alt+ArrowUp"] },
@@ -84,13 +88,19 @@ export function shortcutFromKeyboardEvent(
 export function getShortcutAction(
   event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey"> & { code?: string },
   shortcuts: KeyboardShortcutMap,
-  isMac?: boolean,
+  isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform),
 ): ShortcutAction | null {
   const pressed = shortcutFromKeyboardEvent(event, isMac);
   if (!pressed) return null;
+  const physicalControlPressed = isMac === false && pressed.startsWith("Mod+")
+    ? `Ctrl+${pressed.slice(4)}`
+    : pressed;
   return SHORTCUT_DEFINITIONS.find(
     ({ id, alternateShortcuts }) =>
-      shortcuts[id] === pressed || alternateShortcuts?.includes(pressed),
+      shortcuts[id] === pressed ||
+      shortcuts[id] === physicalControlPressed ||
+      alternateShortcuts?.includes(pressed) ||
+      alternateShortcuts?.includes(physicalControlPressed),
   )?.id ?? null;
 }
 

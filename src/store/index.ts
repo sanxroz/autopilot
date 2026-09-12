@@ -15,6 +15,8 @@ import type {
   AutoFetchSettings,
   WorktreeSetupResult,
   TerminalPane,
+  WorktreeContextSummary,
+  WorktreeContextSummaryResult,
 } from '../types';
 import type {
   GitHubSettings,
@@ -34,6 +36,11 @@ import {
   type SidebarWorktreeGroup,
 } from '../lib/sidebar-groups';
 import { applyAgentStatusEvent, reconcileAgentRunState } from './agentRunState';
+import { createCoalescedTask } from '../lib/coalesced-task';
+import {
+  pruneRecentWorktreePaths,
+  recordRecentWorktreePath,
+} from '../lib/session-navigation';
 import { isLocalWebUrl } from '../lib/local-web-url';
 import {
   DEFAULT_KEYBOARD_SHORTCUTS,
@@ -53,6 +60,7 @@ interface PersistedState {
   sidebarNotesByWorktreePath?: Record<string, string>;
   sidebarNotesMarkdown?: string;
   keyboardShortcuts?: Partial<KeyboardShortcutMap>;
+  recentWorktreePaths?: string[];
 }
 
 interface WorktreeTerminals {
@@ -100,6 +108,8 @@ interface AppStore {
   worktreeSetupByRepoPath: Record<string, string[]>;
   sidebarNotesByWorktreePath: Record<string, string>;
   keyboardShortcuts: KeyboardShortcutMap;
+  recentWorktreePaths: string[];
+  contextSummaryByWorktreePath: Record<string, WorktreeContextSummary>;
 
   initialize: () => Promise<void>;
   preloadInstalledIdes: () => Promise<void>;
@@ -136,6 +146,8 @@ interface AppStore {
   clearPRDataCacheForRepo: (repoPath: string) => void;
   checkGitHubCli: () => Promise<void>;
   refreshProcessStatuses: () => Promise<void>;
+  refreshContextSummaries: (worktreePaths?: readonly string[]) => Promise<void>;
+  recordRecentWorktree: (worktreePath: string) => void;
   refreshSidebarGroupsFromDisk: () => Promise<void>;
   getProcessStatus: (worktreePath: string) => ProcessStatus;
   setAgentRunState: (event: AgentStatusEvent) => void;
@@ -164,6 +176,8 @@ const persistedStore = new LazyStore(STORE_PATH, { autoSave: true, defaults: {} 
 let storeOperationQueue = Promise.resolve();
 let sidebarGroupsRevision = 0;
 let pendingLegacySidebarNotesMarkdown: string | null = null;
+let pendingContextSummaryPaths = new Set<string>();
+let contextSummaryRefreshTask: ReturnType<typeof createCoalescedTask> | null = null;
 const DEFAULT_AUTO_FETCH_SETTINGS: AutoFetchSettings = {
   enabled: false,
   intervalMinutes: 5,
@@ -261,6 +275,7 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
     const sidebarNotesByWorktreePath = await store.get<Record<string, string>>('sidebarNotesByWorktreePath');
     const sidebarNotesMarkdown = await store.get<string>('sidebarNotesMarkdown');
     const keyboardShortcuts = await store.get<Partial<KeyboardShortcutMap>>('keyboardShortcuts');
+    const recentWorktreePaths = await store.get<string[]>('recentWorktreePaths');
     const rawAddressed = await store.get<Record<string, string[]>>('addressedComments');
     let addressedComments: AddressedCommentsMap | undefined;
     if (rawAddressed) {
@@ -282,6 +297,7 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
       sidebarNotesByWorktreePath: sidebarNotesByWorktreePath || {},
       sidebarNotesMarkdown: sidebarNotesMarkdown || "",
       keyboardShortcuts,
+      recentWorktreePaths: recentWorktreePaths || [],
     };
   } catch {
     return {
@@ -294,6 +310,7 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
       sidebarNotesByWorktreePath: {},
       sidebarNotesMarkdown: "",
       keyboardShortcuts: DEFAULT_KEYBOARD_SHORTCUTS,
+      recentWorktreePaths: [],
     };
   }
 }
@@ -399,6 +416,10 @@ async function saveSidebarNotesByWorktreePath(sidebarNotesByWorktreePath: Record
   });
 }
 
+async function saveRecentWorktreePaths(recentWorktreePaths: string[]): Promise<void> {
+  await saveStoreValue('recentWorktreePaths', recentWorktreePaths);
+}
+
 async function flushSidebarNotesPersistence(): Promise<void> {
   await storeOperationQueue;
 }
@@ -453,6 +474,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   worktreeSetupByRepoPath: {},
   sidebarNotesByWorktreePath: {},
   keyboardShortcuts: DEFAULT_KEYBOARD_SHORTCUTS,
+  recentWorktreePaths: [],
+  contextSummaryByWorktreePath: {},
 
   initialize: async () => {
     if (get().isInitialized) return;
@@ -499,6 +522,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
 
     set({ keyboardShortcuts: mergeKeyboardShortcuts(persisted.keyboardShortcuts) });
+    set({ recentWorktreePaths: persisted.recentWorktreePaths ?? [] });
     
     const repoAvatarCache = persisted.repoAvatarCache || {};
     const reposNeedingAvatar: string[] = [];
@@ -544,6 +568,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
       repositoryPaths: get().repositories.map((repository) => repository.info.path),
     });
     set({ isInitialized: true });
+
+    const availableWorktreePaths = new Set(
+      get().repositories.flatMap((repo) => repo.worktrees.map((worktree) => worktree.path)),
+    );
+    const prunedRecentWorktreePaths = pruneRecentWorktreePaths(
+      get().recentWorktreePaths,
+      availableWorktreePaths,
+    );
+    if (prunedRecentWorktreePaths.length !== get().recentWorktreePaths.length) {
+      set({ recentWorktreePaths: prunedRecentWorktreePaths });
+      void saveRecentWorktreePaths(prunedRecentWorktreePaths);
+    }
+    void get().refreshContextSummaries();
 
     if (reposNeedingAvatar.length > 0) {
       void Promise.allSettled(
@@ -621,6 +658,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         };
       });
 
+      void get().refreshContextSummaries(worktrees.map((worktree) => worktree.path));
+
       if (!cachedAvatarUrl) {
         void (async () => {
           const avatarUrl = await fetchRepoAvatarUrl(info.path);
@@ -659,6 +698,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
         sidebarGroupsByRepo: remainingSidebarGroups,
       };
     });
+    const available = new Set(
+      get().repositories.flatMap((repo) => repo.worktrees.map((worktree) => worktree.path)),
+    );
+    const recentWorktreePaths = pruneRecentWorktreePaths(get().recentWorktreePaths, available);
+    const contextSummaryByWorktreePath = Object.fromEntries(
+      Object.entries(get().contextSummaryByWorktreePath).filter(([worktreePath]) => available.has(worktreePath)),
+    );
+    set({ recentWorktreePaths, contextSummaryByWorktreePath });
+    void saveRecentWorktreePaths(recentWorktreePaths);
   },
 
   toggleRepoExpanded: (path: string) => {
@@ -720,6 +768,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const state = get();
       await saveSidebarLayout(state.worktreeOrdersByRepo, state.sidebarGroupsByRepo);
     }
+    const available = new Set(
+      get().repositories.flatMap((repo) => repo.worktrees.map((worktree) => worktree.path)),
+    );
+    const recentWorktreePaths = pruneRecentWorktreePaths(get().recentWorktreePaths, available);
+    const contextSummaryByWorktreePath = Object.fromEntries(
+      Object.entries(get().contextSummaryByWorktreePath).filter(([worktreePath]) => available.has(worktreePath)),
+    );
+    const hasRemovedContextSummary = Object.keys(get().contextSummaryByWorktreePath)
+      .some((worktreePath) => !available.has(worktreePath));
+    if (recentWorktreePaths.length !== get().recentWorktreePaths.length || hasRemovedContextSummary) {
+      set({ recentWorktreePaths, contextSummaryByWorktreePath });
+      void saveRecentWorktreePaths(recentWorktreePaths);
+    }
+    void get().refreshContextSummaries(filteredWorktrees.map((worktree) => worktree.path));
   },
 
   reorderWorktrees: async (repoPath: string, orderedWorktreePaths: string[]) => {
@@ -919,6 +981,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         currentActiveTerminalId: activeTab.activeTerminalId,
         gitFileDiffPreview: null,
       });
+      get().recordRecentWorktree(worktree.path);
       return;
     }
 
@@ -955,6 +1018,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         },
       },
     }));
+    get().recordRecentWorktree(worktree.path);
   },
 
   createTerminalTab: async () => {
@@ -1570,6 +1634,56 @@ export const useAppStore = create<AppStore>((set, get) => ({
     } catch (e) {
       console.error('Failed to refresh process statuses:', e);
     }
+  },
+
+  refreshContextSummaries: async (worktreePaths) => {
+    const paths = worktreePaths ?? get().repositories.flatMap((repo) =>
+      repo.worktrees.map((worktree) => worktree.path),
+    );
+    for (const worktreePath of paths) {
+      pendingContextSummaryPaths.add(worktreePath);
+    }
+
+    if (!contextSummaryRefreshTask) {
+      contextSummaryRefreshTask = createCoalescedTask(async () => {
+        const requestedPaths = Array.from(pendingContextSummaryPaths);
+        pendingContextSummaryPaths.clear();
+        if (requestedPaths.length === 0) return;
+
+        try {
+          const results = await invoke<Record<string, WorktreeContextSummaryResult>>(
+            'read_autopilot_context_summaries',
+            { worktreePaths: requestedPaths },
+          );
+          set((state) => {
+            const nextSummaries = { ...state.contextSummaryByWorktreePath };
+            for (const worktreePath of requestedPaths) {
+              const result = results[worktreePath];
+              if (result?.error || !result?.summary) continue;
+              nextSummaries[worktreePath] = result.summary;
+            }
+            const available = new Set(
+              state.repositories.flatMap((repo) => repo.worktrees.map((worktree) => worktree.path)),
+            );
+            for (const path of Object.keys(nextSummaries)) {
+              if (!available.has(path)) delete nextSummaries[path];
+            }
+            return { contextSummaryByWorktreePath: nextSummaries };
+          });
+        } catch (error) {
+          console.error('Failed to refresh worktree context summaries:', error);
+        }
+      });
+    }
+
+    await contextSummaryRefreshTask();
+  },
+
+  recordRecentWorktree: (worktreePath: string) => {
+    const recentWorktreePaths = recordRecentWorktreePath(get().recentWorktreePaths, worktreePath);
+    if (recentWorktreePaths.join('\0') === get().recentWorktreePaths.join('\0')) return;
+    set({ recentWorktreePaths });
+    void saveRecentWorktreePaths(recentWorktreePaths);
   },
 
   refreshSidebarGroupsFromDisk: async () => {

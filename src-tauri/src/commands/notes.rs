@@ -1,12 +1,30 @@
 use git2::Repository;
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::UNIX_EPOCH;
 
 const CONTEXT_FILE_NAME: &str = ".autopilot.md";
 const CONTEXT_IGNORE_RULES: [&str; 2] = ["/.autopilot.md", "/.autopilot.*.tmp"];
 const MAX_CONTEXT_BYTES: u64 = 1_000_000;
+const SUMMARY_READ_BYTES: usize = 8 * 1024;
+const SUMMARY_PREVIEW_CHARS: usize = 160;
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeContextSummary {
+    pub preview: String,
+    pub updated_at: Option<u64>,
+    pub has_more: bool,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorktreeContextSummaryResult {
+    pub summary: Option<WorktreeContextSummary>,
+    pub error: Option<String>,
+}
 
 fn validate_worktree(worktree_path: &str) -> Result<PathBuf, String> {
     let path = Path::new(worktree_path)
@@ -144,18 +162,146 @@ pub fn write_autopilot_context(worktree_path: String, markdown: String) -> Resul
     Ok(())
 }
 
+fn truncate_preview(line: &str) -> (String, bool) {
+    let mut chars = line.chars();
+    let preview: String = chars.by_ref().take(SUMMARY_PREVIEW_CHARS).collect();
+    (preview, chars.next().is_some())
+}
+
+fn is_horizontal_rule(line: &str) -> bool {
+    let mut chars = line.chars().filter(|character| !character.is_whitespace());
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    matches!(first, '-' | '*' | '_') && chars.all(|character| character == first)
+}
+
+fn is_empty_list_marker(line: &str) -> bool {
+    let Some(marker) = line.chars().next() else {
+        return false;
+    };
+    matches!(marker, '-' | '*' | '+') && line[marker.len_utf8()..].trim().is_empty()
+}
+
+fn extract_context_preview(markdown: &str, source_has_more: bool) -> (String, bool) {
+    let mut lines = markdown.lines();
+    while let Some(line) = lines.next() {
+        let trimmed = line.trim();
+        if trimmed.is_empty()
+            || trimmed.starts_with('#')
+            || is_horizontal_rule(trimmed)
+            || is_empty_list_marker(trimmed)
+        {
+            continue;
+        }
+
+        let collapsed = trimmed.split_whitespace().collect::<Vec<_>>().join(" ");
+        let (preview, line_has_more) = truncate_preview(&collapsed);
+        let has_later_content = lines.any(|line| !line.trim().is_empty());
+        return (
+            preview,
+            source_has_more || line_has_more || has_later_content,
+        );
+    }
+
+    (String::new(), source_has_more)
+}
+
+fn read_context_summary(worktree_path: &str) -> Result<WorktreeContextSummary, String> {
+    let worktree_path = validate_worktree(worktree_path)?;
+    let context_path = worktree_path.join(CONTEXT_FILE_NAME);
+    let metadata = match fs::metadata(&context_path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(WorktreeContextSummary {
+                preview: String::new(),
+                updated_at: None,
+                has_more: false,
+            });
+        }
+        Err(error) => return Err(error.to_string()),
+    };
+
+    if metadata.len() == 0 {
+        return Ok(WorktreeContextSummary {
+            preview: String::new(),
+            updated_at: None,
+            has_more: false,
+        });
+    }
+
+    let updated_at = metadata
+        .modified()
+        .ok()
+        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+        .map(|duration| duration.as_millis() as u64);
+    let mut file = fs::File::open(&context_path).map_err(|error| error.to_string())?;
+    let mut bytes = Vec::with_capacity(SUMMARY_READ_BYTES + 1);
+    Read::by_ref(&mut file)
+        .take((SUMMARY_READ_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|error| error.to_string())?;
+    let source_has_more = bytes.len() > SUMMARY_READ_BYTES;
+    let mut prefix_end = bytes.len().min(SUMMARY_READ_BYTES);
+    if let Err(error) = std::str::from_utf8(&bytes[..prefix_end]) {
+        if error.error_len().is_some() || !source_has_more {
+            return Err(format!(".autopilot.md is not valid UTF-8: {error}"));
+        }
+        while prefix_end > 0 && std::str::from_utf8(&bytes[..prefix_end]).is_err() {
+            prefix_end -= 1;
+        }
+    }
+    let prefix = std::str::from_utf8(&bytes[..prefix_end])
+        .map_err(|error| format!(".autopilot.md is not valid UTF-8: {error}"))?;
+    let (preview, has_more) = extract_context_preview(prefix, source_has_more);
+
+    Ok(WorktreeContextSummary {
+        preview,
+        updated_at,
+        has_more,
+    })
+}
+
+#[tauri::command]
+pub fn read_autopilot_context_summaries(
+    worktree_paths: Vec<String>,
+) -> std::collections::HashMap<String, WorktreeContextSummaryResult> {
+    worktree_paths
+        .into_iter()
+        .map(|worktree_path| {
+            let result = match read_context_summary(&worktree_path) {
+                Ok(summary) => WorktreeContextSummaryResult {
+                    summary: Some(summary),
+                    error: None,
+                },
+                Err(error) => WorktreeContextSummaryResult {
+                    summary: None,
+                    error: Some(error),
+                },
+            };
+            (worktree_path, result)
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    static REPOSITORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     fn make_repository() -> PathBuf {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let path =
-            std::env::temp_dir().join(format!("autopilot-notes-{}-{suffix}", std::process::id()));
+        let counter = REPOSITORY_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "autopilot-notes-{}-{suffix}-{counter}",
+            std::process::id()
+        ));
         fs::create_dir(&path).unwrap();
         Repository::init(&path).unwrap();
         path
@@ -256,5 +402,85 @@ mod tests {
         assert!(!has_autopilot_context(repository.to_string_lossy().to_string()).unwrap());
 
         fs::remove_dir_all(repository).unwrap();
+    }
+
+    #[test]
+    fn extracts_bounded_context_previews_without_structural_markdown() {
+        let markdown = "# Goal\n\n---\n-\n\n  The   next action is   ship the résumé safely.\n";
+        assert_eq!(
+            extract_context_preview(markdown, false),
+            (
+                "The next action is ship the résumé safely.".to_string(),
+                false
+            )
+        );
+
+        let long_line = "é".repeat(SUMMARY_PREVIEW_CHARS + 4);
+        let (preview, has_more) = extract_context_preview(&long_line, false);
+        assert_eq!(preview.chars().count(), SUMMARY_PREVIEW_CHARS);
+        assert!(has_more);
+        assert!(preview.chars().all(|character| character == 'é'));
+
+        assert_eq!(
+            extract_context_preview("First action\n\nSecond action\n", false),
+            ("First action".to_string(), true)
+        );
+    }
+
+    #[test]
+    fn summaries_isolate_invalid_worktrees_and_preserve_missing_results() {
+        let repository = make_repository();
+        let existing = repository.to_string_lossy().to_string();
+        write_autopilot_context(existing.clone(), "# Heading\n\nDo the work\n".to_string())
+            .unwrap();
+
+        let missing = repository.join("missing").to_string_lossy().to_string();
+        let summaries = read_autopilot_context_summaries(vec![existing.clone(), missing.clone()]);
+        assert_eq!(
+            summaries[&existing].summary.as_ref().unwrap().preview,
+            "Do the work"
+        );
+        assert!(summaries[&existing].error.is_none());
+        assert!(summaries[&missing].summary.is_none());
+        assert!(summaries[&missing].error.is_some());
+
+        let absent_context = make_repository();
+        let absent_path = absent_context.to_string_lossy().to_string();
+        let absent = read_autopilot_context_summaries(vec![absent_path.clone()]);
+        assert_eq!(absent[&absent_path].summary.as_ref().unwrap().preview, "");
+        assert!(absent[&absent_path]
+            .summary
+            .as_ref()
+            .unwrap()
+            .updated_at
+            .is_none());
+
+        fs::write(absent_context.join(CONTEXT_FILE_NAME), "").unwrap();
+        let empty = read_autopilot_context_summaries(vec![absent_path.clone()]);
+        assert!(empty[&absent_path]
+            .summary
+            .as_ref()
+            .unwrap()
+            .updated_at
+            .is_none());
+
+        fs::write(absent_context.join(CONTEXT_FILE_NAME), [b'o', 0xff, b'k']).unwrap();
+        let malformed = read_autopilot_context_summaries(vec![absent_path.clone()]);
+        assert!(malformed[&absent_path].summary.is_none());
+        assert!(malformed[&absent_path].error.is_some());
+
+        let mut boundary_malformed = vec![b'x'; SUMMARY_READ_BYTES - 1];
+        boundary_malformed.push(0xc3);
+        fs::write(absent_context.join(CONTEXT_FILE_NAME), boundary_malformed).unwrap();
+        let malformed = read_autopilot_context_summaries(vec![absent_path.clone()]);
+        assert!(malformed[&absent_path].summary.is_none());
+        assert!(malformed[&absent_path]
+            .error
+            .as_deref()
+            .unwrap()
+            .contains(".autopilot.md is not valid UTF-8"));
+
+        fs::remove_dir_all(repository).unwrap();
+        fs::remove_dir_all(absent_context).unwrap();
     }
 }

@@ -7,6 +7,10 @@ export interface SessionSearchStatus {
   tone: "muted" | "info" | "success" | "warning" | "error";
 }
 
+export function getSessionSearchText(values: readonly string[]): string {
+  return values.filter(Boolean).join(" ").toLowerCase();
+}
+
 export type SessionSearchFilter =
   | "attention"
   | "waiting"
@@ -142,4 +146,47 @@ export function getSessionSearchStatuses(
           ? { label: prStatus.merged ? "Merged" : "PR closed", tone: "muted" }
           : { label: "No pull request", tone: "muted" };
   return [activity, pullRequest];
+}
+
+export function getSessionAttentionBucket(
+  processStatus: ProcessStatus,
+  agentRun: AgentRunState | undefined,
+  prStatus: PRStatus | undefined,
+): number {
+  if (agentRun?.status === "waiting_input") return 0;
+  if (agentRun?.status === "error") return 1;
+  if (agentRun?.status === "completed") return 2;
+  if (prStatus) {
+    const section = getPrSessionSection(prStatus);
+    if (section === "pr:attention" || section === "pr:ready") return 3;
+  }
+  if (
+    processStatus === "agent_running" ||
+    processStatus === "dev_server" ||
+    agentRun?.status === "starting" ||
+    agentRun?.status === "running"
+  ) return 4;
+  return 5;
+}
+
+export function orderSessionsByAttention<T extends {
+  processStatus: ProcessStatus;
+  agentRun: AgentRunState | undefined;
+  prStatus: PRStatus | undefined;
+}>(entries: readonly T[]): T[] {
+  return entries
+    .map((entry, index) => ({ entry, index }))
+    .sort((a, b) => {
+      const bucketDelta = getSessionAttentionBucket(
+        a.entry.processStatus,
+        a.entry.agentRun,
+        a.entry.prStatus,
+      ) - getSessionAttentionBucket(
+        b.entry.processStatus,
+        b.entry.agentRun,
+        b.entry.prStatus,
+      );
+      return bucketDelta || a.index - b.index;
+    })
+    .map(({ entry }) => entry);
 }

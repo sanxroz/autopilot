@@ -18,9 +18,8 @@ export function useGitWatcher() {
   const repositories = useAppStore((state) => state.repositories);
   const refreshWorktrees = useAppStore((state) => state.refreshWorktrees);
   const updateWorktreeBranch = useAppStore((state) => state.updateWorktreeBranch);
+  const refreshContextSummaries = useAppStore((state) => state.refreshContextSummaries);
   const isInitialized = useAppStore((state) => state.isInitialized);
-  const unlistenHeadRef = useRef<UnlistenFn | null>(null);
-  const unlistenWorktreeRef = useRef<UnlistenFn | null>(null);
   const pendingBranchUpdates = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const pendingWorktreeUpdates = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const inFlightRefreshes = useRef<Set<string>>(new Set());
@@ -81,29 +80,37 @@ export function useGitWatcher() {
     if (!isInitialized) return;
 
     let mounted = true;
+    const unlisteners: UnlistenFn[] = [];
 
     const setupListeners = async () => {
-      if (!unlistenHeadRef.current) {
-        unlistenHeadRef.current = await listen<GitChangeEvent>('git-head-changed', (event) => {
-          if (!mounted) return;
-          debouncedBranchUpdate(event.payload.worktree_path);
-        });
-      }
+      const subscribe = async <T,>(event: string, handler: (payload: T) => void) => {
+        const unlisten = await listen<T>(event, ({ payload }) => handler(payload));
+        if (!mounted) {
+          unlisten();
+          return false;
+        }
+        unlisteners.push(unlisten);
+        return true;
+      };
 
-      if (!unlistenWorktreeRef.current) {
-        unlistenWorktreeRef.current = await listen<WorktreeChangeEvent>('worktree-changed', (event) => {
-          if (!mounted) return;
-          debouncedWorktreeRefresh(event.payload.repo_path);
-        });
-      }
+      if (!await subscribe<GitChangeEvent>('git-head-changed', (payload) => {
+        debouncedBranchUpdate(payload.worktree_path);
+      })) return;
+      if (!await subscribe<WorktreeChangeEvent>('worktree-changed', (payload) => {
+        debouncedWorktreeRefresh(payload.repo_path);
+      })) return;
+      await subscribe<{ worktree_path: string }>('autopilot-context-changed', (payload) => {
+        void refreshContextSummaries([payload.worktree_path]);
+      });
     };
 
     setupListeners();
 
     return () => {
       mounted = false;
+      unlisteners.forEach((unlisten) => unlisten());
     };
-  }, [isInitialized, debouncedBranchUpdate, debouncedWorktreeRefresh]);
+  }, [isInitialized, debouncedBranchUpdate, debouncedWorktreeRefresh, refreshContextSummaries]);
 
   useEffect(() => {
     if (!isInitialized) return;
@@ -150,14 +157,6 @@ export function useGitWatcher() {
 
   useEffect(() => {
     return () => {
-      if (unlistenHeadRef.current) {
-        unlistenHeadRef.current();
-        unlistenHeadRef.current = null;
-      }
-      if (unlistenWorktreeRef.current) {
-        unlistenWorktreeRef.current();
-        unlistenWorktreeRef.current = null;
-      }
       desiredWorktreePaths.current.clear();
       invoke('stop_all_watchers').catch(console.error);
     };
