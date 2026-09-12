@@ -693,7 +693,7 @@ export function Sidebar({
     >
       <div
         ref={innerRef}
-        className="flex h-full border-r border-border bg-primary pt-8 select-none"
+        className="sidebar-surface flex h-full border-r border-border bg-primary pt-8 select-none"
         style={{
           width: `${width}px`,
           minWidth: `${MIN_WIDTH}px`,
