@@ -3,6 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../store';
 import type { PRStatus, RepoPRStatuses, RepoWithWorktrees } from '../types/github';
 
+let latestRefreshRequest = 0;
+
 export async function refreshPRStatuses(repoPath?: string): Promise<void> {
   const {
     repositories,
@@ -31,7 +33,10 @@ export async function refreshPRStatuses(repoPath?: string): Promise<void> {
     ),
   }));
 
+  const requestId = ++latestRefreshRequest;
   const results = await invoke<RepoPRStatuses[]>('get_all_prs_for_repos', { repos });
+  if (requestId !== latestRefreshRequest) return;
+
   const failedLookups = results.flatMap((result) =>
     result.failed_worktrees.map((worktreePath) => `${result.repo_path}:${worktreePath}`)
   );

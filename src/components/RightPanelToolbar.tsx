@@ -92,7 +92,7 @@ export function RightPanelToolbar({
     [repositories, worktreePath],
   );
   const prStatus = usePRStatusForWorktree(worktreePath);
-  const { isMerging, handleMerge } = useMergePR({
+  const { isMerging, hasMerged, handleMerge } = useMergePR({
     repoPath,
     prNumber: prStatus?.number ?? null,
   });
@@ -305,7 +305,7 @@ export function RightPanelToolbar({
         </div>
       )}
 
-      {canMergePR && (
+      {canMergePR && !hasMerged && (
         <button
           type="button"
           onClick={handleMerge}

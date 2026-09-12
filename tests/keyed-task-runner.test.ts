@@ -15,6 +15,7 @@ describe("createKeyedTaskRunner", () => {
 
     const first = runner.run("repo:42", task);
     const duplicate = runner.run("repo:42", task);
+    await Promise.resolve();
 
     expect(runner.has("repo:42")).toBe(true);
     expect(duplicate).toBe(first);
@@ -24,5 +25,29 @@ describe("createKeyedTaskRunner", () => {
     await first;
 
     expect(runner.has("repo:42")).toBe(false);
+  });
+
+  test("deduplicates a reentrant task for the same key", async () => {
+    let nestedRuns = 0;
+    let release: (() => void) | undefined;
+    let nested: Promise<void> | undefined;
+    const runner = createKeyedTaskRunner();
+
+    const outer = runner.run("repo:42", async () => {
+      nested = runner.run("repo:42", async () => {
+        nestedRuns += 1;
+      });
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    });
+
+    await Promise.resolve();
+
+    expect(nested).toBe(outer);
+    expect(nestedRuns).toBe(0);
+
+    release?.();
+    await outer;
   });
 });

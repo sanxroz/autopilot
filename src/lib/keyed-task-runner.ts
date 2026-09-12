@@ -14,7 +14,7 @@ export function createKeyedTaskRunner() {
       const existing = active.get(key);
       if (existing) return existing;
 
-      const operation = task().finally(() => {
+      const operation = Promise.resolve().then(task).finally(() => {
         active.delete(key);
         notify();
       });

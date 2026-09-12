@@ -11,10 +11,12 @@ interface UseMergePROptions {
 
 interface UseMergePRReturn {
   isMerging: boolean;
+  hasMerged: boolean;
   handleMerge: () => Promise<void>;
 }
 
 const mergeTasks = createKeyedTaskRunner();
+const mergedKeys = new Set<string>();
 
 function getMergeKey(repoPath: string, prNumber: number): string {
   return `${repoPath}\0${prNumber}`;
@@ -22,6 +24,8 @@ function getMergeKey(repoPath: string, prNumber: number): string {
 
 function startMerge(repoPath: string, prNumber: number): Promise<void> {
   const key = getMergeKey(repoPath, prNumber);
+  if (mergedKeys.has(key)) return Promise.resolve();
+
   return mergeTasks.run(key, () =>
     invoke<{ success: boolean; message: string }>('merge_pr', {
       repoPath,
@@ -30,6 +34,7 @@ function startMerge(repoPath: string, prNumber: number): Promise<void> {
       .then(async (result) => {
         if (!result.success) throw new Error(result.message || 'Merge failed');
 
+        mergedKeys.add(key);
         toast.success(`PR #${prNumber} merged`);
         try {
           await refreshPRStatuses(repoPath);
@@ -49,11 +54,15 @@ export function useMergePR({ repoPath, prNumber }: UseMergePROptions): UseMergeP
     mergeTasks.subscribe,
     () => mergeKey !== null && mergeTasks.has(mergeKey),
   );
+  const hasMerged = useSyncExternalStore(
+    mergeTasks.subscribe,
+    () => mergeKey !== null && mergedKeys.has(mergeKey),
+  );
 
   const handleMerge = useCallback(async () => {
     if (!repoPath || !prNumber) return;
     await startMerge(repoPath, prNumber);
   }, [repoPath, prNumber]);
 
-  return { isMerging, handleMerge };
+  return { isMerging, hasMerged, handleMerge };
 }
