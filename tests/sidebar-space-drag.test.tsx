@@ -1,0 +1,209 @@
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import React, { forwardRef } from "react";
+import { Window } from "happy-dom";
+
+const browserWindow = new Window({ url: "http://localhost" });
+Object.assign(globalThis, {
+  window: browserWindow,
+  document: browserWindow.document,
+  navigator: browserWindow.navigator,
+  HTMLElement: browserWindow.HTMLElement,
+  Element: browserWindow.Element,
+  Node: browserWindow.Node,
+  Event: browserWindow.Event,
+  MouseEvent: browserWindow.MouseEvent,
+  PointerEvent: browserWindow.PointerEvent,
+  getComputedStyle: browserWindow.getComputedStyle.bind(browserWindow),
+  requestAnimationFrame: browserWindow.requestAnimationFrame.bind(browserWindow),
+  cancelAnimationFrame: browserWindow.cancelAnimationFrame.bind(browserWindow),
+  IS_REACT_ACT_ENVIRONMENT: true,
+});
+
+browserWindow.HTMLElement.prototype.setPointerCapture = () => {};
+browserWindow.HTMLElement.prototype.scrollIntoView = () => {};
+
+const reorderCalls: string[][] = [];
+const repositories = ["alpha", "beta", "gamma"].map((path) => ({
+  info: { name: path, path },
+  worktrees: [],
+  isExpanded: true,
+}));
+const store = {
+  repositories,
+  addRepository: async () => {},
+  removeRepository: () => {},
+  reorderRepositories: async (paths: string[]) => {
+    reorderCalls.push(paths);
+  },
+  selectWorktree: async () => {},
+  selectedWorktree: null,
+  createWorktreeAuto: async () => null,
+  deleteWorktree: async () => {},
+  createSidebarGroup: async () => null,
+  moveWorktreeInSidebar: async () => {},
+  renameSidebarGroup: async () => {},
+  setThemeMode: () => {},
+  toggleSettings: () => {},
+  githubSettings: { ghAuthUser: null },
+  prStatusByBranch: {},
+  prStatusByWorktreePath: {},
+  processStatusByPath: {},
+  agentRunByWorktreePath: {},
+  clearAgentRunState: () => {},
+  agentSidebarLifecycleEnabled: true,
+  worktreeSetupByRepoPath: {},
+  sidebarGroupsByRepo: {},
+};
+const useAppStore = Object.assign(() => store, { getState: () => store });
+
+mock.module("../src/store", () => ({ useAppStore }));
+mock.module("../src/hooks/useTheme", () => ({ useThemeMode: () => "dark" }));
+mock.module("@tauri-apps/plugin-dialog", () => ({ open: async () => null }));
+mock.module("framer-motion", () => ({
+  motion: {
+    div: forwardRef<HTMLDivElement, Record<string, unknown>>(
+      ({ layout: _layout, animate: _animate, transition: _transition, ...props }, ref) =>
+        React.createElement("div", { ...props, ref }),
+    ),
+  },
+  useReducedMotion: () => false,
+}));
+
+for (const path of [
+  "../src/components/NewWorktreeDialog",
+  "../src/components/WorktreeItem",
+  "../src/components/StackGroup",
+  "../src/components/SidebarWorktreeGroup",
+  "../src/components/KeyboardShortcutsHelp",
+]) {
+  mock.module(path, () => ({
+    NewWorktreeDialog: () => null,
+    WorktreeItem: () => null,
+    StackGroup: ({ children }: { children?: React.ReactNode }) => children,
+    SidebarWorktreeGroup: ({ children }: { children?: React.ReactNode }) => children,
+    KeyboardShortcutsHelp: () => null,
+  }));
+}
+
+const passthrough = ({ children }: { children?: React.ReactNode }) => children;
+mock.module("../src/components/ui/modal", () => ({
+  Root: passthrough,
+  Content: passthrough,
+  Title: passthrough,
+  Description: passthrough,
+}));
+mock.module("../src/components/ui/dropdown-menu", () => ({
+  DropdownMenu: passthrough,
+  DropdownMenuContent: passthrough,
+  DropdownMenuItem: passthrough,
+  DropdownMenuSeparator: () => null,
+  DropdownMenuTrigger: passthrough,
+}));
+
+const { act } = await import("react");
+const { createRoot } = await import("react-dom/client");
+type Root = import("react-dom/client").Root;
+const { Sidebar } = await import("../src/components/Sidebar");
+
+let container: HTMLDivElement;
+let root: Root;
+
+function pointer(
+  target: EventTarget,
+  type: string,
+  pointerId: number,
+  clientY: number,
+) {
+  target.dispatchEvent(new browserWindow.PointerEvent(type, {
+    bubbles: true,
+    button: 0,
+    isPrimary: true,
+    pointerId,
+    clientX: 10,
+    clientY,
+  }));
+}
+
+function spaceButton(path: string) {
+  return container.querySelector<HTMLButtonElement>(`button[data-space-path="${path}"]`)!;
+}
+
+function renderedOrder() {
+  return Array.from(
+    container.querySelectorAll<HTMLElement>("[data-space-drop-target='true']"),
+    (element) => element.dataset.spacePath,
+  );
+}
+
+beforeEach(async () => {
+  reorderCalls.length = 0;
+  browserWindow.localStorage.clear();
+  container = browserWindow.document.createElement("div");
+  browserWindow.document.body.append(container);
+  root = createRoot(container);
+
+  await act(async () => {
+    root.render(React.createElement(Sidebar, {
+      isOpen: true,
+      captainTerminalRepoPath: null,
+      onToggleCaptainTerminal: () => {},
+    }));
+  });
+
+  Array.from(
+    container.querySelectorAll<HTMLElement>("[data-space-drop-target='true']"),
+  ).forEach((element, index) => {
+    element.getBoundingClientRect = () => ({
+      x: 0,
+      y: index * 48,
+      top: index * 48,
+      right: 44,
+      bottom: index * 48 + 44,
+      left: 0,
+      width: 44,
+      height: 44,
+      toJSON: () => ({}),
+    });
+  });
+});
+
+afterEach(async () => {
+  await act(async () => root.unmount());
+  container.remove();
+});
+
+describe("Sidebar Space dragging", () => {
+  test("waits for the owner pointer to cross the threshold and restores on cancel", async () => {
+    await act(async () => pointer(spaceButton("alpha"), "pointerdown", 7, 20));
+    await act(async () => pointer(browserWindow, "pointermove", 7, 29));
+    expect(renderedOrder()).toEqual(["alpha", "beta", "gamma"]);
+
+    await act(async () => pointer(browserWindow, "pointermove", 8, 120));
+    expect(renderedOrder()).toEqual(["alpha", "beta", "gamma"]);
+
+    await act(async () => pointer(browserWindow, "pointermove", 7, 120));
+    expect(renderedOrder()).toEqual(["beta", "gamma", "alpha"]);
+
+    await act(async () => pointer(browserWindow, "pointercancel", 7, 120));
+    expect(renderedOrder()).toEqual(["alpha", "beta", "gamma"]);
+    expect(reorderCalls).toEqual([]);
+  });
+
+  test("previews, commits, and suppresses the drag's click", async () => {
+    await act(async () => pointer(spaceButton("beta"), "pointerdown", 11, 68));
+    await act(async () => pointer(browserWindow, "pointermove", 11, -10));
+    expect(renderedOrder()).toEqual(["beta", "alpha", "gamma"]);
+
+    await act(async () => pointer(browserWindow, "pointerup", 12, -10));
+    expect(reorderCalls).toEqual([]);
+
+    await act(async () => pointer(browserWindow, "pointerup", 11, -10));
+    expect(reorderCalls).toEqual([["beta", "alpha", "gamma"]]);
+
+    await act(async () => spaceButton("beta").click());
+    expect(spaceButton("alpha").getAttribute("aria-pressed")).toBe("true");
+
+    await act(async () => spaceButton("gamma").click());
+    expect(spaceButton("gamma").getAttribute("aria-pressed")).toBe("true");
+  });
+});
