@@ -19,7 +19,10 @@ Object.assign(globalThis, {
   IS_REACT_ACT_ENVIRONMENT: true,
 });
 
-browserWindow.HTMLElement.prototype.setPointerCapture = () => {};
+const capturedPointers = new Map<number, HTMLElement>();
+browserWindow.HTMLElement.prototype.setPointerCapture = function (pointerId: number) {
+  capturedPointers.set(pointerId, this);
+};
 browserWindow.HTMLElement.prototype.scrollIntoView = () => {};
 
 const reorderCalls: string[][] = [];
@@ -120,7 +123,10 @@ function pointer(
   pointerId: number,
   clientY: number,
 ) {
-  target.dispatchEvent(new browserWindow.PointerEvent(type, {
+  const dispatchTarget = target === browserWindow && type !== "pointerdown"
+    ? capturedPointers.get(pointerId) ?? browserWindow.document.createElement("div")
+    : target;
+  dispatchTarget.dispatchEvent(new browserWindow.PointerEvent(type, {
     bubbles: true,
     button: 0,
     isPrimary: true,
@@ -128,6 +134,9 @@ function pointer(
     clientX: 10,
     clientY,
   }));
+  if (type === "pointerup" || type === "pointercancel") {
+    capturedPointers.delete(pointerId);
+  }
 }
 
 function spaceButton(path: string) {
@@ -143,6 +152,7 @@ function renderedOrder() {
 
 beforeEach(async () => {
   reorderCalls.length = 0;
+  capturedPointers.clear();
   reducedMotion = false;
   browserWindow.localStorage.clear();
   container = browserWindow.document.createElement("div");
@@ -159,18 +169,23 @@ beforeEach(async () => {
 
   Array.from(
     container.querySelectorAll<HTMLElement>("[data-space-drop-target='true']"),
-  ).forEach((element, index) => {
-    element.getBoundingClientRect = () => ({
-      x: 0,
-      y: index * 48,
-      top: index * 48,
-      right: 44,
-      bottom: index * 48 + 44,
-      left: 0,
-      width: 44,
-      height: 44,
-      toJSON: () => ({}),
-    });
+  ).forEach((element) => {
+    element.getBoundingClientRect = () => {
+      const currentIndex = Array.from(
+        container.querySelectorAll<HTMLElement>("[data-space-drop-target='true']"),
+      ).indexOf(element);
+      return {
+        x: 0,
+        y: currentIndex * 48,
+        top: currentIndex * 48,
+        right: 44,
+        bottom: currentIndex * 48 + 44,
+        left: 0,
+        width: 44,
+        height: 44,
+        toJSON: () => ({}),
+      };
+    };
   });
 });
 
@@ -199,6 +214,8 @@ describe("Sidebar Space dragging", () => {
   test("previews, commits, and suppresses the drag's click", async () => {
     await act(async () => pointer(spaceButton("beta"), "pointerdown", 11, 68));
     await act(async () => pointer(browserWindow, "pointermove", 11, -10));
+    expect(renderedOrder()).toEqual(["beta", "alpha", "gamma"]);
+    await act(async () => pointer(browserWindow, "pointermove", 11, 40));
     expect(renderedOrder()).toEqual(["beta", "alpha", "gamma"]);
 
     await act(async () => pointer(browserWindow, "pointerup", 12, -10));

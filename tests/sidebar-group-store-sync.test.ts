@@ -9,6 +9,7 @@ let reloadHandler = async () => {
 };
 let invokeHandler = async (_command: string) => undefined;
 let saveError: Error | null = null;
+let saveHandler: (() => Promise<void>) | null = null;
 
 mock.module("@tauri-apps/api/core", () => ({
   ...tauriCore,
@@ -26,6 +27,7 @@ const fakeStore = {
     return cacheValues.delete(key);
   },
   async save(): Promise<void> {
+    await saveHandler?.();
     if (saveError) throw saveError;
     diskValues = new Map(cacheValues);
   },
@@ -98,6 +100,51 @@ describe("sidebar group store synchronization", () => {
 
       expect(useAppStore.getState().repositories).toBe(previousRepositories);
     } finally {
+      saveError = null;
+    }
+  });
+
+  test("restores Space order without discarding metadata updated during a failed save", async () => {
+    const secondRepository: Repository = {
+      ...repository,
+      info: { name: "second", path: "/second" },
+    };
+    diskValues = new Map([["repositoryPaths", ["/repo", "/second"]]]);
+    cacheValues = new Map(diskValues);
+    useAppStore.setState({ repositories: [repository, secondRepository] });
+    let markSaveStarted!: () => void;
+    const saveStarted = new Promise<void>((resolve) => {
+      markSaveStarted = resolve;
+    });
+    let releaseSave!: () => void;
+    const saveGate = new Promise<void>((resolve) => {
+      releaseSave = resolve;
+    });
+    saveHandler = async () => {
+      markSaveStarted();
+      await saveGate;
+    };
+    saveError = new Error("disk full");
+
+    try {
+      const reorder = useAppStore.getState().reorderRepositories(["/second", "/repo"]);
+      await saveStarted;
+      useAppStore.setState((state) => ({
+        repositories: state.repositories.map((repo) => repo.info.path === "/repo"
+          ? { ...repo, info: { ...repo.info, avatarUrl: "updated-avatar" } }
+          : repo),
+      }));
+      releaseSave();
+
+      await expect(reorder).rejects.toThrow("disk full");
+      expect(useAppStore.getState().repositories.map((repo) => repo.info.path)).toEqual([
+        "/repo",
+        "/second",
+      ]);
+      expect(useAppStore.getState().repositories[0]?.info.avatarUrl).toBe("updated-avatar");
+      expect(diskValues.get("repositoryPaths")).toEqual(["/repo", "/second"]);
+    } finally {
+      saveHandler = null;
       saveError = null;
     }
   });

@@ -687,9 +687,29 @@ export const useAppStore = create<AppStore>((set, get) => ({
           repositoryPaths: repositories.map((repository) => repository.info.path),
         });
       } catch (error) {
-        set((state) => state.repositories === repositories
-          ? { repositories: previousRepositories }
-          : state);
+        set((state) => {
+          if (state.repositories === repositories) {
+            return { repositories: previousRepositories };
+          }
+
+          const currentPaths = state.repositories.map((repository) => repository.info.path);
+          const reorderedPaths = repositories.map((repository) => repository.info.path);
+          if (
+            currentPaths.length !== reorderedPaths.length ||
+            currentPaths.some((path, index) => path !== reorderedPaths[index])
+          ) {
+            return state;
+          }
+
+          const previousOrder = new Map(
+            previousRepositories.map((repository, index) => [repository.info.path, index]),
+          );
+          return {
+            repositories: [...state.repositories].sort(
+              (a, b) => previousOrder.get(a.info.path)! - previousOrder.get(b.info.path)!,
+            ),
+          };
+        });
         throw error;
       }
     });
