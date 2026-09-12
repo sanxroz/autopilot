@@ -20,7 +20,7 @@ import { useGitWatcher } from "./hooks/useGitWatcher";
 import { useUpdater } from "./hooks/useUpdater";
 import { useDiffStatsLoader } from "./hooks/useDiffStats";
 import { useProcessStatusPolling } from "./hooks/useProcessStatus";
-import type { AgentStatusEvent } from "./types";
+import type { AgentStatusEvent, WorktreeInfo } from "./types";
 import { getShortcutAction, type ShortcutAction } from "./lib/keyboard-shortcuts";
 import {
   cycleItems,
@@ -39,6 +39,7 @@ function focusTerminal(terminalId: string | null) {
 
 function App() {
   const autoFetchInFlightRef = useRef(false);
+  const recentSessionCycleRef = useRef<WorktreeInfo[] | null>(null);
   const initialize = useAppStore((state) => state.initialize);
   const preloadInstalledIdes = useAppStore((state) => state.preloadInstalledIdes);
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
@@ -102,10 +103,10 @@ function App() {
       }
       case "previousRecentSession":
       case "nextRecentSession": {
-        const sessions = orderRecentSessions(
-          getNavigableSessions(state.repositories),
-          state.recentWorktreePaths,
+        const sessions = recentSessionCycleRef.current ?? orderRecentSessions(
+          getNavigableSessions(state.repositories), state.recentWorktreePaths,
         );
+        recentSessionCycleRef.current = sessions;
         const current = sessions.find((worktree) => worktree.path === state.selectedWorktree?.path) ?? null;
         const session = cycleItems(sessions, current, action === "nextRecentSession" ? 1 : -1);
         if (session) void state.selectWorktree(session);
@@ -210,9 +211,16 @@ function App() {
       e.preventDefault();
       runShortcutAction(action);
     };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.key === "Control") recentSessionCycleRef.current = null;
+    };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+    };
   }, [keyboardShortcuts, runShortcutAction]);
 
   useEffect(() => {

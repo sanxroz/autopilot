@@ -244,7 +244,7 @@ fn read_context_summary(worktree_path: &str) -> Result<WorktreeContextSummary, S
     let source_has_more = bytes.len() > SUMMARY_READ_BYTES;
     let mut prefix_end = bytes.len().min(SUMMARY_READ_BYTES);
     if let Err(error) = std::str::from_utf8(&bytes[..prefix_end]) {
-        if error.error_len().is_some() {
+        if error.error_len().is_some() || !source_has_more {
             return Err(format!(".autopilot.md is not valid UTF-8: {error}"));
         }
         while prefix_end > 0 && std::str::from_utf8(&bytes[..prefix_end]).is_err() {
@@ -468,6 +468,17 @@ mod tests {
         let malformed = read_autopilot_context_summaries(vec![absent_path.clone()]);
         assert!(malformed[&absent_path].summary.is_none());
         assert!(malformed[&absent_path].error.is_some());
+
+        let mut boundary_malformed = vec![b'x'; SUMMARY_READ_BYTES - 1];
+        boundary_malformed.push(0xc3);
+        fs::write(absent_context.join(CONTEXT_FILE_NAME), boundary_malformed).unwrap();
+        let malformed = read_autopilot_context_summaries(vec![absent_path.clone()]);
+        assert!(malformed[&absent_path].summary.is_none());
+        assert!(malformed[&absent_path]
+            .error
+            .as_deref()
+            .unwrap()
+            .contains(".autopilot.md is not valid UTF-8"));
 
         fs::remove_dir_all(repository).unwrap();
         fs::remove_dir_all(absent_context).unwrap();

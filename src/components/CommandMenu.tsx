@@ -423,6 +423,12 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
               {filteredSessions.map(renderSession)}
             </CommandMenuUI.Group>
           ) : null
+        ) : parsedSearch.query ? (
+          filteredSessions.length > 0 ? (
+            <CommandMenuUI.Group heading="Sessions">
+              {filteredSessions.map(renderSession)}
+            </CommandMenuUI.Group>
+          ) : null
         ) : (
           <>
             {attentionSessions.length > 0 ? (

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  cycleItems,
   orderRecentSessions,
   pruneRecentWorktreePaths,
   recordRecentWorktreePath,
@@ -25,5 +26,19 @@ describe("recent worktree navigation", () => {
       .toEqual(["/two", "/one"]);
     expect(orderRecentSessions(sessions, ["/three", "/one"]).map(({ path }) => path))
       .toEqual(["/three", "/one", "/two"]);
+  });
+
+  test("keeps one traversal order while selections update MRU history", () => {
+    const sessions = [{ path: "/one" }, { path: "/two" }, { path: "/three" }];
+    const traversal = orderRecentSessions(sessions, sessions.map(({ path }) => path));
+    let current = traversal[0];
+
+    current = cycleItems(traversal, current, 1)!;
+    expect(current.path).toBe("/two");
+    expect(recordRecentWorktreePath(traversal.map(({ path }) => path), current.path)).toEqual([
+      "/two", "/one", "/three",
+    ]);
+    current = cycleItems(traversal, current, 1)!;
+    expect(current.path).toBe("/three");
   });
 });

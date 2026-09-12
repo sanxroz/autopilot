@@ -88,13 +88,19 @@ export function shortcutFromKeyboardEvent(
 export function getShortcutAction(
   event: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey"> & { code?: string },
   shortcuts: KeyboardShortcutMap,
-  isMac?: boolean,
+  isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform),
 ): ShortcutAction | null {
   const pressed = shortcutFromKeyboardEvent(event, isMac);
   if (!pressed) return null;
+  const physicalControlPressed = isMac === false && pressed.startsWith("Mod+")
+    ? `Ctrl+${pressed.slice(4)}`
+    : pressed;
   return SHORTCUT_DEFINITIONS.find(
     ({ id, alternateShortcuts }) =>
-      shortcuts[id] === pressed || alternateShortcuts?.includes(pressed),
+      shortcuts[id] === pressed ||
+      shortcuts[id] === physicalControlPressed ||
+      alternateShortcuts?.includes(pressed) ||
+      alternateShortcuts?.includes(physicalControlPressed),
   )?.id ?? null;
 }
 
