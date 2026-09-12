@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
+import { createKeyedTaskRunner } from '../lib/keyed-task-runner';
+import { refreshPRStatuses } from './usePRStatus';
 
 interface UseMergePROptions {
   repoPath: string | null;
@@ -9,68 +11,49 @@ interface UseMergePROptions {
 
 interface UseMergePRReturn {
   isMerging: boolean;
-  hasMerged: boolean;
   handleMerge: () => Promise<void>;
 }
 
+const mergeTasks = createKeyedTaskRunner();
+
+function getMergeKey(repoPath: string, prNumber: number): string {
+  return `${repoPath}\0${prNumber}`;
+}
+
+function startMerge(repoPath: string, prNumber: number): Promise<void> {
+  const key = getMergeKey(repoPath, prNumber);
+  return mergeTasks.run(key, () =>
+    invoke<{ success: boolean; message: string }>('merge_pr', {
+      repoPath,
+      prNumber,
+    })
+      .then(async (result) => {
+        if (!result.success) throw new Error(result.message || 'Merge failed');
+
+        toast.success(`PR #${prNumber} merged`);
+        try {
+          await refreshPRStatuses(repoPath);
+        } catch (error) {
+          console.error('Failed to refresh PR status after merge:', error);
+        }
+      })
+      .catch((error) => {
+        toast.error(String(error));
+      })
+  );
+}
+
 export function useMergePR({ repoPath, prNumber }: UseMergePROptions): UseMergePRReturn {
-  const [isMerging, setIsMerging] = useState(false);
-  const [hasMerged, setHasMerged] = useState(false);
-  const isMergingRef = useRef(false);
-
-  // Track the active PR to detect stale async callbacks
-  const activePrRef = useRef<{ repoPath: string | null; prNumber: number | null }>({
-    repoPath: null,
-    prNumber: null,
-  });
-
-  useEffect(() => {
-    setHasMerged(false);
-    setIsMerging(false);
-    isMergingRef.current = false;
-    activePrRef.current = { repoPath, prNumber };
-  }, [prNumber, repoPath]);
+  const mergeKey = repoPath && prNumber ? getMergeKey(repoPath, prNumber) : null;
+  const isMerging = useSyncExternalStore(
+    mergeTasks.subscribe,
+    () => mergeKey !== null && mergeTasks.has(mergeKey),
+  );
 
   const handleMerge = useCallback(async () => {
     if (!repoPath || !prNumber) return;
-    if (isMergingRef.current) return;
-
-    const mergeRepoPath = repoPath;
-    const mergePrNumber = prNumber;
-
-    isMergingRef.current = true;
-    setIsMerging(true);
-    try {
-      const result = await invoke<{ success: boolean; message: string }>('merge_pr', {
-        repoPath: mergeRepoPath,
-        prNumber: mergePrNumber,
-      });
-
-      const isStale = activePrRef.current.repoPath !== mergeRepoPath ||
-                      activePrRef.current.prNumber !== mergePrNumber;
-      if (isStale) return;
-
-      if (result.success) {
-        toast.success(`PR #${mergePrNumber} merged`);
-        setHasMerged(true);
-      } else {
-        toast.error(result.message || 'Merge failed');
-      }
-    } catch (e) {
-      const isStale = activePrRef.current.repoPath !== mergeRepoPath ||
-                      activePrRef.current.prNumber !== mergePrNumber;
-      if (!isStale) {
-        toast.error(String(e));
-      }
-    } finally {
-      const isStale = activePrRef.current.repoPath !== mergeRepoPath ||
-                      activePrRef.current.prNumber !== mergePrNumber;
-      if (!isStale) {
-        setIsMerging(false);
-        isMergingRef.current = false;
-      }
-    }
+    await startMerge(repoPath, prNumber);
   }, [repoPath, prNumber]);
 
-  return { isMerging, hasMerged, handleMerge };
+  return { isMerging, handleMerge };
 }

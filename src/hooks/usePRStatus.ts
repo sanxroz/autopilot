@@ -3,13 +3,53 @@ import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../store';
 import type { PRStatus, RepoPRStatuses, RepoWithWorktrees } from '../types/github';
 
-export function usePRStatusPolling() {
+export async function refreshPRStatuses(repoPath?: string): Promise<void> {
   const {
     repositories,
     githubSettings,
-    setPRStatusBatch,
     collapsedRepos,
-  } = useAppStore();
+    setPRStatusBatch,
+  } = useAppStore.getState();
+
+  if (!githubSettings.ghCliAvailable || repositories.length === 0) return;
+
+  const visibleRepos = repositories.filter((repo) =>
+    repoPath ? repo.info.path === repoPath : !collapsedRepos.has(repo.info.path)
+  );
+  if (visibleRepos.length === 0) return;
+
+  const repos: RepoWithWorktrees[] = visibleRepos.map((repo) => ({
+    repo_path: repo.info.path,
+    worktrees: repo.worktrees.flatMap((worktree) =>
+      worktree.branch !== null && worktree.branch !== 'main' && worktree.branch !== 'master'
+        ? [{
+            worktree_path: worktree.path,
+            branch: worktree.branch,
+            head_oid: worktree.head_oid ?? null,
+          }]
+        : []
+    ),
+  }));
+
+  const results = await invoke<RepoPRStatuses[]>('get_all_prs_for_repos', { repos });
+  const failedLookups = results.flatMap((result) =>
+    result.failed_worktrees.map((worktreePath) => `${result.repo_path}:${worktreePath}`)
+  );
+
+  if (failedLookups.length > 0) {
+    console.warn(
+      'Some PR lookups failed; preserving previous sidebar PR data for those worktrees:',
+      failedLookups
+    );
+  }
+
+  setPRStatusBatch(results);
+}
+
+export function usePRStatusPolling() {
+  const repositories = useAppStore((state) => state.repositories);
+  const githubSettings = useAppStore((state) => state.githubSettings);
+  const collapsedRepos = useAppStore((state) => state.collapsedRepos);
   
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isFetchingRef = useRef(false);
@@ -22,46 +62,13 @@ export function usePRStatusPolling() {
     isFetchingRef.current = true;
 
     try {
-      const visibleRepos = repositories.filter(r => !collapsedRepos.has(r.info.path));
-      
-      if (visibleRepos.length === 0) {
-        isFetchingRef.current = false;
-        return;
-      }
-
-      const repos: RepoWithWorktrees[] = visibleRepos.map(r => ({
-        repo_path: r.info.path,
-        worktrees: r.worktrees.flatMap((wt) =>
-          wt.branch !== null && wt.branch !== 'main' && wt.branch !== 'master'
-            ? [{
-                worktree_path: wt.path,
-                branch: wt.branch,
-                head_oid: wt.head_oid ?? null,
-              }]
-            : []
-        ),
-      }));
-      
-      const results = await invoke<RepoPRStatuses[]>('get_all_prs_for_repos', { repos });
-
-      const failedLookups = results.flatMap((result) =>
-        result.failed_worktrees.map((worktreePath) => `${result.repo_path}:${worktreePath}`)
-      );
-
-      if (failedLookups.length > 0) {
-        console.warn(
-          'Some PR lookups failed; preserving previous sidebar PR data for those worktrees:',
-          failedLookups
-        );
-      }
-
-      setPRStatusBatch(results);
+      await refreshPRStatuses();
     } catch (e) {
       console.error('Failed to fetch PRs:', e);
     } finally {
       isFetchingRef.current = false;
     }
-  }, [repositories, githubSettings.ghCliAvailable, setPRStatusBatch, collapsedRepos]);
+  }, [repositories, githubSettings.ghCliAvailable, collapsedRepos]);
 
   useEffect(() => {
     if (!githubSettings.ghCliAvailable) {
