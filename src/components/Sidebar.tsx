@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   Plus,
@@ -11,6 +12,8 @@ import {
   Bot,
   GitPullRequest,
   CircleHelp,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { useAppStore } from "../store";
 import type { WorktreeInfo } from "../types";
@@ -34,9 +37,12 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import {
+  canStartSpaceDrag,
   findSpaceForWorktree,
   getSpaceActivity,
   loadActiveSpace,
+  ownsSpaceDrag,
+  reorderSpacePaths,
   resolveActiveSpace,
   saveActiveSpace,
 } from "../lib/spaces";
@@ -89,10 +95,12 @@ export function Sidebar({
   captainTerminalRepoPath,
   onToggleCaptainTerminal,
 }: SidebarProps) {
+  const shouldReduceMotion = useReducedMotion();
   const {
     repositories,
     addRepository,
     removeRepository,
+    reorderRepositories,
     selectWorktree,
     selectedWorktree,
     createWorktreeAuto,
@@ -131,6 +139,7 @@ export function Sidebar({
   );
   const containerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
+  const spaceListRef = useRef<HTMLDivElement>(null);
   const sessionsListRef = useRef<HTMLDivElement>(null);
   const widthRef = useRef(DEFAULT_WIDTH);
   const pendingWidthRef = useRef(DEFAULT_WIDTH);
@@ -172,6 +181,21 @@ export function Sidebar({
     worktreePath: string;
   } | null>(null);
   const suppressNextWorktreeClickRef = useRef(false);
+  const [draggedSpacePath, setDraggedSpacePath] = useState<string | null>(null);
+  const [spaceDropTarget, setSpaceDropTarget] = useState<{
+    path: string;
+    position: "before" | "after";
+  } | null>(null);
+  const [spacePreviewOrder, setSpacePreviewOrder] = useState<string[] | null>(null);
+  const spaceDragSessionRef = useRef<{
+    path: string;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    isDragging: boolean;
+  } | null>(null);
+  const spacePreviewOrderRef = useRef<string[] | null>(null);
+  const suppressNextSpaceClickRef = useRef(false);
 
   const setCurrentDraggedWorktree = (value: typeof draggedWorktree) => {
     draggedWorktreeRef.current = value;
@@ -268,13 +292,19 @@ export function Sidebar({
   }, [applyResizeWidth, isResizing]);
 
   const repoGroups = useMemo(() => {
-    return repositories.map((repo) => ({
+    const groups = repositories.map((repo) => ({
       repoName: repo.info.name || basename(repo.info.path),
       repoPath: repo.info.path,
       avatarUrl: repo.info.avatarUrl,
       worktrees: repo.worktrees.filter((wt) => wt.name !== "main"),
     }));
-  }, [repositories]);
+    if (!spacePreviewOrder) return groups;
+
+    const order = new Map(spacePreviewOrder.map((path, index) => [path, index]));
+    return groups.sort(
+      (a, b) => (order.get(a.repoPath) ?? Infinity) - (order.get(b.repoPath) ?? Infinity),
+    );
+  }, [repositories, spacePreviewOrder]);
   const selectedWorktreeSpace = useMemo(
     () => findSpaceForWorktree(repositories, selectedWorktree),
     [repositories, selectedWorktree],
@@ -333,9 +363,148 @@ export function Sidebar({
   ]);
 
   const handleSpaceSelect = (repoPath: string) => {
+    if (suppressNextSpaceClickRef.current) {
+      suppressNextSpaceClickRef.current = false;
+      return;
+    }
     setActiveSpacePath(repoPath);
     saveActiveSpace(repoPath);
   };
+
+  const handleSpaceMove = async (repoPath: string, offset: -1 | 1) => {
+    const paths = repositories.map((repository) => repository.info.path);
+    const currentIndex = paths.indexOf(repoPath);
+    const targetPath = paths[currentIndex + offset];
+    if (currentIndex < 0 || !targetPath) return;
+
+    const nextOrder = reorderSpacePaths(
+      paths,
+      repoPath,
+      targetPath,
+      offset < 0 ? "before" : "after",
+    );
+    setError(null);
+    try {
+      await reorderRepositories(nextOrder);
+    } catch (e) {
+      console.error("Failed to reorder Spaces:", e);
+      setError("Failed to save the Space order. The previous order was restored.");
+    }
+  };
+
+  const handleSpacePointerDown = (
+    event: React.PointerEvent<HTMLButtonElement>,
+    path: string,
+  ) => {
+    if (!canStartSpaceDrag(event, spaceDragSessionRef.current !== null)) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    spaceDragSessionRef.current = {
+      path,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      isDragging: false,
+    };
+  };
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const session = spaceDragSessionRef.current;
+      if (!session || !ownsSpaceDrag(event.pointerId, session.pointerId)) return;
+
+      if (!session.isDragging) {
+        const distance = Math.max(
+          Math.abs(event.clientX - session.startX),
+          Math.abs(event.clientY - session.startY),
+        );
+        if (distance < DRAG_START_THRESHOLD_PX) return;
+
+        session.isDragging = true;
+        setDraggedSpacePath(session.path);
+        const currentOrder = useAppStore
+          .getState()
+          .repositories.map((repo) => repo.info.path);
+        spacePreviewOrderRef.current = currentOrder;
+        setSpacePreviewOrder(currentOrder);
+      }
+
+      const targets = Array.from(
+        spaceListRef.current?.querySelectorAll<HTMLElement>(
+          "[data-space-drop-target='true']",
+        ) ?? [],
+      ).filter((target) => target.dataset.spacePath !== session.path);
+      if (targets.length === 0) return;
+
+      const beforeTarget = targets.find((target) => {
+        const bounds = target.getBoundingClientRect();
+        return event.clientY < bounds.top + bounds.height / 2;
+      });
+      const target = beforeTarget ?? targets[targets.length - 1];
+      const targetPath = target.dataset.spacePath;
+      if (!targetPath) return;
+
+      const nextTarget = {
+        path: targetPath,
+        position: beforeTarget ? "before" as const : "after" as const,
+      };
+      setSpaceDropTarget((current) =>
+        current?.path === nextTarget.path && current.position === nextTarget.position
+          ? current
+          : nextTarget,
+      );
+
+      const nextOrder = reorderSpacePaths(
+        spacePreviewOrderRef.current ?? [],
+        session.path,
+        nextTarget.path,
+        nextTarget.position,
+      );
+      if (nextOrder.every((path, index) => path === spacePreviewOrderRef.current?.[index])) {
+        return;
+      }
+      spacePreviewOrderRef.current = nextOrder;
+      setSpacePreviewOrder(nextOrder);
+    };
+
+    const endSpaceDrag = (event: PointerEvent, commit: boolean) => {
+      const session = spaceDragSessionRef.current;
+      if (!session || !ownsSpaceDrag(event.pointerId, session.pointerId)) return;
+
+      const previewOrder = spacePreviewOrderRef.current;
+
+      if (session.isDragging && commit) {
+        suppressNextSpaceClickRef.current = true;
+        window.setTimeout(() => {
+          suppressNextSpaceClickRef.current = false;
+        }, 250);
+
+        if (previewOrder) {
+          void reorderRepositories(previewOrder).catch((e) => {
+            console.error("Failed to reorder Spaces:", e);
+            setError("Failed to save the Space order. The previous order was restored.");
+          });
+        }
+      }
+
+      spaceDragSessionRef.current = null;
+      spacePreviewOrderRef.current = null;
+      setDraggedSpacePath(null);
+      setSpaceDropTarget(null);
+      setSpacePreviewOrder(null);
+    };
+
+    const handlePointerUp = (event: PointerEvent) => endSpaceDrag(event, true);
+    const handlePointerCancel = (event: PointerEvent) => endSpaceDrag(event, false);
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerCancel);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+    };
+  }, [reorderRepositories]);
 
   const handleAddRepository = async () => {
     setError(null);
@@ -712,7 +881,10 @@ export function Sidebar({
         className="flex w-[52px] shrink-0 flex-col pb-1.5"
         aria-label="Spaces"
       >
-        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto scrollbar-hide">
+        <div
+          ref={spaceListRef}
+          className="min-h-0 flex-1 space-y-1 overflow-y-auto scrollbar-hide"
+        >
           {repoGroups.map((space) => {
             const avatarUrl = space.avatarUrl;
             const showAvatar =
@@ -734,18 +906,47 @@ export function Sidebar({
                   processStatusByPath[worktree.path] || "none",
               ),
             );
+            const isDragSource = draggedSpacePath === space.repoPath;
 
             return (
-              <div key={space.repoPath} className="relative flex justify-center">
+              <motion.div
+                key={space.repoPath}
+                layout={Boolean(draggedSpacePath) && !shouldReduceMotion}
+                animate={
+                  shouldReduceMotion
+                    ? undefined
+                    : { scale: isDragSource ? 1.06 : 1 }
+                }
+                transition={{
+                  layout: { type: "spring", duration: 0.22, bounce: 0.12 },
+                  scale: { duration: 0.12, ease: "easeOut" },
+                }}
+                data-space-drop-target="true"
+                data-space-path={space.repoPath}
+                className={cn(
+                  "relative flex justify-center",
+                  draggedSpacePath && "will-change-transform",
+                  isDragSource && "z-[1]",
+                )}
+              >
+                {spaceDropTarget?.path === space.repoPath &&
+                  spaceDropTarget.position === "before" && (
+                    <div className="absolute inset-x-1 top-[-3px] h-0.5 rounded-full bg-border-strong" />
+                  )}
                 <button
                   type="button"
                   data-space-path={space.repoPath}
+                  onPointerDown={(event) =>
+                    handleSpacePointerDown(event, space.repoPath)
+                  }
                   onClick={() => handleSpaceSelect(space.repoPath)}
                   onFocus={(event) =>
                     event.currentTarget.scrollIntoView({ block: "nearest" })
                   }
                   className={cn(
-                    "relative flex h-11 w-11 items-center justify-center rounded-xl text-tertiary transition-[background-color,color] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 motion-reduce:transition-none",
+                    "relative flex h-11 w-11 items-center justify-center rounded-xl text-tertiary transition-[background-color,color,opacity] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 motion-reduce:transition-none",
+                    draggedSpacePath && "cursor-grabbing",
+                    isDragSource && "opacity-70",
                     isActive
                       ? "bg-hover text-primary"
                       : "hover:bg-hover hover:text-primary",
@@ -758,6 +959,7 @@ export function Sidebar({
                     <img
                       src={avatarUrl}
                       alt=""
+                      draggable={false}
                       className="h-7 w-7 rounded-lg"
                       onError={() => {
                         setFailedAvatarUrls((current) => {
@@ -785,7 +987,11 @@ export function Sidebar({
                     />
                   )}
                 </button>
-              </div>
+                {spaceDropTarget?.path === space.repoPath &&
+                  spaceDropTarget.position === "after" && (
+                    <div className="absolute inset-x-1 bottom-[-3px] h-0.5 rounded-full bg-border-strong" />
+                  )}
+              </motion.div>
             );
           })}
         </div>
@@ -862,6 +1068,21 @@ export function Sidebar({
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    disabled={repositories[0]?.info.path === activeRepoGroup.repoPath}
+                    onSelect={() => void handleSpaceMove(activeRepoGroup.repoPath, -1)}
+                  >
+                    <ArrowUp />
+                    Move up
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={repositories.at(-1)?.info.path === activeRepoGroup.repoPath}
+                    onSelect={() => void handleSpaceMove(activeRepoGroup.repoPath, 1)}
+                  >
+                    <ArrowDown />
+                    Move down
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onSelect={() =>
                       setSessionMode(sessionMode === "pr" ? "agent" : "pr")

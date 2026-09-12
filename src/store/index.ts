@@ -105,6 +105,7 @@ interface AppStore {
   preloadInstalledIdes: () => Promise<void>;
   addRepository: (path: string) => Promise<void>;
   removeRepository: (path: string) => void;
+  reorderRepositories: (orderedPaths: string[]) => Promise<void>;
   toggleRepoExpanded: (path: string) => void;
   refreshWorktrees: (repoPath: string) => Promise<void>;
   reorderWorktrees: (repoPath: string, orderedWorktreePaths: string[]) => Promise<void>;
@@ -162,6 +163,7 @@ interface AppStore {
 const STORE_PATH = 'autopilot-settings.json';
 const persistedStore = new LazyStore(STORE_PATH, { autoSave: true, defaults: {} });
 let storeOperationQueue = Promise.resolve();
+let repositoryReorderQueue = Promise.resolve();
 let sidebarGroupsRevision = 0;
 let pendingLegacySidebarNotesMarkdown: string | null = null;
 const DEFAULT_AUTO_FETCH_SETTINGS: AutoFetchSettings = {
@@ -306,6 +308,7 @@ async function savePersistedState(state: PersistedState): Promise<void> {
     });
   } catch (e) {
     console.error('Failed to save state:', e);
+    throw e;
   }
 }
 
@@ -540,9 +543,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
     }
 
-    savePersistedState({
+    void savePersistedState({
       repositoryPaths: get().repositories.map((repository) => repository.info.path),
-    });
+    }).catch(() => {});
     set({ isInitialized: true });
 
     if (reposNeedingAvatar.length > 0) {
@@ -609,9 +612,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ...state.repositories.filter((r) => r.info.path !== info.path),
           { info, worktrees, isExpanded: true },
         ];
-        
-        savePersistedState({ repositoryPaths: newRepos.map((r) => r.info.path) });
-        
+
+        void savePersistedState({
+          repositoryPaths: newRepos.map((r) => r.info.path),
+        }).catch(() => {});
+
         return {
           repositories: newRepos,
           sidebarGroupsByRepo: {
@@ -649,7 +654,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const newRepos = state.repositories.filter((r) => r.info.path !== path);
       const { [path]: _removedOrder, ...remainingWorktreeOrders } = state.worktreeOrdersByRepo;
       const { [path]: _removedGroups, ...remainingSidebarGroups } = state.sidebarGroupsByRepo;
-      savePersistedState({ repositoryPaths: newRepos.map((r) => r.info.path) });
+      void savePersistedState({ repositoryPaths: newRepos.map((r) => r.info.path) }).catch(() => {});
       saveWorktreeOrdersByRepo(remainingWorktreeOrders);
       saveSidebarGroupsByRepo(remainingSidebarGroups);
       saveRepoAvatarCacheEntry(path, null);
@@ -659,6 +664,54 @@ export const useAppStore = create<AppStore>((set, get) => ({
         sidebarGroupsByRepo: remainingSidebarGroups,
       };
     });
+  },
+
+  reorderRepositories: (orderedPaths: string[]) => {
+    const result = repositoryReorderQueue.catch(() => undefined).then(async () => {
+      const previousRepositories = get().repositories;
+      const orderIndex = new Map(orderedPaths.map((path, index) => [path, index]));
+      const repositories = [...previousRepositories].sort((a, b) => {
+        const aIndex = orderIndex.get(a.info.path);
+        const bIndex = orderIndex.get(b.info.path);
+        if (aIndex === undefined) return bIndex === undefined ? 0 : 1;
+        if (bIndex === undefined) return -1;
+        return aIndex - bIndex;
+      });
+
+      set({ repositories });
+      try {
+        await savePersistedState({
+          repositoryPaths: repositories.map((repository) => repository.info.path),
+        });
+      } catch (error) {
+        set((state) => {
+          if (state.repositories === repositories) {
+            return { repositories: previousRepositories };
+          }
+
+          const currentPaths = state.repositories.map((repository) => repository.info.path);
+          const reorderedPaths = repositories.map((repository) => repository.info.path);
+          if (
+            currentPaths.length !== reorderedPaths.length ||
+            currentPaths.some((path, index) => path !== reorderedPaths[index])
+          ) {
+            return state;
+          }
+
+          const previousOrder = new Map(
+            previousRepositories.map((repository, index) => [repository.info.path, index]),
+          );
+          return {
+            repositories: [...state.repositories].sort(
+              (a, b) => previousOrder.get(a.info.path)! - previousOrder.get(b.info.path)!,
+            ),
+          };
+        });
+        throw error;
+      }
+    });
+    repositoryReorderQueue = result.then(() => undefined, () => undefined);
+    return result;
   },
 
   toggleRepoExpanded: (path: string) => {

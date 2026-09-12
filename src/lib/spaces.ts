@@ -5,6 +5,33 @@ const ACTIVE_SPACE_STORAGE_KEY = "autopilot-active-space";
 
 export type SpaceActivity = "attention" | "running" | null;
 
+export function canStartSpaceDrag(
+  pointer: { button: number; isPrimary: boolean },
+  hasActiveDrag: boolean,
+): boolean {
+  return pointer.button === 0 && pointer.isPrimary && !hasActiveDrag;
+}
+
+export function ownsSpaceDrag(pointerId: number, activePointerId: number): boolean {
+  return pointerId === activePointerId;
+}
+
+export function reorderSpacePaths(
+  paths: readonly string[],
+  sourcePath: string,
+  targetPath: string,
+  position: "before" | "after",
+): string[] {
+  if (sourcePath === targetPath || !paths.includes(sourcePath) || !paths.includes(targetPath)) {
+    return [...paths];
+  }
+
+  const reordered = paths.filter((path) => path !== sourcePath);
+  const targetIndex = reordered.indexOf(targetPath);
+  reordered.splice(targetIndex + (position === "after" ? 1 : 0), 0, sourcePath);
+  return reordered;
+}
+
 export function getSpaceActivity(
   sections: readonly SessionSection[],
   processStatuses: readonly ProcessStatus[],
