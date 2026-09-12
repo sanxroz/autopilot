@@ -1,0 +1,27 @@
+src/store/index.ts
+  s_2ef337c62b74e4::t_d8d0fff46e0f0d 313,659,672,674,683-692
+  s_2ef337c62b74e4::t_552d7cc81450c5 548,550,617-621
+src/components/Sidebar.tsx
+  s_2ef337c62b74e4::t_f838474ccc8151 15-16,374-394,481-486,1071-1085
+tests/sidebar-space-drag.test.tsx
+  s_2ef337c62b74e4::t_e4b31ee9a82e9d 26,70,90-94,104,146
+  s_2ef337c62b74e4::t_c47db399e92e3d 216-242
+tests/sidebar-group-store-sync.test.ts
+  s_2ef337c62b74e4::t_fb0aee9649f8e8 11,29,85-99
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "0632ee0d96a0e8aa820effca14c4308cfc67712e",
+  "prompts": {},
+  "sessions": {
+    "s_2ef337c62b74e4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a093c2-f2a5-74f0-b34c-cefb4d2c28cc",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
