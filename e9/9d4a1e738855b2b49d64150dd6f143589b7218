@@ -1,0 +1,21 @@
+tests/sidebar-group-store-sync.test.ts
+  s_ece34fc91d722f::t_e14667034e7d7f 94-97,99-127
+src/store/index.ts
+  s_ece34fc91d722f::t_e14667034e7d7f 163,672-681,683-697
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "e99d4a1e738855b2b49d64150dd6f143589b7218",
+  "prompts": {},
+  "sessions": {
+    "s_ece34fc91d722f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a095a4-fd67-7970-81a4-0b90e8f44a6e",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
