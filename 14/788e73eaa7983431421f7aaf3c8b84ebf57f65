@@ -1,0 +1,29 @@
+src/hooks/useMergePR.ts
+  s_50282e1ce360d2::t_e86038feb31624 1,5,19-21,23-24,29,44-48,51,55,58
+  s_50282e1ce360d2::t_0e0b6c9ea733a7 4,17,25-28,30-43,49-50
+src/lib/keyed-task-runner.ts
+  s_50282e1ce360d2::t_0e0b6c9ea733a7 1-26
+src/components/RightPanelToolbar.tsx
+  s_50282e1ce360d2::t_e86038feb31624 95,308
+src/hooks/usePRStatus.ts
+  s_50282e1ce360d2::t_6bf1bfff02625c 6,16-18
+  s_50282e1ce360d2::t_e86038feb31624 11-15,19-52,65,71
+tests/keyed-task-runner.test.ts
+  s_50282e1ce360d2::t_0e0b6c9ea733a7 1-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "14788e73eaa7983431421f7aaf3c8b84ebf57f65",
+  "prompts": {},
+  "sessions": {
+    "s_50282e1ce360d2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a095c8-af61-71d0-97f5-bddd39af15fa",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
