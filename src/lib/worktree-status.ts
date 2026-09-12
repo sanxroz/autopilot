@@ -40,7 +40,7 @@ export function getWorktreeActivityDisplay(
         }
         return { label: "Agent running", colorClass: "text-semantic-warning", icon: "spinner", title };
       case "waiting_input":
-        return { label: "Waiting for input", colorClass: "text-semantic-success", icon: "ready", title };
+        return { label: "Waiting for input", colorClass: "text-semantic-warning", icon: "ready", title };
       case "completed":
         return { label: "Agent finished", colorClass: "text-semantic-success", icon: "completed", title };
       case "error":

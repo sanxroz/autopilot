@@ -194,9 +194,10 @@ export const WorktreeItem = memo(function WorktreeItem({
           {agentStatus ? (
             <div className={cn("flex-shrink-0", agentStatus.colorClass)} title={agentStatus.title || agentStatus.label}>
               {agentStatus.icon === 'spinner' && <Loader className="w-3 h-3 animate-spin" />}
-              {agentStatus.icon === 'ready' && <div className="w-2 h-2 rounded-full bg-semantic-success" />}
+              {agentStatus.icon === 'ready' && <div className="w-2 h-2 rounded-full bg-semantic-warning" />}
               {agentStatus.icon === 'completed' && <CircleCheck className="w-3 h-3" />}
               {agentStatus.icon === 'error' && <CircleAlert className="w-3 h-3" />}
+              {agentStatus.icon === 'dot' && <div className="w-2 h-2 rounded-full bg-semantic-warning" />}
             </div>
           ) : processStatusColorClass ? (
             <div

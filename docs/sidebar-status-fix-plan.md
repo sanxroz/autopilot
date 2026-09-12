@@ -4,9 +4,9 @@
 
 Make sidebar agent status truthful and actionable across six worktrees: lifecycle states do not flicker, finished/error states remain visible long enough to notice, delayed events cannot overwrite newer state, and process presence is not mislabeled as active work.
 
-## Verified current behavior
+## Verified pre-fix baseline
 
-The plan is based on the current frontend and Rust paths, not on assumed behavior:
+These observations were verified before this branch's implementation changes:
 
 1. `AGENT_FINISHED_TTL_MS` is 5 seconds in `src/store/agentRunState.ts`. `getNextAgentFinishedDeadline` schedules cleanup through `src/hooks/useProcessStatus.ts`, so finished/error state really does disappear after that window.
 2. `PROCESS_STATUS_LABELS.agent_running` is empty in `src/components/WorktreeItem.tsx`. When lifecycle events are disabled or unavailable, polling can render the warning dot with no text label.
@@ -38,7 +38,7 @@ completed/error + none             -> preserve for 30 minutes, then clear
 Extract a pure `applyAgentStatusEvent(current, event)` function so ordering and session replacement can be tested without mounting the store.
 
 - Drop any event whose `timestamp` is older than `current.lastEventAt`.
-- Accept an event at the same timestamp only when it belongs to the current session; this prevents an ambiguous unseen session from replacing current state.
+- Drop events at the same timestamp because their order is ambiguous, including events from the current session.
 - Accept the first event for an unseen session regardless of status when its timestamp is newer. This preserves legitimate quick `completed/error` sessions.
 - For the same session, preserve `startedAt` and replace the remaining event-derived fields.
 - For a new session, set `startedAt` from the event timestamp and clear stale `endedAt/error` unless the incoming status is terminal.
@@ -75,7 +75,7 @@ Use `bun:test`; do not run a project-wide TypeScript check or a build that launc
 Focused commands:
 
 ```sh
-bun test tests/agent-run-state.test.ts tests/agent-event-ingest.test.ts tests/session-search.test.ts tests/worktree-status-display.test.ts
+bun test tests/agent-run-state.test.ts tests/session-search.test.ts tests/worktree-status-display.test.ts
 ```
 
 There is no ESLint dependency or lint script in `package.json`. Inspect editor/LSP diagnostics for touched files and record that evidence. Do not install a linter for this change or substitute a project-wide typecheck or build.

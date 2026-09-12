@@ -31,11 +31,17 @@ type WorktreeContextSummary = {
   updatedAt: number | null;
   hasMore: boolean;
 };
+
+type WorktreeContextSummaryResult =
+  | { worktreePath: string; ok: true; summary: WorktreeContextSummary }
+  | { worktreePath: string; ok: false; error: "invalid_worktree" | "malformed" | "unreadable" };
 ```
 
-- Reuse the worktree validation and `.autopilot.md` path rules from `src-tauri/src/commands/notes.rs`.
-- Read at most a small bounded prefix per file; do not transfer six potentially 1 MB files merely to render previews.
+- Return one `WorktreeContextSummaryResult` per requested root in request order so callers can update successful cache entries while preserving prior summaries for failed roots.
+- Reuse `validate_worktree` and join `.autopilot.md` without calling the mutating `prepare_autopilot_context` helper.
+- Inspect at most a fixed 8 KiB prefix per file; do not transfer six potentially 1 MB files merely to render previews.
 - Derive `preview` from the first non-empty prose line, skipping Markdown headings, horizontal rules, and empty list markers. Collapse internal whitespace and truncate on Unicode scalar boundaries.
+- Only use complete eligible lines within the 8 KiB prefix. If it contains no prose, return an empty preview and set `hasMore: true` when unread bytes remain; never scan beyond the cap. Otherwise, `hasMore` reports either unread source bytes or preview truncation.
 - Return empty preview and `updatedAt: null` for a missing/empty file. A malformed or unreadable file returns a per-path error/result rather than failing summaries for every worktree.
 - This command is read-only. `NotesTab` remains the only app editor, and agents keep editing the same file directly.
 
