@@ -1,6 +1,42 @@
-import type { AgentRunState, ProcessStatus } from "../types";
+import { AI_AGENTS, type AgentRunState, type AgentStatusEvent, type ProcessStatus } from "../types";
 
-export const AGENT_FINISHED_TTL_MS = 5000;
+export const AGENT_FINISHED_TTL_MS = 30 * 60 * 1000;
+
+const KNOWN_AGENTS = new Set<string>(AI_AGENTS.map(({ id }) => id));
+
+export function applyAgentStatusEvent(
+  current: AgentRunState | undefined,
+  event: AgentStatusEvent,
+): AgentRunState | undefined {
+  const timestamp = event.timestamp;
+  const isNewSession = !current || current.sessionId !== event.sessionId;
+  const isProcessOnlyState = current?.sessionId === `process-${event.worktreePath}`;
+
+  if (
+    current &&
+    !isProcessOnlyState &&
+    timestamp <= current.lastEventAt
+  ) {
+    return current;
+  }
+
+  const agent = event.agent && KNOWN_AGENTS.has(event.agent)
+    ? event.agent as AgentRunState["agent"]
+    : isNewSession ? undefined : current?.agent;
+
+  return {
+    worktreePath: event.worktreePath,
+    sessionId: event.sessionId,
+    terminalId: event.terminalId ?? (isNewSession ? undefined : current?.terminalId),
+    status: event.status,
+    startedAt: isNewSession ? timestamp : (current?.startedAt ?? timestamp),
+    lastEventAt: timestamp,
+    agent,
+    label: event.message,
+    error: event.status === "error" ? event.message ?? (isNewSession ? undefined : current?.error) : undefined,
+    endedAt: event.status === "completed" || event.status === "error" ? timestamp : undefined,
+  };
+}
 
 export function getNextAgentFinishedDeadline(
   agentRuns: Record<string, AgentRunState | undefined>

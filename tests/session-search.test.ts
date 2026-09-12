@@ -53,6 +53,17 @@ describe("session search statuses", () => {
       label: "Idle",
       tone: "muted",
     });
+    expect(getSessionSearchStatuses("agent_running", undefined, undefined)[0]).toEqual({
+      label: "Agent open",
+      tone: "info",
+    });
+    expect(getSessionSearchStatuses("agent_running", {
+      ...runningAgent,
+      sessionId: `process-${runningAgent.worktreePath}`,
+    }, undefined)[0]).toEqual({
+      label: "Agent open",
+      tone: "info",
+    });
   });
 
   test("prioritizes activity and includes pull request health", () => {
