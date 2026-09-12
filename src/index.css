@@ -107,6 +107,16 @@
   box-shadow: var(--shadow-panel);
 }
 
+.sidebar-surface {
+  --color-bg-tertiary: #0d0e0f;
+  --color-bg-hover: #141515;
+}
+
+[data-theme="light"] .sidebar-surface {
+  --color-bg-tertiary: #f0efed;
+  --color-bg-hover: #ebebeb;
+}
+
 /* Position native Tauri window controls at top-left */
 .titlebar {
   position: fixed;
