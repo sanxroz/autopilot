@@ -3,7 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { useAppStore } from '../store';
 import type { PRStatus, RepoPRStatuses, RepoWithWorktrees } from '../types/github';
 
-let latestRefreshRequest = 0;
+let nextRefreshRequest = 0;
+const latestRefreshRequestByRepo = new Map<string, number>();
 
 export async function refreshPRStatuses(repoPath?: string): Promise<void> {
   const {
@@ -33,11 +34,18 @@ export async function refreshPRStatuses(repoPath?: string): Promise<void> {
     ),
   }));
 
-  const requestId = ++latestRefreshRequest;
-  const results = await invoke<RepoPRStatuses[]>('get_all_prs_for_repos', { repos });
-  if (requestId !== latestRefreshRequest) return;
+  const requestId = ++nextRefreshRequest;
+  for (const repo of repos) {
+    latestRefreshRequestByRepo.set(repo.repo_path, requestId);
+  }
 
-  const failedLookups = results.flatMap((result) =>
+  const results = await invoke<RepoPRStatuses[]>('get_all_prs_for_repos', { repos });
+  const currentResults = results.filter(
+    (result) => latestRefreshRequestByRepo.get(result.repo_path) === requestId
+  );
+  if (currentResults.length === 0) return;
+
+  const failedLookups = currentResults.flatMap((result) =>
     result.failed_worktrees.map((worktreePath) => `${result.repo_path}:${worktreePath}`)
   );
 
@@ -48,7 +56,7 @@ export async function refreshPRStatuses(repoPath?: string): Promise<void> {
     );
   }
 
-  setPRStatusBatch(results);
+  setPRStatusBatch(currentResults);
 }
 
 export function usePRStatusPolling() {
