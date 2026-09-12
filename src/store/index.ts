@@ -310,6 +310,7 @@ async function savePersistedState(state: PersistedState): Promise<void> {
     });
   } catch (e) {
     console.error('Failed to save state:', e);
+    throw e;
   }
 }
 
@@ -544,9 +545,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
     }
 
-    savePersistedState({
+    void savePersistedState({
       repositoryPaths: get().repositories.map((repository) => repository.info.path),
-    });
+    }).catch(() => {});
     set({ isInitialized: true });
 
     if (reposNeedingAvatar.length > 0) {
@@ -613,9 +614,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ...state.repositories.filter((r) => r.info.path !== info.path),
           { info, worktrees, isExpanded: true },
         ];
-        
-        savePersistedState({ repositoryPaths: newRepos.map((r) => r.info.path) });
-        
+
+        void savePersistedState({
+          repositoryPaths: newRepos.map((r) => r.info.path),
+        }).catch(() => {});
+
         return {
           repositories: newRepos,
           sidebarGroupsByRepo: {
@@ -653,7 +656,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const newRepos = state.repositories.filter((r) => r.info.path !== path);
       const { [path]: _removedOrder, ...remainingWorktreeOrders } = state.worktreeOrdersByRepo;
       const { [path]: _removedGroups, ...remainingSidebarGroups } = state.sidebarGroupsByRepo;
-      savePersistedState({ repositoryPaths: newRepos.map((r) => r.info.path) });
+      void savePersistedState({ repositoryPaths: newRepos.map((r) => r.info.path) }).catch(() => {});
       saveWorktreeOrdersByRepo(remainingWorktreeOrders);
       saveSidebarGroupsByRepo(remainingSidebarGroups);
       saveRepoAvatarCacheEntry(path, null);
@@ -666,8 +669,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   reorderRepositories: async (orderedPaths: string[]) => {
+    const previousRepositories = get().repositories;
     const orderIndex = new Map(orderedPaths.map((path, index) => [path, index]));
-    const repositories = [...get().repositories].sort((a, b) => {
+    const repositories = [...previousRepositories].sort((a, b) => {
       const aIndex = orderIndex.get(a.info.path);
       const bIndex = orderIndex.get(b.info.path);
       if (aIndex === undefined) return bIndex === undefined ? 0 : 1;
@@ -676,9 +680,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
     });
 
     set({ repositories });
-    await savePersistedState({
-      repositoryPaths: repositories.map((repository) => repository.info.path),
-    });
+    try {
+      await savePersistedState({
+        repositoryPaths: repositories.map((repository) => repository.info.path),
+      });
+    } catch (error) {
+      set((state) => state.repositories === repositories
+        ? { repositories: previousRepositories }
+        : state);
+      throw error;
+    }
   },
 
   toggleRepoExpanded: (path: string) => {

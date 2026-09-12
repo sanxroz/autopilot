@@ -23,6 +23,7 @@ browserWindow.HTMLElement.prototype.setPointerCapture = () => {};
 browserWindow.HTMLElement.prototype.scrollIntoView = () => {};
 
 const reorderCalls: string[][] = [];
+let reducedMotion = false;
 const repositories = ["alpha", "beta", "gamma"].map((path) => ({
   info: { name: path, path },
   worktrees: [],
@@ -66,7 +67,7 @@ mock.module("framer-motion", () => ({
         React.createElement("div", { ...props, ref }),
     ),
   },
-  useReducedMotion: () => false,
+  useReducedMotion: () => reducedMotion,
 }));
 
 for (const path of [
@@ -86,6 +87,11 @@ for (const path of [
 }
 
 const passthrough = ({ children }: { children?: React.ReactNode }) => children;
+const menuItem = ({ children, disabled, onSelect }: {
+  children?: React.ReactNode;
+  disabled?: boolean;
+  onSelect?: () => void;
+}) => React.createElement("button", { disabled, onClick: onSelect }, children);
 mock.module("../src/components/ui/modal", () => ({
   Root: passthrough,
   Content: passthrough,
@@ -95,7 +101,7 @@ mock.module("../src/components/ui/modal", () => ({
 mock.module("../src/components/ui/dropdown-menu", () => ({
   DropdownMenu: passthrough,
   DropdownMenuContent: passthrough,
-  DropdownMenuItem: passthrough,
+  DropdownMenuItem: menuItem,
   DropdownMenuSeparator: () => null,
   DropdownMenuTrigger: passthrough,
 }));
@@ -137,6 +143,7 @@ function renderedOrder() {
 
 beforeEach(async () => {
   reorderCalls.length = 0;
+  reducedMotion = false;
   browserWindow.localStorage.clear();
   container = browserWindow.document.createElement("div");
   browserWindow.document.body.append(container);
@@ -205,5 +212,32 @@ describe("Sidebar Space dragging", () => {
 
     await act(async () => spaceButton("gamma").click());
     expect(spaceButton("gamma").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  test("commits a drag when reduced motion is enabled", async () => {
+    reducedMotion = true;
+    await act(async () => {
+      root.render(React.createElement(Sidebar, {
+        isOpen: true,
+        captainTerminalRepoPath: null,
+        onToggleCaptainTerminal: () => {},
+      }));
+    });
+
+    await act(async () => pointer(spaceButton("beta"), "pointerdown", 17, 68));
+    await act(async () => pointer(browserWindow, "pointermove", 17, -10));
+    expect(renderedOrder()).toEqual(["beta", "alpha", "gamma"]);
+    await act(async () => pointer(browserWindow, "pointerup", 17, -10));
+    expect(reorderCalls).toEqual([["beta", "alpha", "gamma"]]);
+  });
+
+  test("moves the active Space from the keyboard-accessible actions menu", async () => {
+    const moveDown = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Move down"),
+    );
+    expect(moveDown?.disabled).toBe(false);
+
+    await act(async () => moveDown?.click());
+    expect(reorderCalls).toEqual([["beta", "alpha", "gamma"]]);
   });
 });

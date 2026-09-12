@@ -12,6 +12,8 @@ import {
   Bot,
   GitPullRequest,
   CircleHelp,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { useAppStore } from "../store";
 import type { WorktreeInfo } from "../types";
@@ -369,6 +371,27 @@ export function Sidebar({
     saveActiveSpace(repoPath);
   };
 
+  const handleSpaceMove = async (repoPath: string, offset: -1 | 1) => {
+    const paths = repositories.map((repository) => repository.info.path);
+    const currentIndex = paths.indexOf(repoPath);
+    const targetPath = paths[currentIndex + offset];
+    if (currentIndex < 0 || !targetPath) return;
+
+    const nextOrder = reorderSpacePaths(
+      paths,
+      repoPath,
+      targetPath,
+      offset < 0 ? "before" : "after",
+    );
+    setError(null);
+    try {
+      await reorderRepositories(nextOrder);
+    } catch (e) {
+      console.error("Failed to reorder Spaces:", e);
+      setError("Failed to save the Space order. The previous order was restored.");
+    }
+  };
+
   const handleSpacePointerDown = (
     event: React.PointerEvent<HTMLButtonElement>,
     path: string,
@@ -455,7 +478,12 @@ export function Sidebar({
           suppressNextSpaceClickRef.current = false;
         }, 250);
 
-        if (previewOrder) void reorderRepositories(previewOrder);
+        if (previewOrder) {
+          void reorderRepositories(previewOrder).catch((e) => {
+            console.error("Failed to reorder Spaces:", e);
+            setError("Failed to save the Space order. The previous order was restored.");
+          });
+        }
       }
 
       spaceDragSessionRef.current = null;
@@ -1040,6 +1068,21 @@ export function Sidebar({
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    disabled={repositories[0]?.info.path === activeRepoGroup.repoPath}
+                    onSelect={() => void handleSpaceMove(activeRepoGroup.repoPath, -1)}
+                  >
+                    <ArrowUp />
+                    Move up
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={repositories.at(-1)?.info.path === activeRepoGroup.repoPath}
+                    onSelect={() => void handleSpaceMove(activeRepoGroup.repoPath, 1)}
+                  >
+                    <ArrowDown />
+                    Move down
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onSelect={() =>
                       setSessionMode(sessionMode === "pr" ? "agent" : "pr")

@@ -8,6 +8,7 @@ let reloadHandler = async () => {
   cacheValues = new Map(diskValues);
 };
 let invokeHandler = async (_command: string) => undefined;
+let saveError: Error | null = null;
 
 mock.module("@tauri-apps/api/core", () => ({
   ...tauriCore,
@@ -25,6 +26,7 @@ const fakeStore = {
     return cacheValues.delete(key);
   },
   async save(): Promise<void> {
+    if (saveError) throw saveError;
     diskValues = new Map(cacheValues);
   },
   async reload(): Promise<void> {
@@ -78,6 +80,23 @@ describe("sidebar group store synchronization", () => {
       "/repo",
     ]);
     expect(diskValues.get("repositoryPaths")).toEqual(["/second", "/repo"]);
+  });
+
+  test("restores the previous Space order when persistence fails", async () => {
+    const secondRepository: Repository = {
+      ...repository,
+      info: { name: "second", path: "/second" },
+    };
+    const previousRepositories = [repository, secondRepository];
+    useAppStore.setState({ repositories: previousRepositories });
+    saveError = new Error("disk full");
+
+    await expect(
+      useAppStore.getState().reorderRepositories(["/second", "/repo"]),
+    ).rejects.toThrow("disk full");
+
+    expect(useAppStore.getState().repositories).toBe(previousRepositories);
+    saveError = null;
   });
 
   test("does not apply a stale refresh over a local group change", async () => {
