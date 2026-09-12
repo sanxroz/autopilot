@@ -91,12 +91,40 @@ describe("sidebar group store synchronization", () => {
     useAppStore.setState({ repositories: previousRepositories });
     saveError = new Error("disk full");
 
-    await expect(
-      useAppStore.getState().reorderRepositories(["/second", "/repo"]),
-    ).rejects.toThrow("disk full");
+    try {
+      await expect(
+        useAppStore.getState().reorderRepositories(["/second", "/repo"]),
+      ).rejects.toThrow("disk full");
 
-    expect(useAppStore.getState().repositories).toBe(previousRepositories);
-    saveError = null;
+      expect(useAppStore.getState().repositories).toBe(previousRepositories);
+    } finally {
+      saveError = null;
+    }
+  });
+
+  test("restores the persisted Space order when overlapping saves fail", async () => {
+    const secondRepository: Repository = {
+      ...repository,
+      info: { name: "second", path: "/second" },
+    };
+    const previousRepositories = [repository, secondRepository];
+    diskValues = new Map([["repositoryPaths", ["/repo", "/second"]]]);
+    cacheValues = new Map(diskValues);
+    useAppStore.setState({ repositories: previousRepositories });
+    saveError = new Error("disk full");
+
+    try {
+      const first = useAppStore.getState().reorderRepositories(["/second", "/repo"]);
+      const second = useAppStore.getState().reorderRepositories(["/repo", "/second"]);
+
+      await expect(first).rejects.toThrow("disk full");
+      await expect(second).rejects.toThrow("disk full");
+
+      expect(useAppStore.getState().repositories).toBe(previousRepositories);
+      expect(diskValues.get("repositoryPaths")).toEqual(["/repo", "/second"]);
+    } finally {
+      saveError = null;
+    }
   });
 
   test("does not apply a stale refresh over a local group change", async () => {

@@ -160,6 +160,7 @@ interface AppStore {
 const STORE_PATH = 'autopilot-settings.json';
 const persistedStore = new LazyStore(STORE_PATH, { autoSave: true, defaults: {} });
 let storeOperationQueue = Promise.resolve();
+let repositoryReorderQueue = Promise.resolve();
 let sidebarGroupsRevision = 0;
 let pendingLegacySidebarNotesMarkdown: string | null = null;
 const DEFAULT_AUTO_FETCH_SETTINGS: AutoFetchSettings = {
@@ -668,28 +669,32 @@ export const useAppStore = create<AppStore>((set, get) => ({
     });
   },
 
-  reorderRepositories: async (orderedPaths: string[]) => {
-    const previousRepositories = get().repositories;
-    const orderIndex = new Map(orderedPaths.map((path, index) => [path, index]));
-    const repositories = [...previousRepositories].sort((a, b) => {
-      const aIndex = orderIndex.get(a.info.path);
-      const bIndex = orderIndex.get(b.info.path);
-      if (aIndex === undefined) return bIndex === undefined ? 0 : 1;
-      if (bIndex === undefined) return -1;
-      return aIndex - bIndex;
-    });
-
-    set({ repositories });
-    try {
-      await savePersistedState({
-        repositoryPaths: repositories.map((repository) => repository.info.path),
+  reorderRepositories: (orderedPaths: string[]) => {
+    const result = repositoryReorderQueue.catch(() => undefined).then(async () => {
+      const previousRepositories = get().repositories;
+      const orderIndex = new Map(orderedPaths.map((path, index) => [path, index]));
+      const repositories = [...previousRepositories].sort((a, b) => {
+        const aIndex = orderIndex.get(a.info.path);
+        const bIndex = orderIndex.get(b.info.path);
+        if (aIndex === undefined) return bIndex === undefined ? 0 : 1;
+        if (bIndex === undefined) return -1;
+        return aIndex - bIndex;
       });
-    } catch (error) {
-      set((state) => state.repositories === repositories
-        ? { repositories: previousRepositories }
-        : state);
-      throw error;
-    }
+
+      set({ repositories });
+      try {
+        await savePersistedState({
+          repositoryPaths: repositories.map((repository) => repository.info.path),
+        });
+      } catch (error) {
+        set((state) => state.repositories === repositories
+          ? { repositories: previousRepositories }
+          : state);
+        throw error;
+      }
+    });
+    repositoryReorderQueue = result.then(() => undefined, () => undefined);
+    return result;
   },
 
   toggleRepoExpanded: (path: string) => {
