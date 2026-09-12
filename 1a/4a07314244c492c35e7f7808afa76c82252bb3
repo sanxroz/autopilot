@@ -1,0 +1,25 @@
+bun.lock
+  ai_agent 55,422-423,436-439,478-479,532,572-573,916-917,950-953,986
+package.json
+  s_7fbb11bea9f14e::t_ae0c5c4a97c0a3 62
+tests/sidebar-space-drag.test.tsx
+  s_7fbb11bea9f14e::t_fccfd3755fa01f 89-94
+  s_7fbb11bea9f14e::t_0faf8b4ee63a0b 104-105
+  s_7fbb11bea9f14e::t_5ee59f2bdd826b 1-88,95-103,106-209
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "1a4a07314244c492c35e7f7808afa76c82252bb3",
+  "prompts": {},
+  "sessions": {
+    "s_7fbb11bea9f14e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0929c-64bb-7050-8200-38bf3abbe49c",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
