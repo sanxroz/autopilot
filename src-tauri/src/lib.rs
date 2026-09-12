@@ -16,6 +16,17 @@ use tauri::{Listener, WebviewWindow};
 #[cfg(unix)]
 const MIN_FILE_DESCRIPTOR_LIMIT: libc::rlim_t = 4096;
 
+fn is_allowed_webview_navigation(url: &tauri::Url) -> bool {
+    match url.scheme() {
+        "tauri" => url.host_str() == Some("localhost"),
+        "http" | "https" => matches!(
+            url.host_str(),
+            Some("localhost" | "127.0.0.1" | "[::1]" | "tauri.localhost")
+        ),
+        _ => false,
+    }
+}
+
 #[cfg(unix)]
 fn raise_file_descriptor_limit() -> Result<(), std::io::Error> {
     let mut limit = std::mem::MaybeUninit::<libc::rlimit>::uninit();
@@ -126,6 +137,11 @@ pub fn run() {
         Arc::new(Mutex::new(HashMap::new()));
 
     tauri::Builder::default()
+        .plugin(
+            tauri::plugin::Builder::<tauri::Wry>::new("local-navigation")
+                .on_navigation(|_, url| is_allowed_webview_navigation(url))
+                .build(),
+        )
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
@@ -253,6 +269,45 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod local_navigation_tests {
+    use super::is_allowed_webview_navigation;
+
+    #[test]
+    fn allows_internal_and_loopback_navigation() {
+        for value in [
+            "tauri://localhost",
+            "http://tauri.localhost",
+            "http://localhost:3000/path",
+            "https://127.0.0.1:5173",
+            "http://[::1]:8080",
+        ] {
+            assert!(
+                is_allowed_webview_navigation(&value.parse().unwrap()),
+                "{value}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_external_web_navigation() {
+        for value in [
+            "https://example.com",
+            "http://localhost.example.com",
+            "https://192.168.1.2:3000",
+            "file:///tmp/index.html",
+            "data:text/html,hello",
+            "custom://localhost",
+            "tauri://example.com",
+        ] {
+            assert!(
+                !is_allowed_webview_navigation(&value.parse().unwrap()),
+                "{value}"
+            );
+        }
+    }
 }
 
 #[cfg(all(test, unix))]

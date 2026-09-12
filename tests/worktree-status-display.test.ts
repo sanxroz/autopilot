@@ -19,6 +19,7 @@ describe("worktree activity display", () => {
     });
     expect(getWorktreeActivityDisplay({ ...run, status: "waiting_input" }, "none", 60_000)).toMatchObject({
       label: "Waiting for input",
+      colorClass: "text-semantic-warning",
       icon: "ready",
     });
     expect(getWorktreeActivityDisplay({ ...run, status: "completed" }, "none", 60_000)).toMatchObject({

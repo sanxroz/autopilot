@@ -2,18 +2,20 @@ import { AI_AGENTS, type AgentRunState, type AgentStatusEvent, type ProcessStatu
 
 export const AGENT_FINISHED_TTL_MS = 30 * 60 * 1000;
 
-const KNOWN_AGENTS = new Set(AI_AGENTS.map(({ id }) => id));
+const KNOWN_AGENTS = new Set<string>(AI_AGENTS.map(({ id }) => id));
 
 export function applyAgentStatusEvent(
   current: AgentRunState | undefined,
   event: AgentStatusEvent,
 ): AgentRunState | undefined {
-  const timestamp = event.timestamp || Date.now();
+  const timestamp = event.timestamp;
   const isNewSession = !current || current.sessionId !== event.sessionId;
+  const isProcessOnlyState = current?.sessionId === `process-${event.worktreePath}`;
 
   if (
     current &&
-    (timestamp < current.lastEventAt || (isNewSession && timestamp === current.lastEventAt))
+    !isProcessOnlyState &&
+    timestamp <= current.lastEventAt
   ) {
     return current;
   }

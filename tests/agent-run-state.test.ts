@@ -198,6 +198,38 @@ describe("agent run state reconciliation", () => {
     });
   });
 
+  test("preserves a zero event timestamp", () => {
+    expect(applyAgentStatusEvent(undefined, {
+      worktreePath: "/repo/worktree",
+      sessionId: "session-1",
+      status: "running",
+      timestamp: 0,
+    })).toMatchObject({
+      startedAt: 0,
+      lastEventAt: 0,
+    });
+  });
+
+  test("lets lifecycle events replace newer process-only observations", () => {
+    const processOnly = reconcileAgentRunState(
+      "/repo/worktree",
+      "agent_running",
+      undefined,
+      2000,
+    );
+
+    expect(applyAgentStatusEvent(processOnly, {
+      worktreePath: "/repo/worktree",
+      sessionId: "session-1",
+      status: "waiting_input",
+      timestamp: 1999,
+    })).toMatchObject({
+      sessionId: "session-1",
+      status: "waiting_input",
+      lastEventAt: 1999,
+    });
+  });
+
   test("preserves same-session start time and drops delayed events", () => {
     const current: AgentRunState = {
       worktreePath: "/repo/worktree",
@@ -214,6 +246,12 @@ describe("agent run state reconciliation", () => {
       sessionId: current.sessionId,
       status: "waiting_input",
       timestamp: 1499,
+    })).toBe(current);
+    expect(applyAgentStatusEvent(current, {
+      worktreePath: current.worktreePath,
+      sessionId: current.sessionId,
+      status: "completed",
+      timestamp: 1500,
     })).toBe(current);
     expect(applyAgentStatusEvent(current, {
       worktreePath: current.worktreePath,

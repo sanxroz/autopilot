@@ -48,6 +48,7 @@ export interface TerminalPane {
   id: string;
   terminals: TerminalInstance[];
   activeTerminalId: string | null;
+  browserUrl?: string;
 }
 
 export interface DiffStats {
