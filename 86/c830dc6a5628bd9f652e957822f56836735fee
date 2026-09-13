@@ -1,0 +1,48 @@
+src/components/RightPanelToolbar.tsx
+  s_dc5b22f83ff891::t_39fd040ef4073d 27,206-211,237-238,249-260,264-284
+  s_dc5b22f83ff891::t_7c8e4734d25fa1 212-236,316-331
+src/components/WorkspaceHeader.tsx
+  s_dc5b22f83ff891::t_7c8e4734d25fa1 112-117,119-126,172-183
+  s_dc5b22f83ff891::t_9db9fa925a14c6 130-139,146-156
+  s_dc5b22f83ff891::t_94818c00766d2d 6,62-71,73-82,109,128,170-171,184-185
+src/components/RightPanel/NotesTab.tsx
+  s_dc5b22f83ff891::t_8147615928e357 14,261-270,292-301
+src/main.tsx
+  s_dc5b22f83ff891::t_5f0810f18146cc 14,28-39
+src/components/PRDetailView/PRDiffPanel.tsx
+  s_dc5b22f83ff891::t_cf667904c53244 21,473-492
+tests/tooltip.test.ts
+  s_dc5b22f83ff891::t_f1f8cb5259232b 1-24,27-28,37-51,65-73,75-76
+  s_dc5b22f83ff891::t_a5b4841a469b68 74
+  s_dc5b22f83ff891::t_2c62c230a95558 25-26,29-36,52-64
+src/components/Sidebar.tsx
+  s_dc5b22f83ff891::t_357ac0a9d4ee62 39,1481-1496
+  s_dc5b22f83ff891::t_1118e549fe6ca1 937-958,990-991,1001-1012,1035-1036,1043-1046,1063-1064,1066-1075
+  s_dc5b22f83ff891::t_d40e261100f70a 1467,1470-1472,1475,1478,1497-1503,1517-1518
+src/components/ui/tooltip.tsx
+  s_dc5b22f83ff891::t_e279af9ab0c01c 1-2,4,6-8,12-38,40-47,54-55
+src/components/PRDetailView.tsx
+  s_dc5b22f83ff891::t_cf667904c53244 21,374-382,404-414
+src/components/SettingsPanel.tsx
+  s_dc5b22f83ff891::t_5d979759d35bd2 23,242-250,563-573
+src/components/PRDetailView/PRMetadataSidebar.tsx
+  s_dc5b22f83ff891::t_cf667904c53244 20,297-305
+src/components/RightPanel/CommentsTab.tsx
+  s_dc5b22f83ff891::t_bf42537fb7ab8f 28,115-123,221-250
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "86c830dc6a5628bd9f652e957822f56836735fee",
+  "prompts": {},
+  "sessions": {
+    "s_dc5b22f83ff891": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09b8a-45df-72c0-8aaa-491a24ee1a3f",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
