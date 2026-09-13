@@ -1,0 +1,37 @@
+tests/pr-activity.test.ts
+  s_be16bcbc124932::t_747af579df6f66 47-54
+src/components/RightPanel/CommentsTab.tsx
+  s_be16bcbc124932::t_d829a5bff2fb5b 436-441,446,458-462,624,635-638
+src/components/RightPanel/checks-tab-domain.ts
+  s_be16bcbc124932::t_747af579df6f66 197,204-205
+src/components/RightPanel/ChecksTab.tsx
+  s_be16bcbc124932::t_0d3ce78edc2540 37,46,68,273,283
+src/components/RightPanel/CheckRow.tsx
+  s_be16bcbc124932::t_0d3ce78edc2540 39,49,115
+src/components/RightPanel/CheckRowDetails.tsx
+  s_be16bcbc124932::t_0d3ce78edc2540 12,24,113,121,196-199
+  s_be16bcbc124932::t_b60f445c7f867d 136
+tests/checks-tab-domain.test.ts
+  s_be16bcbc124932::t_8384dd652d1818 52-62
+src/components/RightPanel/pr-activity.ts
+  s_be16bcbc124932::t_747af579df6f66 8,31,45
+  s_be16bcbc124932::t_b60f445c7f867d 20-22
+src-tauri/src/commands/github.rs
+  s_be16bcbc124932::t_747af579df6f66 1697,1993,2042,2066,2088
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "c9eb28f13ba1d533615a6f64bff82635486da3b5",
+  "prompts": {},
+  "sessions": {
+    "s_be16bcbc124932": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09abf-0ba7-7bc0-a841-fc2f5f155a05",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
