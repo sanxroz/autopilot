@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Loader, MessageSquare, Copy, Check, X, CheckCircle2, Code2, ChevronDown, UserPlus, GitPullRequest, Users } from "lucide-react";
+import { AlertTriangle, Loader, MessageSquare, Copy, Check, X, CheckCircle2, Code2, ChevronDown, UserPlus, GitPullRequest, Users } from "lucide-react";
 import { toast } from "sonner";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -10,7 +10,7 @@ import { markdownComponents as sharedMarkdownComponents } from "../../lib/markdo
 import { useCachedPRData } from "../../hooks/useCachedPRData";
 import { cn } from "../../utils/cn";
 import type { PRStatus, PRComment } from "../../types/github";
-import { groupReviewThreads, type PRReviewThread } from "./pr-activity";
+import { getUnresolvedReviewThreads, groupReviewThreads, type PRReviewThread } from "./pr-activity";
 import {
   applyReviewerOverrides,
   buildReviewerOptions,
@@ -65,7 +65,15 @@ function formatDate(dateStr: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-function CopyButton({ text, className, title = "Copy code" }: { text: string; className?: string; title?: string }) {
+function CopyButton({
+  text,
+  className,
+  title = "Copy code",
+}: {
+  text: string;
+  className?: string;
+  title?: string;
+}) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -308,11 +316,14 @@ export function CommentsTab({
 }: CommentsTabProps) {
   const [expandedImage, setExpandedImage] = useState<{ src: string; alt: string } | null>(null);
   const [isDescriptionOpen, setIsDescriptionOpen] = useState(false);
+  const [isActivityOpen, setIsActivityOpen] = useState(false);
   const [reviewerOverrides, setReviewerOverrides] = useState<{
     prNumber: number;
     values: ReviewerOverrides;
   } | null>(null);
   const { prDetails, isLoading, error, fetchData } = useCachedPRData({ repoPath, prNumber, prStatus });
+
+  useEffect(() => setIsActivityOpen(false), [prNumber]);
 
   useEffect(() => {
     if (!prStatus) return;
@@ -422,10 +433,17 @@ export function CommentsTab({
       c.state === 'COMMENTED'
     )
   );
+  const latestReviewsByAuthor = new Map<string, PRComment>();
+  for (const review of reviews) {
+    latestReviewsByAuthor.set(review.author.toLowerCase(), review);
+  }
+  const latestReviews = [...latestReviewsByAuthor.values()];
+  const changeRequests = latestReviews.filter((review) => review.state === 'CHANGES_REQUESTED');
   const threadComments = comments.filter(c => c.comment_type === 'review_thread');
   const reviewThreads = groupReviewThreads(threadComments);
+  const unresolvedReviewThreads = getUnresolvedReviewThreads(reviewThreads);
   const reviewerReviewStates = new Map(
-    reviews
+    latestReviews
       .filter((review) => review.state === 'APPROVED' || review.state === 'CHANGES_REQUESTED')
       .map((review) => [review.author, review.state]),
   );
@@ -436,6 +454,21 @@ export function CommentsTab({
   
   const description = prDetails?.body?.replace(/<!--[\s\S]*?-->/g, '').trim();
   const activityCount = issueComments.length + reviews.length + threadComments.length;
+  const checksNeedAttention = prStatus?.checks_status === 'failure';
+  const showGenericReviewAttention = !prDetails && (
+    prStatus?.review_decision === 'CHANGES_REQUESTED' ||
+    prStatus?.has_unresolved_review_threads === true
+  );
+  const hasAttention = checksNeedAttention || changeRequests.length > 0 || unresolvedReviewThreads.length > 0 || showGenericReviewAttention;
+  const reviewStatus = prStatus?.review_decision === 'APPROVED'
+    ? 'Approved'
+    : prStatus?.review_decision === 'CHANGES_REQUESTED'
+      ? 'Changes requested'
+      : prStatus?.review_decision === 'REVIEW_REQUIRED'
+        ? 'Review required'
+        : reviews.length > 0
+          ? 'Review in progress'
+          : 'No reviews yet';
 
   const activity = [
     ...issueComments.map((comment) => ({ kind: 'comment' as const, createdAt: comment.created_at, comment })),
@@ -582,32 +615,130 @@ export function CommentsTab({
           </header>
         )}
 
+        {hasAttention && (
+          <section aria-labelledby="pr-attention-heading" className="px-5 py-4">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="size-4 shrink-0 text-semantic-warning" aria-hidden="true" />
+              <h2 id="pr-attention-heading" className="text-sm font-semibold text-primary">Needs attention</h2>
+              <span className="font-mono text-[11px] tabular-nums text-tertiary">
+                {changeRequests.length + unresolvedReviewThreads.length + (checksNeedAttention ? 1 : 0) + (showGenericReviewAttention ? 1 : 0)}
+              </span>
+            </div>
+
+            <div className="mt-3 space-y-2">
+              {checksNeedAttention && (
+                <div className="-mx-2 rounded-lg bg-secondary/40 px-2 py-2.5">
+                  <div className="text-[13px] font-medium text-primary">Checks are failing</div>
+                  <div className="mt-0.5 text-xs text-tertiary">Open the failed check below for logs and details.</div>
+                </div>
+              )}
+              {showGenericReviewAttention && (
+                <div className="-mx-2 rounded-lg bg-secondary/40 px-2 py-2.5">
+                  <div className="text-[13px] font-medium text-primary">Review attention required</div>
+                  <div className="mt-0.5 text-xs text-tertiary">Review details are unavailable. Try loading the activity again.</div>
+                </div>
+              )}
+              {changeRequests.map((review) => (
+                <article key={getCommentKey(review)} className="-mx-2 flex items-start gap-3 rounded-lg bg-secondary/40 px-2 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13px] font-medium text-primary">Changes requested by @{review.author}</div>
+                    {review.body && (
+                      <div className="mt-2">{renderCommentBody(review.body)}</div>
+                    )}
+                  </div>
+                  <CopyButton
+                    text={`Changes requested by @${review.author}\n\n${review.body}`}
+                    title={`Copy change request from ${review.author}`}
+                    className="shrink-0"
+                  />
+                </article>
+              ))}
+              {unresolvedReviewThreads.map((thread) => {
+                const rootComment = thread.comments[0];
+                if (!rootComment) return null;
+                return (
+                  <article key={thread.id} className="-mx-2 flex items-start gap-3 rounded-lg bg-secondary/40 px-2 py-2.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <Code2 className="size-3 shrink-0 text-semantic-warning" aria-hidden="true" />
+                        <span className="truncate font-mono text-[11px] text-secondary">{thread.path}</span>
+                        {thread.line && <span className="shrink-0 font-mono text-[10px] text-tertiary">:{thread.line}</span>}
+                      </div>
+                      <div className="mt-3 space-y-3">
+                        {thread.comments.map((comment, index) => (
+                          <div key={`${comment.author}:${comment.created_at}:${index}`}>
+                            <div className="text-[11px] font-medium text-tertiary">@{comment.author}</div>
+                            <div className="mt-1">{renderCommentBody(comment.body)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <CopyButton
+                      text={`Unresolved review thread\nFile: ${thread.path}${thread.line ? `:${thread.line}` : ''}\n\n${thread.comments.map((comment) => `@${comment.author}:\n${comment.body}`).join('\n\n')}`}
+                      title="Copy unresolved review thread"
+                      className="shrink-0"
+                    />
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
         {children}
 
-        <section aria-labelledby="pr-activity-heading" className="pt-2">
-          <div className="flex h-12 items-center justify-between gap-3 px-5">
-            <div className="flex min-w-0 items-baseline gap-2">
-              <h2 id="pr-activity-heading" className="text-sm font-semibold text-primary">Activity</h2>
-              {activityCount > 0 && <span className="font-mono text-[11px] tabular-nums text-tertiary">{activityCount}</span>}
-            </div>
-            {activityCount > 0 && (
+        <section aria-labelledby="pr-activity-heading" className="px-5 py-2">
+          <div className="relative flex min-h-14 items-center">
+            <button
+              type="button"
+              onClick={() => setIsActivityOpen((open) => !open)}
+              className="-mx-2 flex min-h-12 w-[calc(100%+1rem)] min-w-0 items-center gap-2 rounded-lg bg-secondary/40 px-2 text-left transition-colors hover:bg-secondary/60 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
+              aria-expanded={isActivityOpen}
+              aria-controls="pr-activity"
+            >
+              <span className={cn("min-w-0 flex-1", isActivityOpen && activityCount > 0 && "pr-16")}>
+                <span className="flex items-center gap-2">
+                  <span id="pr-activity-heading" className="text-sm font-semibold text-primary">Reviews &amp; comments</span>
+                  <span className={cn(
+                    "text-[11px] font-medium",
+                    prStatus?.review_decision === 'APPROVED'
+                      ? "text-semantic-success"
+                      : prStatus?.review_decision === 'CHANGES_REQUESTED'
+                        ? "text-semantic-error"
+                        : "text-tertiary",
+                  )}>
+                    {reviewStatus}
+                  </span>
+                </span>
+                <span className="mt-0.5 flex flex-wrap gap-x-2 font-mono text-[10px] tabular-nums text-tertiary">
+                  <span>{reviews.length} {reviews.length === 1 ? 'review' : 'reviews'}</span>
+                  <span>{issueComments.length} {issueComments.length === 1 ? 'comment' : 'comments'}</span>
+                  <span>{reviewThreads.length} {reviewThreads.length === 1 ? 'thread' : 'threads'}</span>
+                  {unresolvedReviewThreads.length > 0 && <span className="text-semantic-warning">{unresolvedReviewThreads.length} open</span>}
+                </span>
+              </span>
+              <ChevronDown className={cn("ml-auto size-4 text-tertiary transition-transform motion-reduce:transition-none", isActivityOpen && "rotate-180")} />
+            </button>
+            {isActivityOpen && activityCount > 0 && (
               <button
                 type="button"
                 onClick={handleCopyAll}
-                className="flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-[11px] text-tertiary transition-colors hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
+                className="absolute right-7 top-1/2 flex h-7 -translate-y-1/2 items-center gap-1.5 rounded-md px-2 text-[11px] text-tertiary transition-colors hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
+                aria-label="Copy reviews and comments"
               >
                 <Copy className="h-3 w-3" />
-                Copy all
+                Copy
               </button>
             )}
           </div>
 
-        {isLoading && !prDetails && (
-          <div className="flex items-center justify-center gap-2 px-4 py-8 text-sm text-tertiary">
-            <Loader className="h-4 w-4 animate-spin" />
-            <span>Loading activity…</span>
-          </div>
-        )}
+          <div id="pr-activity" hidden={!isActivityOpen}>
+          {isLoading && !prDetails && (
+            <div className="flex items-center justify-center gap-2 px-4 py-8 text-sm text-tertiary">
+              <Loader className="h-4 w-4 animate-spin" />
+              <span>Loading activity…</span>
+            </div>
+          )}
 
         {error && !prDetails && (
           <p className="px-4 py-8 text-center text-sm text-tertiary">
@@ -616,7 +747,7 @@ export function CommentsTab({
         )}
 
         {(prStatus || activity.length > 0) && (
-          <div className="select-text px-5 pb-4 pt-1">
+          <div className="select-text pb-4 pt-1">
             {prStatus && (
               <div className="flex items-center gap-2.5 py-3 text-[11px] text-tertiary">
                 <GitPullRequest className={cn(
@@ -673,6 +804,7 @@ export function CommentsTab({
             <p className="text-sm">No activity yet</p>
           </div>
         )}
+          </div>
         </section>
       </div>
     </>

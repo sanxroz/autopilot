@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { groupReviewThreads } from "../src/components/RightPanel/pr-activity";
+import {
+  getUnresolvedReviewThreads,
+  groupReviewThreads,
+} from "../src/components/RightPanel/pr-activity";
 import type { PRComment } from "../src/types/github";
 
 const comment = (overrides: Partial<PRComment>): PRComment => ({
@@ -31,5 +34,22 @@ describe("groupReviewThreads", () => {
       comment({ body: "Root" }),
       comment({ body: "Reply", author: "author" }),
     ])).toHaveLength(1);
+  });
+
+  test("returns only review threads that still need attention", () => {
+    const threads = groupReviewThreads([
+      comment({ thread_id: "open" }),
+      comment({ thread_id: "resolved", is_resolved: true, line: 30 }),
+    ]);
+
+    expect(getUnresolvedReviewThreads(threads).map(({ id }) => id)).toEqual(["open"]);
+  });
+
+  test("does not treat unknown REST fallback resolution as open", () => {
+    const threads = groupReviewThreads([
+      comment({ thread_id: "unknown", is_resolved: undefined }),
+    ]);
+
+    expect(getUnresolvedReviewThreads(threads)).toEqual([]);
   });
 });

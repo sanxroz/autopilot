@@ -2,9 +2,14 @@ import { useState } from "react";
 import { Check, Copy, ExternalLink, Loader } from "lucide-react";
 import type { PRCheck, PRCheckDetail, PRCheckStep } from "../../types/github";
 import { cn } from "../../utils/cn";
-import { formatDuration, formatTimestamp } from "./checks-tab-domain";
+import {
+  formatDuration,
+  formatTimestamp,
+  getCheckFailureCopyText,
+  isFailedCheckStep,
+} from "./checks-tab-domain";
 
-function CopyButton({ text }: { text: string }) {
+function CopyButton({ text, isLoading, disabled }: { text: string; isLoading: boolean; disabled: boolean }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -16,11 +21,12 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="inline-flex items-center gap-1 rounded-md border border-border-subtle bg-primary px-2 py-1 text-[11px] text-secondary transition-colors hover:bg-hover hover:text-primary"
+      disabled={isLoading || disabled}
+      className="inline-flex min-h-8 items-center gap-1 rounded-md border border-border-subtle bg-primary px-2 text-[11px] text-secondary transition-colors hover:bg-hover hover:text-primary disabled:cursor-wait disabled:opacity-50"
       type="button"
     >
-      {copied ? <Check className="h-3 w-3 text-semantic-success" /> : <Copy className="h-3 w-3" />}
-      {copied ? "Copied" : "Copy"}
+      {isLoading ? <Loader className="h-3 w-3 animate-spin" /> : copied ? <Check className="h-3 w-3 text-semantic-success" /> : <Copy className="h-3 w-3" />}
+      {isLoading ? "Loading failure…" : copied ? "Copied" : "Copy failure"}
     </button>
   );
 }
@@ -69,21 +75,8 @@ function getLogLineClass(line: string): string {
   return "text-primary";
 }
 
-function isFailedStep(status: string, conclusion: string | null): boolean {
-  const normalizedStatus = status.trim().toLowerCase();
-  const normalizedConclusion = conclusion?.trim().toLowerCase() ?? "";
-
-  return (
-    normalizedConclusion === "failure" ||
-    normalizedConclusion === "cancelled" ||
-    normalizedConclusion === "timed_out" ||
-    normalizedConclusion === "action_required" ||
-    normalizedStatus === "failure"
-  );
-}
-
 function StepRow({ step }: { step: PRCheckStep }) {
-  const isFailed = isFailedStep(step.status, step.conclusion);
+  const isFailed = isFailedCheckStep(step);
 
   return (
     <div
@@ -117,6 +110,7 @@ interface CheckRowDetailsProps {
   detail: PRCheckDetail | null;
   detailError: string | null;
   isLoadingDetail: boolean;
+  onRetry: () => void;
 }
 
 export function CheckRowDetails({
@@ -124,15 +118,25 @@ export function CheckRowDetails({
   detail,
   detailError,
   isLoadingDetail,
+  onRetry,
 }: CheckRowDetailsProps) {
   const failedSteps = detail?.steps.filter((step) =>
-    isFailedStep(step.status, step.conclusion),
+    isFailedCheckStep(step),
   ) ?? [];
   const visibleSteps = failedSteps.length > 0 ? failedSteps : (detail?.steps ?? []);
 
   return (
     <div className="ml-6 border-l border-dashed border-border px-4 pb-3 pl-5 select-text">
       <div className="space-y-3 pt-1 text-xs text-secondary">
+        {check.bucket === "fail" && (
+          <div className="flex justify-end">
+            <CopyButton
+              text={getCheckFailureCopyText(check, detail)}
+              isLoading={isLoadingDetail}
+              disabled={!detail || Boolean(detailError)}
+            />
+          </div>
+        )}
         {check.description && (
           <p className="text-[12px] leading-5 text-secondary">{check.description}</p>
         )}
@@ -189,7 +193,10 @@ export function CheckRowDetails({
 
         {detailError && (
           <div className="rounded-md border border-semantic-error/15 bg-semantic-error/5 px-3 py-2 text-[12px] text-semantic-error">
-            {detailError}
+            <p>{detailError}</p>
+            <button type="button" onClick={onRetry} className="mt-2 font-medium underline underline-offset-2">
+              Retry
+            </button>
           </div>
         )}
 
@@ -212,7 +219,6 @@ export function CheckRowDetails({
               <div className="text-[11px] uppercase tracking-[0.08em] text-semantic-error">
                 Failure output
               </div>
-              <CopyButton text={detail.failed_log_excerpt} />
             </div>
             <pre className="max-h-72 overflow-auto whitespace-pre-wrap px-3 py-3 font-mono text-[11px] leading-5 select-text">
               {detail.failed_log_excerpt.split("\n").map((line, index) => (

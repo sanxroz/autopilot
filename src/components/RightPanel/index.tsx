@@ -44,20 +44,12 @@ function PullRequestView({
       prNumber={prStatus.number}
       prStatus={prStatus}
     >
-      <section aria-labelledby="pr-checks-heading">
-        <div className="px-5 pb-1 pt-4">
-          <h2 id="pr-checks-heading" className="text-sm font-semibold text-primary">
-            Checks
-          </h2>
-          <p className="mt-0.5 text-xs text-tertiary">Builds, tests, and deployments</p>
-        </div>
-        <MemoizedChecksTab
-          embedded
-          repoPath={repoPath}
-          prNumber={prStatus.number}
-          prStatus={prStatus}
-        />
-      </section>
+      <MemoizedChecksTab
+        embedded
+        repoPath={repoPath}
+        prNumber={prStatus.number}
+        prStatus={prStatus}
+      />
     </MemoizedCommentsTab>
   );
 }
