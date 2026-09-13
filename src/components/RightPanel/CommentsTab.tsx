@@ -433,12 +433,17 @@ export function CommentsTab({
       c.state === 'COMMENTED'
     )
   );
-  const changeRequests = reviews.filter((review) => review.state === 'CHANGES_REQUESTED');
+  const latestReviewsByAuthor = new Map<string, PRComment>();
+  for (const review of reviews) {
+    latestReviewsByAuthor.set(review.author.toLowerCase(), review);
+  }
+  const latestReviews = [...latestReviewsByAuthor.values()];
+  const changeRequests = latestReviews.filter((review) => review.state === 'CHANGES_REQUESTED');
   const threadComments = comments.filter(c => c.comment_type === 'review_thread');
   const reviewThreads = groupReviewThreads(threadComments);
   const unresolvedReviewThreads = getUnresolvedReviewThreads(reviewThreads);
   const reviewerReviewStates = new Map(
-    reviews
+    latestReviews
       .filter((review) => review.state === 'APPROVED' || review.state === 'CHANGES_REQUESTED')
       .map((review) => [review.author, review.state]),
   );
@@ -450,7 +455,11 @@ export function CommentsTab({
   const description = prDetails?.body?.replace(/<!--[\s\S]*?-->/g, '').trim();
   const activityCount = issueComments.length + reviews.length + threadComments.length;
   const checksNeedAttention = prStatus?.checks_status === 'failure';
-  const hasAttention = checksNeedAttention || changeRequests.length > 0 || unresolvedReviewThreads.length > 0;
+  const showGenericReviewAttention = !prDetails && (
+    prStatus?.review_decision === 'CHANGES_REQUESTED' ||
+    prStatus?.has_unresolved_review_threads === true
+  );
+  const hasAttention = checksNeedAttention || changeRequests.length > 0 || unresolvedReviewThreads.length > 0 || showGenericReviewAttention;
   const reviewStatus = prStatus?.review_decision === 'APPROVED'
     ? 'Approved'
     : prStatus?.review_decision === 'CHANGES_REQUESTED'
@@ -612,7 +621,7 @@ export function CommentsTab({
               <AlertTriangle className="size-4 shrink-0 text-semantic-warning" aria-hidden="true" />
               <h2 id="pr-attention-heading" className="text-sm font-semibold text-primary">Needs attention</h2>
               <span className="font-mono text-[11px] tabular-nums text-tertiary">
-                {changeRequests.length + unresolvedReviewThreads.length + (checksNeedAttention ? 1 : 0)}
+                {changeRequests.length + unresolvedReviewThreads.length + (checksNeedAttention ? 1 : 0) + (showGenericReviewAttention ? 1 : 0)}
               </span>
             </div>
 
@@ -621,6 +630,12 @@ export function CommentsTab({
                 <div className="-mx-2 rounded-lg bg-secondary/40 px-2 py-2.5">
                   <div className="text-[13px] font-medium text-primary">Checks are failing</div>
                   <div className="mt-0.5 text-xs text-tertiary">Open the failed check below for logs and details.</div>
+                </div>
+              )}
+              {showGenericReviewAttention && (
+                <div className="-mx-2 rounded-lg bg-secondary/40 px-2 py-2.5">
+                  <div className="text-[13px] font-medium text-primary">Review attention required</div>
+                  <div className="mt-0.5 text-xs text-tertiary">Review details are unavailable. Try loading the activity again.</div>
                 </div>
               )}
               {changeRequests.map((review) => (

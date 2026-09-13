@@ -36,6 +36,7 @@ interface CheckRowProps {
   isExpanded: boolean;
   isLoadingDetail: boolean;
   onToggle: (check: PRCheck) => void;
+  onRetry: (check: PRCheck) => void;
 }
 
 export function CheckRow({
@@ -45,6 +46,7 @@ export function CheckRow({
   isExpanded,
   isLoadingDetail,
   onToggle,
+  onRetry,
 }: CheckRowProps) {
   const Icon = getCheckIcon(check.bucket);
   const duration = formatDuration(check.started_at, check.completed_at);
@@ -110,6 +112,7 @@ export function CheckRow({
           detail={detail}
           detailError={detailError}
           isLoadingDetail={isLoadingDetail}
+          onRetry={() => onRetry(check)}
         />
       )}
     </div>

@@ -34,6 +34,7 @@ function CheckSection({
   loadingDetails,
   expandedKeys,
   onToggle,
+  onRetry,
 }: {
   title: string;
   checks: PRCheck[];
@@ -42,6 +43,7 @@ function CheckSection({
   loadingDetails: LoadingState;
   expandedKeys: Set<string>;
   onToggle: (check: PRCheck) => void;
+  onRetry: (check: PRCheck) => void;
 }) {
   if (checks.length === 0) return null;
 
@@ -63,6 +65,7 @@ function CheckSection({
               isExpanded={expandedKeys.has(key)}
               isLoadingDetail={loadingDetails[key] ?? false}
               onToggle={onToggle}
+              onRetry={onRetry}
             />
           );
         })}
@@ -267,6 +270,7 @@ export function ChecksTab({
           loadingDetails={loadingDetails}
           expandedKeys={expandedKeys}
           onToggle={handleToggleCheck}
+          onRetry={(check) => void loadCheckDetail(check)}
         />}
         {checksResult && <CheckSection
           title="Checks"
@@ -276,6 +280,7 @@ export function ChecksTab({
           loadingDetails={loadingDetails}
           expandedKeys={expandedKeys}
           onToggle={handleToggleCheck}
+          onRetry={(check) => void loadCheckDetail(check)}
         />}
 
         {!isLoading && (!checksResult || checksResult.checks.length === 0) && (

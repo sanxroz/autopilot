@@ -44,4 +44,12 @@ describe("groupReviewThreads", () => {
 
     expect(getUnresolvedReviewThreads(threads).map(({ id }) => id)).toEqual(["open"]);
   });
+
+  test("does not treat unknown REST fallback resolution as open", () => {
+    const threads = groupReviewThreads([
+      comment({ thread_id: "unknown", is_resolved: undefined }),
+    ]);
+
+    expect(getUnresolvedReviewThreads(threads)).toEqual([]);
+  });
 });

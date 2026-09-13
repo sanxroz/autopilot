@@ -5,7 +5,7 @@ export interface PRReviewThread {
   comments: PRComment[];
   path: string;
   line?: number;
-  isResolved: boolean;
+  isResolved?: boolean;
   createdAt: string;
 }
 
@@ -17,7 +17,9 @@ export function groupReviewThreads(comments: readonly PRComment[]): PRReviewThre
     const thread = threads.get(id);
     if (thread) {
       thread.comments.push(comment);
-      thread.isResolved = thread.isResolved || Boolean(comment.is_resolved);
+      if (comment.is_resolved !== undefined) {
+        thread.isResolved = comment.is_resolved;
+      }
       continue;
     }
 
@@ -26,7 +28,7 @@ export function groupReviewThreads(comments: readonly PRComment[]): PRReviewThre
       comments: [comment],
       path: comment.path ?? "General",
       line: comment.line,
-      isResolved: Boolean(comment.is_resolved),
+      isResolved: comment.is_resolved,
       createdAt: comment.created_at,
     });
   }
@@ -40,5 +42,5 @@ export function groupReviewThreads(comments: readonly PRComment[]): PRReviewThre
 export function getUnresolvedReviewThreads(
   threads: readonly PRReviewThread[],
 ): PRReviewThread[] {
-  return threads.filter((thread) => !thread.isResolved);
+  return threads.filter((thread) => thread.isResolved === false);
 }

@@ -49,4 +49,15 @@ describe("getChecksSummaryLabel", () => {
       cancelled: 0,
     })).toBe("10 passed · 1 skipped");
   });
+
+  test("falls back to the total for unknown check buckets", () => {
+    expect(getChecksSummaryLabel({
+      total: 1,
+      passing: 0,
+      failing: 0,
+      pending: 0,
+      skipped: 0,
+      cancelled: 0,
+    })).toBe("1 total");
+  });
 });

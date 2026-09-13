@@ -1694,7 +1694,7 @@ pub struct PRComment {
     pub line: Option<u32>,         // For review threads: line number
     pub review_id: Option<String>, // For review threads: parent review ID
     pub thread_id: Option<String>, // Stable ID shared by every comment in a review thread
-    pub is_resolved: bool,
+    pub is_resolved: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -1990,7 +1990,7 @@ fn flatten_review_threads(review_threads: GraphqlReviewThreads) -> Vec<PRComment
                     .pull_request_review
                     .map(|r| r.database_id.to_string()),
                 thread_id: Some(thread_id.clone()),
-                is_resolved,
+                is_resolved: Some(is_resolved),
             });
         }
     }
@@ -2039,7 +2039,7 @@ pub async fn get_pr_details(repo_path: String, pr_number: u64) -> Result<PRDetai
             line: None,
             review_id: None,
             thread_id: None,
-            is_resolved: false,
+            is_resolved: None,
         })
         .collect();
 
@@ -2063,7 +2063,7 @@ pub async fn get_pr_details(repo_path: String, pr_number: u64) -> Result<PRDetai
             line: None,
             review_id: Some(review.id.to_string()),
             thread_id: None,
-            is_resolved: false,
+            is_resolved: None,
         });
     }
 
@@ -2085,7 +2085,7 @@ pub async fn get_pr_details(repo_path: String, pr_number: u64) -> Result<PRDetai
                     line: rc.line.or(rc.original_line),
                     review_id: rc.pull_request_review_id.map(|id| id.to_string()),
                     thread_id: Some(rc.in_reply_to_id.unwrap_or(rc.id).to_string()),
-                    is_resolved: false,
+                    is_resolved: None,
                 })
                 .collect()
         }

@@ -194,11 +194,13 @@ export function getCheckFailureCopyText(
 }
 
 export function getChecksSummaryLabel(summary: PRChecksSummary): string {
-  return [
+  const label = [
     summary.passing > 0 ? `${summary.passing} passed` : null,
     summary.failing > 0 ? `${summary.failing} failed` : null,
     summary.pending > 0 ? `${summary.pending} running` : null,
     summary.skipped > 0 ? `${summary.skipped} skipped` : null,
     summary.cancelled > 0 ? `${summary.cancelled} cancelled` : null,
   ].filter(Boolean).join(" · ");
+
+  return label || `${summary.total} total`;
 }

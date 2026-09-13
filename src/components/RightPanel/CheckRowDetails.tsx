@@ -9,7 +9,7 @@ import {
   isFailedCheckStep,
 } from "./checks-tab-domain";
 
-function CopyButton({ text, isLoading }: { text: string; isLoading: boolean }) {
+function CopyButton({ text, isLoading, disabled }: { text: string; isLoading: boolean; disabled: boolean }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -21,7 +21,7 @@ function CopyButton({ text, isLoading }: { text: string; isLoading: boolean }) {
   return (
     <button
       onClick={handleCopy}
-      disabled={isLoading}
+      disabled={isLoading || disabled}
       className="inline-flex min-h-8 items-center gap-1 rounded-md border border-border-subtle bg-primary px-2 text-[11px] text-secondary transition-colors hover:bg-hover hover:text-primary disabled:cursor-wait disabled:opacity-50"
       type="button"
     >
@@ -110,6 +110,7 @@ interface CheckRowDetailsProps {
   detail: PRCheckDetail | null;
   detailError: string | null;
   isLoadingDetail: boolean;
+  onRetry: () => void;
 }
 
 export function CheckRowDetails({
@@ -117,6 +118,7 @@ export function CheckRowDetails({
   detail,
   detailError,
   isLoadingDetail,
+  onRetry,
 }: CheckRowDetailsProps) {
   const failedSteps = detail?.steps.filter((step) =>
     isFailedCheckStep(step),
@@ -131,6 +133,7 @@ export function CheckRowDetails({
             <CopyButton
               text={getCheckFailureCopyText(check, detail)}
               isLoading={isLoadingDetail}
+              disabled={!detail || Boolean(detailError)}
             />
           </div>
         )}
@@ -190,7 +193,10 @@ export function CheckRowDetails({
 
         {detailError && (
           <div className="rounded-md border border-semantic-error/15 bg-semantic-error/5 px-3 py-2 text-[12px] text-semantic-error">
-            {detailError}
+            <p>{detailError}</p>
+            <button type="button" onClick={onRetry} className="mt-2 font-medium underline underline-offset-2">
+              Retry
+            </button>
           </div>
         )}
 
