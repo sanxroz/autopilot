@@ -1694,6 +1694,7 @@ pub struct PRComment {
     pub line: Option<u32>,         // For review threads: line number
     pub review_id: Option<String>, // For review threads: parent review ID
     pub thread_id: Option<String>, // Stable ID shared by every comment in a review thread
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub is_resolved: Option<bool>,
 }
 
@@ -2719,6 +2720,26 @@ mod tests {
         assert!(comments
             .iter()
             .all(|comment| comment.thread_id.as_deref() == Some("thread-1")));
+    }
+
+    #[test]
+    fn pr_comment_omits_unknown_resolution_status() {
+        let comment = PRComment {
+            author: "reviewer".to_string(),
+            body: "Comment".to_string(),
+            created_at: "2026-08-15T12:00:00Z".to_string(),
+            comment_type: "review_thread".to_string(),
+            state: None,
+            path: Some("src/app.ts".to_string()),
+            line: Some(12),
+            review_id: None,
+            thread_id: Some("thread-1".to_string()),
+            is_resolved: None,
+        };
+
+        let serialized = serde_json::to_value(comment).expect("expected serialized comment");
+
+        assert!(serialized.get("is_resolved").is_none());
     }
 
     #[test]
