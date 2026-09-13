@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
+import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import type { ISearchOptions } from "@xterm/addon-search";
 import { listen } from "@tauri-apps/api/event";
@@ -19,6 +20,17 @@ import {
 } from "../utils/panelResize";
 
 const TERMINAL_SCROLLBACK_LINES = 2000;
+const MOUSE_PROTOCOL_MODES = new Set([1005, 1006, 1015, 1016]);
+
+interface CachedTerminalState {
+  readonly data: string;
+  readonly sequence: number;
+  readonly cols: number;
+  readonly rows: number;
+  readonly mouseProtocolMode: number | null;
+}
+
+const terminalStateCache = new Map<string, CachedTerminalState>();
 
 interface Props {
   terminalId: string;
@@ -110,6 +122,8 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
   useEffect(() => {
     if (!containerRef.current) return;
 
+    const cachedState = terminalStateCache.get(terminalId);
+
     const openTerminalLink = (_event: MouseEvent, uri: string) => {
       if (isLocalWebUrl(uri)) {
         useAppStore.getState().openBrowserTab(uri);
@@ -121,6 +135,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     };
 
     const term = new XTerm({
+      ...(cachedState ? { cols: cachedState.cols, rows: cachedState.rows } : {}),
       cursorBlink: true,
       fontSize: 13,
       fontFamily: '"SF Mono", ui-monospace, Menlo, Monaco, "Courier New", monospace',
@@ -159,6 +174,9 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
 
     const searchAddon = new SearchAddon();
     term.loadAddon(searchAddon);
+
+    const serializeAddon = new SerializeAddon();
+    term.loadAddon(serializeAddon);
 
     const webLinksAddon = new WebLinksAddon(openTerminalLink);
     term.loadAddon(webLinksAddon);
@@ -226,7 +244,24 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     const replayEvents: TerminalOutput[] = [];
     const outputQueue: TerminalOutput[] = [];
     let isWritingOutput = false;
+    let renderedSequence = cachedState?.sequence ?? 0;
+    let mouseProtocolMode = cachedState?.mouseProtocolMode ?? null;
+    let terminalClosed = false;
     let localUrlOutput = "";
+
+    // SerializeAddon restores mouse tracking, but not the negotiated mouse encoding Amp expects.
+    const updateMouseProtocolMode = (enabled: boolean) => (params: (number | number[])[]) => {
+      const modes = params.flat().filter((mode) => MOUSE_PROTOCOL_MODES.has(mode));
+      if (enabled && modes.length > 0) {
+        mouseProtocolMode = modes.at(-1) ?? null;
+      } else if (!enabled && mouseProtocolMode !== null && modes.includes(mouseProtocolMode)) {
+        mouseProtocolMode = null;
+      }
+      return false;
+    };
+
+    term.parser.registerCsiHandler({ prefix: "?", final: "h" }, updateMouseProtocolMode(true));
+    term.parser.registerCsiHandler({ prefix: "?", final: "l" }, updateMouseProtocolMode(false));
 
     const openLocalUrls = (data: string) => {
       localUrlOutput += data;
@@ -255,6 +290,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       isWritingOutput = true;
       term.write(output.data, () => {
         isWritingOutput = false;
+        renderedSequence = output.sequence;
         void invoke("acknowledge_terminal_output", {
           terminalId,
           sequence: output.sequence,
@@ -295,16 +331,24 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
             }).catch(console.error);
             return;
           }
+          if (cachedState) {
+            const mouseProtocol = cachedState.mouseProtocolMode === null
+              ? ""
+              : `\x1b[?${cachedState.mouseProtocolMode}h`;
+            await new Promise<void>((resolve) => term.write(cachedState.data + mouseProtocol, resolve));
+          }
+          if (disposed) return;
           await resizeTerminal();
           if (disposed) return;
           const snapshot = await invoke<TerminalOutputSnapshot>(
             "get_terminal_output",
-            { terminalId }
+            { terminalId, afterSequence: cachedState?.sequence ?? null }
           );
           if (disposed) return;
           appliedSequence = snapshot.sequence;
           term.write(snapshot.data, () => {
             if (disposed) return;
+            renderedSequence = snapshot.sequence;
             void invoke("acknowledge_terminal_output", {
               terminalId,
               sequence: snapshot.sequence,
@@ -340,6 +384,8 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       .catch(console.error);
 
     const unlistenClose = listen<void>(`terminal-closed-${terminalId}`, () => {
+      terminalClosed = true;
+      terminalStateCache.delete(terminalId);
       term.write("\r\n\x1b[31m[Process exited]\x1b[0m\r\n");
     });
 
@@ -357,6 +403,15 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
 
     return () => {
       disposed = true;
+      if (!terminalClosed && replayLoaded) {
+        terminalStateCache.set(terminalId, {
+          data: serializeAddon.serialize({ scrollback: TERMINAL_SCROLLBACK_LINES }),
+          sequence: renderedSequence,
+          cols: term.cols,
+          rows: term.rows,
+          mouseProtocolMode,
+        });
+      }
       if (attachmentId !== null) {
         void invoke("detach_terminal_output", {
           terminalId,

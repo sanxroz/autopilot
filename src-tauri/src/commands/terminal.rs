@@ -367,11 +367,16 @@ impl TerminalOutputSnapshot {
 }
 
 struct TerminalReplayBuffer {
-    chunks: VecDeque<String>,
+    chunks: VecDeque<TerminalReplayChunk>,
     bytes: usize,
     max_bytes: usize,
     chunk_max_bytes: usize,
     sequence: u64,
+}
+
+struct TerminalReplayChunk {
+    outputs: Vec<TerminalOutput>,
+    bytes: usize,
 }
 
 impl TerminalReplayBuffer {
@@ -386,38 +391,51 @@ impl TerminalReplayBuffer {
     }
 
     fn push(&mut self, data: String) -> TerminalOutput {
-        self.bytes += data.len();
-        let append_to_last_chunk = self
+        self.sequence += 1;
+        let output = TerminalOutput {
+            data,
+            sequence: self.sequence,
+        };
+        self.bytes += output.data.len();
+        let chunk_max_bytes = self.chunk_max_bytes;
+        if let Some(chunk) = self
             .chunks
-            .back()
-            .is_some_and(|chunk| chunk.len() + data.len() <= self.chunk_max_bytes);
-        if append_to_last_chunk {
-            if let Some(chunk) = self.chunks.back_mut() {
-                chunk.push_str(&data);
-            }
+            .back_mut()
+            .filter(|chunk| chunk.bytes + output.data.len() <= chunk_max_bytes)
+        {
+            chunk.bytes += output.data.len();
+            chunk.outputs.push(output.clone());
         } else {
-            self.chunks.push_back(data.clone());
+            self.chunks.push_back(TerminalReplayChunk {
+                bytes: output.data.len(),
+                outputs: vec![output.clone()],
+            });
         }
 
         while self.bytes > self.max_bytes {
             let Some(removed) = self.chunks.pop_front() else {
                 break;
             };
-            self.bytes -= removed.len();
+            self.bytes -= removed.bytes;
         }
 
-        self.sequence += 1;
-        TerminalOutput {
-            data,
-            sequence: self.sequence,
-        }
+        output
+    }
+
+    fn snapshot_after(&self, sequence: Option<u64>) -> TerminalOutputSnapshot {
+        TerminalOutputSnapshot::new(
+            self.chunks
+                .iter()
+                .flat_map(|chunk| &chunk.outputs)
+                .filter(|output| sequence.is_none_or(|sequence| output.sequence > sequence))
+                .map(|output| output.data.as_str())
+                .collect::<String>(),
+            self.sequence,
+        )
     }
 
     fn snapshot(&self) -> TerminalOutputSnapshot {
-        TerminalOutputSnapshot::new(
-            self.chunks.iter().map(String::as_str).collect::<String>(),
-            self.sequence,
-        )
+        self.snapshot_after(None)
     }
 }
 
@@ -1650,12 +1668,13 @@ pub async fn write_to_terminal(
 pub fn get_terminal_output(
     state: State<'_, AppState>,
     terminal_id: String,
+    after_sequence: Option<u64>,
 ) -> Result<TerminalOutputSnapshot, String> {
     let live_snapshot = state
         .terminals
         .lock()
         .get(&terminal_id)
-        .map(|session| session.replay.lock().snapshot());
+        .map(|session| session.replay.lock().snapshot_after(after_sequence));
     live_snapshot
         .or_else(|| state.completed_terminal_outputs.lock().get(&terminal_id))
         .ok_or("Terminal not found".to_string())
@@ -3019,6 +3038,18 @@ mod tests {
         buffer.push("ghi".to_string());
 
         assert_eq!(buffer.snapshot().data, "ghi");
+    }
+
+    #[test]
+    fn terminal_replay_buffer_returns_only_output_after_a_sequence() {
+        let mut buffer = TerminalReplayBuffer::new(64);
+
+        let first = buffer.push("abc".to_string());
+        buffer.push("def".to_string());
+
+        let snapshot = buffer.snapshot_after(Some(first.sequence));
+        assert_eq!(snapshot.data, "def");
+        assert_eq!(snapshot.sequence, 2);
     }
 
     #[test]
