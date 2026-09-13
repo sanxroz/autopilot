@@ -1,0 +1,21 @@
+src/components/Terminal.tsx
+  s_096b171e0a6144::t_66cc32489405df 15
+tests/local-web-url.test.ts
+  s_096b171e0a6144::t_66cc32489405df 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6fbf5c417ba693b46fe104cfeb631ab91dd013e5",
+  "prompts": {},
+  "sessions": {
+    "s_096b171e0a6144": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09bcb-bbbd-7ee1-9126-0cda9f56c6f6",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
