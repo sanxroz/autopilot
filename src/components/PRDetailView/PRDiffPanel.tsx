@@ -18,6 +18,7 @@ import { markdownComponents } from '../../lib/markdown-components';
 import { getDiffHighlighter, type DiffHighlighter } from '../../lib/diff-highlighter';
 import { buildDiffIndex } from '../../lib/diff-index';
 import { DiffErrorBoundary, getLangFromPath } from '../DiffFileList';
+import { Tooltip } from '../ui/tooltip';
 import type { PRFile, PRComment } from '../../types/github';
 
 type PendingReviewComment = {
@@ -469,24 +470,26 @@ export function PRDiffPanel({
       {/* File header bar */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle px-4 py-2">
         <div className="flex items-center gap-1">
-          <button
-            onClick={goToPrev}
-            disabled={!hasPrev}
-            className="rounded p-1 text-tertiary hover:bg-hover hover:text-primary disabled:opacity-30"
-            title="Previous file"
-            aria-label="Previous file"
-          >
-            <ChevronLeft className="size-3.5" />
-          </button>
-          <button
-            onClick={goToNext}
-            disabled={!hasNext}
-            className="rounded p-1 text-tertiary hover:bg-hover hover:text-primary disabled:opacity-30"
-            title="Next file"
-            aria-label="Next file"
-          >
-            <ChevronRight className="size-3.5" />
-          </button>
+          <Tooltip content="Previous file">
+            <button
+              onClick={goToPrev}
+              disabled={!hasPrev}
+              className="rounded p-1 text-tertiary hover:bg-hover hover:text-primary disabled:opacity-30"
+              aria-label="Previous file"
+            >
+              <ChevronLeft className="size-3.5" />
+            </button>
+          </Tooltip>
+          <Tooltip content="Next file">
+            <button
+              onClick={goToNext}
+              disabled={!hasNext}
+              className="rounded p-1 text-tertiary hover:bg-hover hover:text-primary disabled:opacity-30"
+              aria-label="Next file"
+            >
+              <ChevronRight className="size-3.5" />
+            </button>
+          </Tooltip>
         </div>
 
         <span className="min-w-0 flex-1 truncate font-mono text-xs text-primary">

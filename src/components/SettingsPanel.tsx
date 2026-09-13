@@ -20,6 +20,7 @@ import {
 import { Checkbox } from "./ui/checkbox";
 import { useAppStore } from "../store";
 import { cn } from "../utils/cn";
+import { Tooltip } from "./ui/tooltip";
 import { AI_AGENTS, type AIAgent, type Repository } from "../types";
 import {
   DEFAULT_KEYBOARD_SHORTCUTS,
@@ -238,14 +239,15 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             <h3 className="text-sm font-semibold text-primary">
               {sectionTitles[activeSection]}
             </h3>
-            <button
-              onClick={onClose}
-              className="rounded-md p-1.5 text-tertiary transition-colors hover:bg-hover"
-              title="Close settings"
-              aria-label="Close settings"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+            <Tooltip content="Close settings">
+              <button
+                onClick={onClose}
+                className="rounded-md p-1.5 text-tertiary transition-colors hover:bg-hover"
+                aria-label="Close settings"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </Tooltip>
           </div>
 
           <div className="flex-1 overflow-y-auto px-6 py-5">
@@ -558,16 +560,17 @@ function DebugSection({
             title="Terminal recovery"
             description="Inspect the foreground process in every worktree. Recovery ends only that process and keeps its terminal shell open."
           />
-          <button
-            type="button"
-            onClick={() => void refreshDiagnostics()}
-            disabled={isLoading}
-            title="Refresh diagnostics"
-            aria-label="Refresh terminal diagnostics"
-            className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary text-secondary hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary disabled:opacity-60"
-          >
-            <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin motion-reduce:animate-none")} />
-          </button>
+          <Tooltip content="Refresh diagnostics">
+            <button
+              type="button"
+              onClick={() => void refreshDiagnostics()}
+              disabled={isLoading}
+              aria-label="Refresh terminal diagnostics"
+              className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary text-secondary hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary disabled:opacity-60"
+            >
+              <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin motion-reduce:animate-none")} />
+            </button>
+          </Tooltip>
         </div>
 
         {error ? (

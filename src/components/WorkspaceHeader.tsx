@@ -3,6 +3,7 @@ import { useAppStore } from "../store";
 import { formatShortcut } from "../lib/keyboard-shortcuts";
 import type { WorktreeInfo } from "../types";
 import { cn } from "../utils/cn";
+import { Tooltip } from "./ui/tooltip";
 import {
   RightPanelToolbar,
   type RightPanelTabId,
@@ -58,25 +59,27 @@ export function WorkspaceHeader({
         sidebarOpen ? "pl-0.5" : "pl-[75px]",
       )}
     >
-      <button
-        type="button"
-        onClick={onToggleSidebar}
-        className="flex h-7 w-9 shrink-0 items-center justify-center rounded-md text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
-        title={`${sidebarOpen ? "Hide" : "Show"} sidebar (${formatShortcut(sidebarShortcut)})`}
-        aria-label={`${sidebarOpen ? "Hide" : "Show"} sidebar, ${formatShortcut(sidebarShortcut)}`}
-      >
-        <PanelLeft className="h-4 w-4" strokeWidth={1.5} />
-      </button>
+      <Tooltip content={`${sidebarOpen ? "Hide" : "Show"} sidebar (${formatShortcut(sidebarShortcut)})`}>
+        <button
+          type="button"
+          onClick={onToggleSidebar}
+          className="flex h-7 w-9 shrink-0 items-center justify-center rounded-md text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
+          aria-label={`${sidebarOpen ? "Hide" : "Show"} sidebar, ${formatShortcut(sidebarShortcut)}`}
+        >
+          <PanelLeft className="h-4 w-4" strokeWidth={1.5} />
+        </button>
+      </Tooltip>
 
-      <button
-        type="button"
-        onClick={onOpenCommandMenu}
-        className="flex h-7 w-9 shrink-0 items-center justify-center rounded-md text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
-        title={`Command menu (${formatShortcut(commandMenuShortcut)})`}
-        aria-label={`Open command menu, ${formatShortcut(commandMenuShortcut)}`}
-      >
-        <Search className="h-4 w-4" strokeWidth={1.5} />
-      </button>
+      <Tooltip content={`Command menu (${formatShortcut(commandMenuShortcut)})`}>
+        <button
+          type="button"
+          onClick={onOpenCommandMenu}
+          className="flex h-7 w-9 shrink-0 items-center justify-center rounded-md text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
+          aria-label={`Open command menu, ${formatShortcut(commandMenuShortcut)}`}
+        >
+          <Search className="h-4 w-4" strokeWidth={1.5} />
+        </button>
+      </Tooltip>
 
       <div
         role="tablist"
@@ -103,55 +106,54 @@ export function WorkspaceHeader({
                   : "text-tertiary hover:bg-hover hover:text-secondary",
               )}
             >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => {
-                  if (!headerWorktree) setActiveTerminalTab(tab.id);
-                }}
-                className="flex h-full min-w-0 flex-1 items-center gap-1.5 px-3 text-[12px] font-medium focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
-                title={label}
-              >
-                {tab.browserUrl && (
-                  <Globe2
-                    aria-hidden="true"
-                    className="h-3.5 w-3.5 shrink-0"
-                    strokeWidth={1.75}
-                  />
-                )}
-                <span className="truncate">{label}</span>
-              </button>
-              {canClose && (
+              <Tooltip content={label}>
                 <button
                   type="button"
-                  onClick={() => closeTerminalTab(tab.id)}
-                  className="pointer-events-none mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted opacity-0 transition-colors hover:bg-hover hover:text-primary group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
-                  aria-label={`Close ${label}`}
-                  title="Close terminal layout"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => {
+                    if (!headerWorktree) setActiveTerminalTab(tab.id);
+                  }}
+                  className="flex h-full min-w-0 flex-1 items-center gap-1.5 px-3 text-[12px] font-medium focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
                 >
-                  <X className="h-3 w-3" strokeWidth={1.75} />
+                  {tab.browserUrl && (
+                    <Globe2
+                      aria-hidden="true"
+                      className="h-3.5 w-3.5 shrink-0"
+                      strokeWidth={1.75}
+                    />
+                  )}
+                  <span className="truncate">{label}</span>
                 </button>
+              </Tooltip>
+              {canClose && (
+                <Tooltip content="Close terminal layout">
+                  <button
+                    type="button"
+                    onClick={() => closeTerminalTab(tab.id)}
+                    className="pointer-events-none mr-1 flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted opacity-0 transition-colors hover:bg-hover hover:text-primary group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
+                    aria-label={`Close ${label}`}
+                  >
+                    <X className="h-3 w-3" strokeWidth={1.75} />
+                  </button>
+                </Tooltip>
               )}
             </div>
           );
         })}
       </div>
 
-      <button
-        type="button"
-        onClick={() => void createTerminalTab()}
-        disabled={!canCreateTab}
-        className="flex h-6 w-8 shrink-0 items-center justify-center rounded-md text-sm text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 disabled:cursor-default disabled:text-muted disabled:hover:bg-transparent"
-        title={
-          canCreateTab
-            ? "New terminal layout"
-            : "Select a session to create a terminal layout"
-        }
-        aria-label="New terminal layout"
-      >
-        +
-      </button>
+      <Tooltip content={canCreateTab ? "New terminal layout" : "Select a session to create a terminal layout"}>
+        <button
+          type="button"
+          onClick={() => void createTerminalTab()}
+          disabled={!canCreateTab}
+          className="flex h-6 w-8 shrink-0 items-center justify-center rounded-md text-sm text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 disabled:cursor-default disabled:text-muted disabled:hover:bg-transparent"
+          aria-label="New terminal layout"
+        >
+          +
+        </button>
+      </Tooltip>
 
       <div data-tauri-drag-region className="h-full min-w-4 flex-1" />
 
@@ -165,21 +167,22 @@ export function WorkspaceHeader({
             />
           </div>
         )}
-        <button
-          type="button"
-          onClick={() => setCodeReviewOpen(!codeReviewOpen)}
-          className={cn(
-            "flex h-6 w-8 shrink-0 items-center justify-center rounded-md transition-colors active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2",
-            codeReviewOpen
-              ? "text-primary"
-              : "text-secondary hover:bg-hover hover:text-primary",
-          )}
-          title={codeReviewOpen ? "Close workspace panel" : "Open Git changes"}
-          aria-label={codeReviewOpen ? "Close workspace panel" : "Open Git changes"}
-          aria-pressed={codeReviewOpen}
-        >
-          <PanelRight className="h-4 w-4" strokeWidth={1.5} />
-        </button>
+        <Tooltip content={codeReviewOpen ? "Close workspace panel" : "Open Git changes"}>
+          <button
+            type="button"
+            onClick={() => setCodeReviewOpen(!codeReviewOpen)}
+            className={cn(
+              "flex h-6 w-8 shrink-0 items-center justify-center rounded-md transition-colors active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2",
+              codeReviewOpen
+                ? "text-primary"
+                : "text-secondary hover:bg-hover hover:text-primary",
+            )}
+            aria-label={codeReviewOpen ? "Close workspace panel" : "Open Git changes"}
+            aria-pressed={codeReviewOpen}
+          >
+            <PanelRight className="h-4 w-4" strokeWidth={1.5} />
+          </button>
+        </Tooltip>
       </div>
     </header>
   );

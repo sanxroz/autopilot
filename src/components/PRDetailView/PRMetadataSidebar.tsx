@@ -17,6 +17,7 @@ import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import { cn } from '../../utils/cn';
 import { markdownComponents } from '../../lib/markdown-components';
+import { Tooltip } from '../ui/tooltip';
 import type { PRStatus, PRCommit, PRComment } from '../../types/github';
 
 type PendingReviewComment = {
@@ -293,14 +294,15 @@ export function PRMetadataSidebar({
                 {isMerging ? <Loader className="mr-1 inline size-3 animate-spin" /> : <GitMerge className="mr-1 inline size-3" />}
                 {isMerging ? 'Merging…' : 'Merge'}
               </button>
-              <button
-                onClick={() => setIsActionsOpen((v) => !v)}
-                className="rounded-r-md border border-l-0 border-border-subtle px-2 py-1.5 text-xs text-secondary transition-colors hover:bg-hover hover:text-primary"
-                title="PR actions"
-                aria-label="Open pull request actions"
-              >
-                <ChevronDown className="size-3.5" />
-              </button>
+              <Tooltip content="PR actions">
+                <button
+                  onClick={() => setIsActionsOpen((v) => !v)}
+                  className="rounded-r-md border border-l-0 border-border-subtle px-2 py-1.5 text-xs text-secondary transition-colors hover:bg-hover hover:text-primary"
+                  aria-label="Open pull request actions"
+                >
+                  <ChevronDown className="size-3.5" />
+                </button>
+              </Tooltip>
 
               {isActionsOpen && actionsMenuPos && createPortal(
                 <div

@@ -25,6 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+import { Tooltip } from "../ui/tooltip";
 
 interface ReviewerCandidateResult {
   candidates: ReviewerCandidate[];
@@ -111,14 +112,15 @@ function ImageModal({ src, alt, onClose }: { src: string; alt: string; onClose: 
       aria-modal="true"
       aria-label={`Image: ${alt}`}
     >
-      <button
-        onClick={onClose}
-        className="absolute top-4 right-4 p-2 rounded-full bg-secondary"
-        title="Close image"
-        aria-label="Close image"
-      >
-        <X className="w-5 h-5 text-primary" />
-      </button>
+      <Tooltip content="Close image">
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 p-2 rounded-full bg-secondary"
+          aria-label="Close image"
+        >
+          <X className="w-5 h-5 text-primary" />
+        </button>
+      </Tooltip>
       <img
         src={src}
         alt={alt}
@@ -216,35 +218,36 @@ function ReviewerPicker({
 
   return (
     <DropdownMenu onOpenChange={(open) => void loadCandidates(open)}>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className="relative flex h-7 shrink-0 items-center rounded-md px-1.5 text-tertiary transition-colors after:absolute after:-inset-2 hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
-          title="Manage reviewers"
-          aria-label="Manage pull request reviewers"
-        >
-          {currentReviewers.length > 0 ? (
-            <span className="flex -space-x-1.5">
-              {currentReviewers.slice(0, 3).map((reviewer) => {
-                const candidate = candidateFor(reviewer);
-                return (
-                  <span key={reviewer} className="rounded-full ring-2 ring-bg-primary">
-                    <GithubAvatar
-                      name={candidate.display_name}
-                      avatarUrl={candidate.avatar_url}
-                      isTeam={candidate.kind === "team"}
-                    />
-                  </span>
-                );
-              })}
-            </span>
-          ) : (
-            <UserPlus className="size-3.5" />
-          )}
-          {currentReviewers.length > 3 && <span className="ml-1 text-[10px]">+{currentReviewers.length - 3}</span>}
-          <ChevronDown className="ml-1 size-3" />
-        </button>
-      </DropdownMenuTrigger>
+      <Tooltip content="Manage reviewers">
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="relative flex h-7 shrink-0 items-center rounded-md px-1.5 text-tertiary transition-colors after:absolute after:-inset-2 hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
+            aria-label="Manage pull request reviewers"
+          >
+            {currentReviewers.length > 0 ? (
+              <span className="flex -space-x-1.5">
+                {currentReviewers.slice(0, 3).map((reviewer) => {
+                  const candidate = candidateFor(reviewer);
+                  return (
+                    <span key={reviewer} className="rounded-full ring-2 ring-bg-primary">
+                      <GithubAvatar
+                        name={candidate.display_name}
+                        avatarUrl={candidate.avatar_url}
+                        isTeam={candidate.kind === "team"}
+                      />
+                    </span>
+                  );
+                })}
+              </span>
+            ) : (
+              <UserPlus className="size-3.5" />
+            )}
+            {currentReviewers.length > 3 && <span className="ml-1 text-[10px]">+{currentReviewers.length - 3}</span>}
+            <ChevronDown className="ml-1 size-3" />
+          </button>
+        </DropdownMenuTrigger>
+      </Tooltip>
       <DropdownMenuContent
         align="end"
         className="max-h-72 w-64 overflow-y-auto border-border-subtle bg-secondary text-white shadow-xl dark:text-white motion-reduce:animate-none"
