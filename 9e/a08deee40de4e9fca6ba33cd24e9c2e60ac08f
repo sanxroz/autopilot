@@ -1,0 +1,21 @@
+src/store/agentRunState.ts
+  s_49f61fc00af848::t_e13e356b05725a 3
+tests/agent-run-state.test.ts
+  s_49f61fc00af848::t_e13e356b05725a 11-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9ea08deee40de4e9fca6ba33cd24e9c2e60ac08f",
+  "prompts": {},
+  "sessions": {
+    "s_49f61fc00af848": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09b1d-34dc-7a20-bbf6-0f7b5870970b",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
