@@ -18,6 +18,7 @@ import { getOpenWithIconSources } from "../lib/open-with";
 import { useAppStore } from "../store";
 import type { InstalledIde } from "../types";
 import { cn } from "../utils/cn";
+import { shouldShowMergedStatus } from "./right-panel-toolbar-state";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -305,7 +306,16 @@ export function RightPanelToolbar({
         </div>
       )}
 
-      {canMergePR && !hasMerged && (
+      {shouldShowMergedStatus(prStatus?.merged, hasMerged) ? (
+        <span
+          role="status"
+          title="Pull request merged"
+          className="flex h-6 items-center gap-1 rounded-md bg-semantic-merged-muted px-2.5 text-[11px] font-medium text-semantic-merged"
+        >
+          <GitMerge className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+          Merged
+        </span>
+      ) : canMergePR ? (
         <button
           type="button"
           onClick={handleMerge}
@@ -321,7 +331,7 @@ export function RightPanelToolbar({
           )}
           {isMerging ? "Merging…" : "Merge"}
         </button>
-      )}
+      ) : null}
     </div>
   );
 }
