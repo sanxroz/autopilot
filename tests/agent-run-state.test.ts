@@ -8,8 +8,8 @@ import {
 import type { AgentRunState } from "../src/types";
 
 describe("agent run state reconciliation", () => {
-  test("uses a 30 minute finished-state display window", () => {
-    expect(AGENT_FINISHED_TTL_MS).toBe(30 * 60 * 1000);
+  test("uses a 30 second finished-state display window", () => {
+    expect(AGENT_FINISHED_TTL_MS).toBe(30 * 1000);
   });
 
   test("creates a running lifecycle state when polling detects an external agent", () => {

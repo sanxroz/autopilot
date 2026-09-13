@@ -1,6 +1,6 @@
 import { AI_AGENTS, type AgentRunState, type AgentStatusEvent, type ProcessStatus } from "../types";
 
-export const AGENT_FINISHED_TTL_MS = 30 * 60 * 1000;
+export const AGENT_FINISHED_TTL_MS = 30 * 1000;
 
 const KNOWN_AGENTS = new Set<string>(AI_AGENTS.map(({ id }) => id));
 
