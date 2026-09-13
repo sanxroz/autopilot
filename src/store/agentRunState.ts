@@ -1,6 +1,7 @@
 import { AI_AGENTS, type AgentRunState, type AgentStatusEvent, type ProcessStatus } from "../types";
 
 export const AGENT_FINISHED_TTL_MS = 30 * 1000;
+export const AGENT_ERROR_TTL_MS = 30 * 60 * 1000;
 
 const KNOWN_AGENTS = new Set<string>(AI_AGENTS.map(({ id }) => id));
 
@@ -48,7 +49,8 @@ export function getNextAgentFinishedDeadline(
       (agentRun?.status === "completed" || agentRun?.status === "error") &&
       agentRun.endedAt
     ) {
-      const deadline = agentRun.endedAt + AGENT_FINISHED_TTL_MS;
+      const ttl = agentRun.status === "error" ? AGENT_ERROR_TTL_MS : AGENT_FINISHED_TTL_MS;
+      const deadline = agentRun.endedAt + ttl;
       nextDeadline = nextDeadline === undefined ? deadline : Math.min(nextDeadline, deadline);
     }
   }
@@ -96,7 +98,9 @@ export function reconcileAgentRunState(
   if (
     (currentState.status === "completed" || currentState.status === "error") &&
     currentState.endedAt &&
-    now - currentState.endedAt >= AGENT_FINISHED_TTL_MS
+    now - currentState.endedAt >= (
+      currentState.status === "error" ? AGENT_ERROR_TTL_MS : AGENT_FINISHED_TTL_MS
+    )
   ) {
     return undefined;
   }

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  AGENT_ERROR_TTL_MS,
   AGENT_FINISHED_TTL_MS,
   applyAgentStatusEvent,
   getNextAgentFinishedDeadline,
@@ -10,6 +11,10 @@ import type { AgentRunState } from "../src/types";
 describe("agent run state reconciliation", () => {
   test("uses a 30 second finished-state display window", () => {
     expect(AGENT_FINISHED_TTL_MS).toBe(30 * 1000);
+  });
+
+  test("keeps errors visible for 30 minutes", () => {
+    expect(AGENT_ERROR_TTL_MS).toBe(30 * 60 * 1000);
   });
 
   test("creates a running lifecycle state when polling detects an external agent", () => {
@@ -121,6 +126,34 @@ describe("agent run state reconciliation", () => {
     ).toBe(completed);
   });
 
+  test("keeps an error visible until its longer display window expires", () => {
+    const failed: AgentRunState = {
+      worktreePath: "/repo/worktree",
+      sessionId: "terminal-1",
+      status: "error",
+      startedAt: 1000,
+      lastEventAt: 1500,
+      endedAt: 1500,
+    };
+
+    expect(
+      reconcileAgentRunState(
+        "/repo/worktree",
+        "none",
+        failed,
+        failed.endedAt! + AGENT_ERROR_TTL_MS - 1,
+      ),
+    ).toBe(failed);
+    expect(
+      reconcileAgentRunState(
+        "/repo/worktree",
+        "none",
+        failed,
+        failed.endedAt! + AGENT_ERROR_TTL_MS,
+      ),
+    ).toBeUndefined();
+  });
+
   test("returns the earliest finished-state cleanup deadline", () => {
     expect(
       getNextAgentFinishedDeadline({
@@ -148,7 +181,7 @@ describe("agent run state reconciliation", () => {
           endedAt: 2000,
         },
       }),
-    ).toBe(2000 + AGENT_FINISHED_TTL_MS);
+    ).toBe(3000 + AGENT_FINISHED_TTL_MS);
   });
 
   test("accepts newer sessions and rejects older or ambiguous events", () => {
