@@ -12,7 +12,7 @@ import { useTheme } from "../hooks/useTheme";
 import { getTheme, subscribeTheme } from "../theme";
 import { observeResize } from "../utils/sharedResizeObserver";
 import { useAppStore } from "../store";
-import { findLocalWebUrls, isLocalWebUrl } from "../lib/local-web-url";
+import { isLocalWebUrl } from "../lib/local-web-url";
 import {
   isPanelResizing,
   PANEL_RESIZE_END_EVENT,
@@ -226,26 +226,6 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     const replayEvents: TerminalOutput[] = [];
     const outputQueue: TerminalOutput[] = [];
     let isWritingOutput = false;
-    let localUrlOutput = "";
-
-    const openLocalUrls = (data: string) => {
-      localUrlOutput += data;
-      const lastLineBreak = Math.max(
-        localUrlOutput.lastIndexOf("\n"),
-        localUrlOutput.lastIndexOf("\r"),
-      );
-      if (lastLineBreak < 0) {
-        localUrlOutput = localUrlOutput.slice(-2048);
-        return;
-      }
-
-      const completeOutput = localUrlOutput.slice(0, lastLineBreak + 1);
-      localUrlOutput = localUrlOutput.slice(lastLineBreak + 1);
-      for (const url of findLocalWebUrls(completeOutput)) {
-        useAppStore.getState().openBrowserTab(url);
-      }
-    };
-
     const flushOutputQueue = () => {
       if (isWritingOutput || disposed) return;
 
@@ -266,7 +246,6 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     const appendOutput = (output: TerminalOutput) => {
       if (output.sequence <= appliedSequence) return;
       appliedSequence = output.sequence;
-      openLocalUrls(output.data);
       outputQueue.push(output);
       flushOutputQueue();
     };
