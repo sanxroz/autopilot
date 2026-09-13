@@ -1,0 +1,29 @@
+src-tauri/src/commands/terminal.rs
+  s_819c9fc0b8d747::t_8e801924c90ad6 400,404
+  s_819c9fc0b8d747::t_37893b476d329c 394-399,422,425,427-428,430-432,436-439,1671,1677
+  s_819c9fc0b8d747::t_dd11d78b738157 3044-3054
+  s_819c9fc0b8d747::t_1e7b44af495b47 370,377-381,401,403,405-407,409-412,419,429
+src/components/Terminal.tsx
+  s_819c9fc0b8d747::t_ff0327b455dc99 5,23-33,125-126,138,178-180,247-249,253-265,293,334-340,345,351,387-388,407-414
+  s_819c9fc0b8d747::t_9b337488d19b78 252,406
+bun.lock
+  ai_agent 28,455
+package.json
+  s_819c9fc0b8d747::t_8ff6b9a1f2b60e 35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "bf2ea5ff01a0617c0997eee32c5f63e5e17a92c6",
+  "prompts": {},
+  "sessions": {
+    "s_819c9fc0b8d747": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09ae9-40b1-7383-b977-f488e59d63a4",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
