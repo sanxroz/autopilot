@@ -51,7 +51,9 @@ interface TerminalOutput {
   readonly sequence: number;
 }
 
-interface TerminalOutputSnapshot extends TerminalOutput {}
+interface TerminalOutputSnapshot extends TerminalOutput {
+  readonly truncated: boolean;
+}
 
 interface TerminalDimensions {
   readonly cols: number;
@@ -321,17 +323,37 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
         }
         unlistenOutput = unlisten;
         try {
-          attachmentId = await invoke<number>("attach_terminal_output", {
-            terminalId,
-          });
-          if (disposed) {
-            void invoke("detach_terminal_output", {
+          let terminalCompleted = false;
+          try {
+            attachmentId = await invoke<number>("attach_terminal_output", {
               terminalId,
-              attachmentId,
-            }).catch(console.error);
+            });
+          } catch {
+            terminalCompleted = true;
+          }
+          if (disposed) {
+            if (attachmentId !== null) {
+              void invoke("detach_terminal_output", {
+                terminalId,
+                attachmentId,
+              }).catch(console.error);
+            }
             return;
           }
-          if (cachedState) {
+          const afterSequence = cachedState?.sequence ?? null;
+          let snapshot = await invoke<TerminalOutputSnapshot>(
+            "get_terminal_output",
+            { terminalId, afterSequence },
+          );
+          const restoreCachedState = cachedState && !snapshot.truncated;
+          if (snapshot.truncated) {
+            terminalStateCache.delete(terminalId);
+            snapshot = await invoke<TerminalOutputSnapshot>(
+              "get_terminal_output",
+              { terminalId, afterSequence: null },
+            );
+          }
+          if (restoreCachedState) {
             const mouseProtocol = cachedState.mouseProtocolMode === null
               ? ""
               : `\x1b[?${cachedState.mouseProtocolMode}h`;
@@ -340,20 +362,22 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
           if (disposed) return;
           await resizeTerminal();
           if (disposed) return;
-          const snapshot = await invoke<TerminalOutputSnapshot>(
-            "get_terminal_output",
-            { terminalId, afterSequence: cachedState?.sequence ?? null }
-          );
-          if (disposed) return;
           appliedSequence = snapshot.sequence;
           term.write(snapshot.data, () => {
             if (disposed) return;
             renderedSequence = snapshot.sequence;
-            void invoke("acknowledge_terminal_output", {
-              terminalId,
-              sequence: snapshot.sequence,
-            }).catch(console.error);
+            if (!terminalCompleted) {
+              void invoke("acknowledge_terminal_output", {
+                terminalId,
+                sequence: snapshot.sequence,
+              }).catch(console.error);
+            }
             replayLoaded = true;
+            if (terminalCompleted) {
+              terminalClosed = true;
+              terminalStateCache.delete(terminalId);
+              term.write("\r\n\x1b[31m[Process exited]\x1b[0m\r\n");
+            }
             for (const output of replayEvents) {
               appendOutput(output);
             }
