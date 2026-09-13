@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Circle, Loader } from "lucide-react";
+import { ChevronDown, Circle, Loader } from "lucide-react";
 import { useCachedPRData } from "../../hooks/useCachedPRData";
 import type { PRCheck, PRCheckDetail, PRStatus } from "../../types/github";
 import { cn } from "../../utils/cn";
@@ -10,6 +10,7 @@ import {
   getCheckDetailVersion,
   getCheckColorClass,
   getCheckLabel,
+  getChecksSummaryLabel,
   isDeploymentCheck,
 } from "./checks-tab-domain";
 
@@ -88,6 +89,21 @@ export function ChecksTab({
   const [detailVersions, setDetailVersions] = useState<DetailVersionState>({});
   const [loadingDetails, setLoadingDetails] = useState<LoadingState>({});
   const [detailErrors, setDetailErrors] = useState<ErrorState>({});
+  const [showCheckDetails, setShowCheckDetails] = useState(prStatus?.checks_status === "failure");
+  const checksAreFailing = prStatus?.checks_status === "failure";
+
+  useEffect(() => {
+    setShowCheckDetails(checksAreFailing);
+  }, [prNumber, checksAreFailing]);
+
+  useEffect(() => {
+    const failedKeys = (checksResult?.checks ?? [])
+      .filter((check) => check.bucket === "fail")
+      .map(getCheckKey);
+    if (failedKeys.length === 0) return;
+
+    setExpandedKeys((current) => new Set([...current, ...failedKeys]));
+  }, [checksResult]);
 
   const { deploymentChecks, regularChecks } = useMemo(() => {
     const allChecks = checksResult?.checks ?? [];
@@ -194,27 +210,37 @@ export function ChecksTab({
       )}
     >
       {prStatus && (
-        <section className={embedded ? "px-5 py-3" : "px-4 py-4"}>
+        <section aria-label="Checks" className={embedded ? "px-5 py-2" : "px-4 py-4"}>
           <div className={cn(embedded ? "" : "rounded-lg border border-border-subtle bg-secondary/20 px-4 py-3")}>
             <div className="min-w-0">
-              <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setShowCheckDetails((show) => !show)}
+                className="-mx-2 flex min-h-12 w-[calc(100%+1rem)] items-center justify-between gap-3 rounded-lg bg-secondary/40 px-2 text-left transition-colors hover:bg-secondary/60 focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2"
+                aria-expanded={showCheckDetails}
+                aria-controls="pr-check-details"
+              >
                 <div className="flex min-w-0 items-center gap-2">
-                <Circle
-                  className={cn(
-                    "h-3 w-3 flex-shrink-0",
-                    getCheckColorClass(overallBucket),
+                  <Circle
+                    className={cn(
+                      "h-3 w-3 flex-shrink-0",
+                      getCheckColorClass(overallBucket),
+                    )}
+                  />
+                  <div className="flex min-w-0 items-baseline gap-2">
+                    <span className="text-[13px] font-semibold text-primary">Checks</span>
+                    <span className="truncate text-xs text-secondary">{overallLabel}</span>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {checksResult && checksResult.summary.total > 0 && (
+                    <span className="font-mono text-[11px] tabular-nums text-tertiary">
+                      {getChecksSummaryLabel(checksResult.summary)}
+                    </span>
                   )}
-                />
-                <div className="text-[13px] font-medium text-primary">
-                  {overallLabel}
+                  <ChevronDown className={cn("size-4 text-tertiary transition-transform motion-reduce:transition-none", showCheckDetails && "rotate-180")} />
                 </div>
-                </div>
-                {checksResult && checksResult.summary.total > 0 && (
-                  <span className="shrink-0 font-mono text-[11px] tabular-nums text-tertiary">
-                    {checksResult.summary.passing}/{checksResult.summary.total} passed
-                  </span>
-                )}
-              </div>
+              </button>
               {!embedded && (
                 <div className="mt-1 truncate text-[12px] text-tertiary">
                   #{prStatus.number} {prStatus.title}
@@ -232,30 +258,32 @@ export function ChecksTab({
         </div>
       )}
 
-      {checksResult && <CheckSection
-        title="Deployments"
-        checks={deploymentChecks}
-        details={details}
-        detailErrors={detailErrors}
-        loadingDetails={loadingDetails}
-        expandedKeys={expandedKeys}
-        onToggle={handleToggleCheck}
-      />}
-      {checksResult && <CheckSection
-        title="Checks"
-        checks={regularChecks}
-        details={details}
-        detailErrors={detailErrors}
-        loadingDetails={loadingDetails}
-        expandedKeys={expandedKeys}
-        onToggle={handleToggleCheck}
-      />}
+      <div id="pr-check-details" hidden={!showCheckDetails}>
+        {checksResult && <CheckSection
+          title="Deployments"
+          checks={deploymentChecks}
+          details={details}
+          detailErrors={detailErrors}
+          loadingDetails={loadingDetails}
+          expandedKeys={expandedKeys}
+          onToggle={handleToggleCheck}
+        />}
+        {checksResult && <CheckSection
+          title="Checks"
+          checks={regularChecks}
+          details={details}
+          detailErrors={detailErrors}
+          loadingDetails={loadingDetails}
+          expandedKeys={expandedKeys}
+          onToggle={handleToggleCheck}
+        />}
 
-      {!isLoading && (!checksResult || checksResult.checks.length === 0) && (
-        <div className="px-5 py-6 text-[13px] text-tertiary">
-          No checks reported by GitHub
-        </div>
-      )}
+        {!isLoading && (!checksResult || checksResult.checks.length === 0) && (
+          <div className="px-5 py-6 text-[13px] text-tertiary">
+            No checks reported by GitHub
+          </div>
+        )}
+      </div>
     </div>
   );
 }

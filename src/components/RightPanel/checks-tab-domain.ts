@@ -1,4 +1,4 @@
-import type { PRCheck } from "../../types/github";
+import type { PRCheck, PRCheckDetail, PRChecksSummary, PRCheckStep } from "../../types/github";
 
 export function formatDuration(
   startedAt: string | null,
@@ -164,4 +164,41 @@ export function getCheckDetailVersion(check: PRCheck): string {
     check.started_at ?? "unknown",
     check.completed_at ?? "unknown",
   ].join(":");
+}
+
+export function isFailedCheckStep(step: PRCheckStep): boolean {
+  const status = step.status.trim().toLowerCase();
+  const conclusion = step.conclusion?.trim().toLowerCase() ?? "";
+
+  return (
+    ["failure", "cancelled", "timed_out", "action_required"].includes(conclusion) ||
+    status === "failure"
+  );
+}
+
+export function getCheckFailureCopyText(
+  check: PRCheck,
+  detail: PRCheckDetail | null,
+): string {
+  const failedSteps = detail?.steps.filter(isFailedCheckStep) ?? [];
+  return [
+    `Failed check: ${check.name}`,
+    check.workflow ? `Workflow: ${check.workflow}` : null,
+    check.description,
+    failedSteps.length > 0
+      ? `Failed steps:\n${failedSteps.map((step) => `- ${step.name}: ${step.conclusion ?? step.status}`).join("\n")}`
+      : null,
+    detail?.failed_log_excerpt ? `Failure output:\n${detail.failed_log_excerpt}` : null,
+    check.url ? `GitHub: ${check.url}` : null,
+  ].filter(Boolean).join("\n\n");
+}
+
+export function getChecksSummaryLabel(summary: PRChecksSummary): string {
+  return [
+    summary.passing > 0 ? `${summary.passing} passed` : null,
+    summary.failing > 0 ? `${summary.failing} failed` : null,
+    summary.pending > 0 ? `${summary.pending} running` : null,
+    summary.skipped > 0 ? `${summary.skipped} skipped` : null,
+    summary.cancelled > 0 ? `${summary.cancelled} cancelled` : null,
+  ].filter(Boolean).join(" · ");
 }

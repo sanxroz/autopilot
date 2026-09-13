@@ -36,3 +36,9 @@ export function groupReviewThreads(comments: readonly PRComment[]): PRReviewThre
     comments: [...thread.comments].sort((a, b) => a.created_at.localeCompare(b.created_at)),
   }));
 }
+
+export function getUnresolvedReviewThreads(
+  threads: readonly PRReviewThread[],
+): PRReviewThread[] {
+  return threads.filter((thread) => !thread.isResolved);
+}
