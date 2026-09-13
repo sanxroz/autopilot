@@ -1,0 +1,25 @@
+src/components/right-panel-toolbar-state.ts
+  s_7bddcbc7c4c358::t_abb3bdd20f08d1 1-6
+tests/right-panel-toolbar.test.ts
+  s_7bddcbc7c4c358::t_3847ecd349553b 1,3-5,9-10
+  s_7bddcbc7c4c358::t_abb3bdd20f08d1 2,6-8
+src/components/RightPanelToolbar.tsx
+  s_7bddcbc7c4c358::t_ab718ab6397136 310-318,334
+  s_7bddcbc7c4c358::t_abb3bdd20f08d1 21,309
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "86f385882962e4ffb2ac2ead5621d2676b99b3d1",
+  "prompts": {},
+  "sessions": {
+    "s_7bddcbc7c4c358": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09bca-ae4c-7ef1-b33f-bc108d3d622e",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
