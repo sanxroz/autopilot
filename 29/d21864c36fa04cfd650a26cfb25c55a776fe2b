@@ -1,0 +1,40 @@
+tools/oxlint/anti-slop/rules/require-safety-comment-for-type-assertion.ts
+  s_1267306111717d::t_615d8f4008245b 1-131
+bun.lock
+  ai_agent 49,57,192-231,830
+tools/oxlint/anti-slop/README.md
+  s_1267306111717d::t_d99b4cd9b076f5 1-8
+tools/oxlint/anti-slop/rules/no-chained-type-assertions.ts
+  s_1267306111717d::t_c49adef7769b99 1-77
+tools/oxlint/anti-slop/index.ts
+  s_1267306111717d::t_d99b4cd9b076f5 1-16
+tools/oxlint/anti-slop/LICENSE
+  s_1267306111717d::t_e4b89db7957d73 1-21
+tools/oxlint/anti-slop/rules/no-reduce-accumulator-copy.ts
+  s_1267306111717d::t_fc0e865f7807c9 1-109
+tools/oxlint/anti-slop/rules/no-widen-then-assert.ts
+  s_1267306111717d::t_ad4168e9eaf695 1-366
+tools/oxlint/anti-slop/shared/array-method.ts
+  s_1267306111717d::t_cb9e2eb2075e74 1-94
+package.json
+  s_1267306111717d::t_d99b4cd9b076f5 9
+  s_1267306111717d::t_16d1a505b4eb10 57,65
+oxlint.config.ts
+  s_1267306111717d::t_d99b4cd9b076f5 1-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "29d21864c36fa04cfd650a26cfb25c55a776fe2b",
+  "prompts": {},
+  "sessions": {
+    "s_1267306111717d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09b8b-2b1c-7dc0-b44f-2bf30c1963a6",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
