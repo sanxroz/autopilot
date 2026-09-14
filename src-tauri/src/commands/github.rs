@@ -730,6 +730,15 @@ fn resolve_candidate_for_worktree(
         }
     }
 
+    let mut open_candidates = candidates
+        .iter()
+        .filter(|candidate| candidate.status.state == "open");
+    let first_open = open_candidates.next();
+
+    if first_open.is_some() && open_candidates.next().is_none() {
+        return first_open.map(|candidate| candidate.status.clone());
+    }
+
     if let Some(known_pr_number) = worktree.known_pr_number {
         if let Some(candidate) = candidates
             .iter()
@@ -739,16 +748,7 @@ fn resolve_candidate_for_worktree(
         }
     }
 
-    let mut open_candidates = candidates
-        .iter()
-        .filter(|candidate| candidate.status.state == "open");
-    let first_open = open_candidates.next()?;
-
-    if open_candidates.next().is_some() {
-        return None;
-    }
-
-    Some(first_open.status.clone())
+    None
 }
 
 fn selected_pr_numbers(
@@ -757,11 +757,12 @@ fn selected_pr_numbers(
 ) -> Vec<u64> {
     let mut numbers = worktrees
         .iter()
-        .filter_map(|worktree| {
-            branch_candidates
+        .flat_map(|worktree| {
+            let resolved = branch_candidates
                 .get(&worktree.branch)
                 .and_then(|candidates| resolve_candidate_for_worktree(worktree, candidates))
-                .map(|status| status.number)
+                .map(|status| status.number);
+            [worktree.known_pr_number, resolved].into_iter().flatten()
         })
         .collect::<Vec<_>>();
     numbers.sort_unstable();
@@ -953,6 +954,25 @@ fn fetch_prs_graphql(
     let pr_numbers = selected_pr_numbers(worktrees, &branch_candidates);
     let details = fetch_pr_details(gh_path, repo_path, owner, name, &pr_numbers)?;
 
+    for worktree in worktrees {
+        let Some(detail) = worktree
+            .known_pr_number
+            .and_then(|number| details.get(&number))
+            .filter(|detail| detail.status.head_branch == worktree.branch)
+        else {
+            continue;
+        };
+        let candidates = branch_candidates
+            .entry(worktree.branch.clone())
+            .or_default();
+        if !candidates
+            .iter()
+            .any(|candidate| candidate.status.number == detail.status.number)
+        {
+            candidates.push(detail.clone());
+        }
+    }
+
     for candidates in branch_candidates.values_mut() {
         for candidate in candidates {
             if let Some(detail) = details.get(&candidate.status.number) {
@@ -1043,6 +1063,52 @@ fn fetch_prs_rest_fallback(
                     "Failed to execute gh pr list for branch {} in {}: {}",
                     branch, repo_path, error
                 );
+            }
+        }
+    }
+
+    for worktree in worktrees {
+        let Some(number) = worktree.known_pr_number else {
+            continue;
+        };
+        let candidates = branch_candidates
+            .entry(worktree.branch.clone())
+            .or_default();
+        if candidates
+            .iter()
+            .any(|candidate| candidate.status.number == number)
+        {
+            continue;
+        }
+
+        let output = Command::new(gh_path)
+            .args([
+                "pr",
+                "view",
+                &number.to_string(),
+                "--json",
+                &format!("{},commits", PR_JSON_FIELDS),
+            ])
+            .current_dir(repo_path)
+            .output();
+
+        match output {
+            Ok(out) if out.status.success() => {
+                let parsed = String::from_utf8(out.stdout)
+                    .ok()
+                    .and_then(|stdout| serde_json::from_str::<GhPRResponse>(&stdout).ok());
+                if let Some(pr) = parsed.filter(|pr| pr.head_ref_name == worktree.branch) {
+                    let head_oid = pr.commits.last().map(|commit| commit.oid.clone());
+                    candidates.push(PRStatusCandidate {
+                        status: map_gh_pr_to_status(pr, repo_owner.as_deref()),
+                        head_oid,
+                    });
+                } else {
+                    failed_branches.insert(worktree.branch.clone());
+                }
+            }
+            _ => {
+                failed_branches.insert(worktree.branch.clone());
             }
         }
     }
@@ -2944,5 +3010,52 @@ mod tests {
 
         assert_eq!(resolved.number, 42);
         assert!(resolved.merged);
+    }
+
+    #[test]
+    fn resolve_candidate_for_worktree_prefers_new_open_pr_over_known_merged_pr() {
+        let worktree = WorktreePRLookup {
+            worktree_path: "/tmp/worktree".to_string(),
+            branch: "feature".to_string(),
+            head_oid: None,
+            known_pr_number: Some(41),
+        };
+        let candidates = vec![
+            PRStatusCandidate {
+                status: pr_status(41, "merged"),
+                head_oid: Some("old".to_string()),
+            },
+            PRStatusCandidate {
+                status: pr_status(42, "open"),
+                head_oid: Some("new".to_string()),
+            },
+        ];
+
+        let resolved = resolve_candidate_for_worktree(&worktree, &candidates)
+            .expect("expected unique open PR");
+
+        assert_eq!(resolved.number, 42);
+    }
+
+    #[test]
+    fn selected_pr_numbers_include_known_pr_outside_branch_candidates() {
+        let worktree = WorktreePRLookup {
+            worktree_path: "/tmp/worktree".to_string(),
+            branch: "feature".to_string(),
+            head_oid: None,
+            known_pr_number: Some(21),
+        };
+        let candidates = (1..=20)
+            .map(|number| PRStatusCandidate {
+                status: pr_status(number, if number == 20 { "open" } else { "merged" }),
+                head_oid: None,
+            })
+            .collect();
+        let branch_candidates = HashMap::from([("feature".to_string(), candidates)]);
+
+        assert_eq!(
+            selected_pr_numbers(&[worktree], &branch_candidates),
+            vec![20, 21]
+        );
     }
 }
