@@ -6,6 +6,8 @@
   "packageManager": "bun@1.3.5",
   "scripts": {
     "dev": "vite",
+    "lint": "oxlint src tests scripts",
+    "test:anti-slop": "node --test tools/oxlint/anti-slop/rules.test.ts",
     "build": "tsc && vite build",
     "build:production": "bunx tauri build",
     "preview": "vite preview",
@@ -54,6 +56,7 @@
     "zustand": "^5.0.9"
   },
   "devDependencies": {
+    "@oxlint/plugins": "1.78.0",
     "@tailwindcss/postcss": "^4.1.18",
     "@tauri-apps/cli": "^2",
     "@types/react": "^19.1.8",
@@ -61,6 +64,7 @@
     "@vitejs/plugin-react": "^4.6.0",
     "autoprefixer": "^10.4.23",
     "happy-dom": "^20.14.3",
+    "oxlint": "1.78.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.19",
     "typescript": "~5.8.3",
