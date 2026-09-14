@@ -11,6 +11,7 @@ export async function refreshPRStatuses(repoPath?: string): Promise<void> {
     repositories,
     githubSettings,
     collapsedRepos,
+    prStatusByWorktreePath,
     setPRStatusBatch,
   } = useAppStore.getState();
 
@@ -29,6 +30,7 @@ export async function refreshPRStatuses(repoPath?: string): Promise<void> {
             worktree_path: worktree.path,
             branch: worktree.branch,
             head_oid: worktree.head_oid ?? null,
+            known_pr_number: prStatusByWorktreePath[worktree.path]?.number ?? null,
           }]
         : []
     ),

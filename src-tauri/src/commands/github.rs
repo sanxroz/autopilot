@@ -359,6 +359,8 @@ pub struct WorktreePRLookup {
     pub worktree_path: String,
     pub branch: String,
     pub head_oid: Option<String>,
+    #[serde(default)]
+    pub known_pr_number: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -723,6 +725,15 @@ fn resolve_candidate_for_worktree(
         if let Some(candidate) = candidates
             .iter()
             .find(|candidate| candidate.head_oid.as_deref() == Some(head_oid))
+        {
+            return Some(candidate.status.clone());
+        }
+    }
+
+    if let Some(known_pr_number) = worktree.known_pr_number {
+        if let Some(candidate) = candidates
+            .iter()
+            .find(|candidate| candidate.status.number == known_pr_number)
         {
             return Some(candidate.status.clone());
         }
@@ -2821,6 +2832,7 @@ mod tests {
             worktree_path: "/tmp/worktree".to_string(),
             branch: "feature".to_string(),
             head_oid: Some("wanted".to_string()),
+            known_pr_number: None,
         };
         let candidates = vec![
             PRStatusCandidate {
@@ -2845,6 +2857,7 @@ mod tests {
             worktree_path: "/tmp/worktree".to_string(),
             branch: "feature".to_string(),
             head_oid: Some("stale-local-head".to_string()),
+            known_pr_number: None,
         };
         let candidates = vec![
             PRStatusCandidate {
@@ -2870,6 +2883,7 @@ mod tests {
             worktree_path: "/tmp/worktree".to_string(),
             branch: "feature".to_string(),
             head_oid: Some("stale-local-head".to_string()),
+            known_pr_number: None,
         };
         let candidates = vec![
             PRStatusCandidate {
@@ -2891,6 +2905,7 @@ mod tests {
             worktree_path: "/tmp/worktree".to_string(),
             branch: "feature".to_string(),
             head_oid: None,
+            known_pr_number: None,
         };
         let candidates = vec![
             PRStatusCandidate {
@@ -2907,5 +2922,27 @@ mod tests {
             .expect("expected open PR fallback");
 
         assert_eq!(resolved.number, 42);
+    }
+
+    #[test]
+    fn resolve_candidate_for_worktree_keeps_known_pr_after_merge() {
+        let worktree = WorktreePRLookup {
+            worktree_path: "/tmp/worktree".to_string(),
+            branch: "feature".to_string(),
+            head_oid: None,
+            known_pr_number: Some(42),
+        };
+        let mut merged = pr_status(42, "merged");
+        merged.merged = true;
+        let candidates = vec![PRStatusCandidate {
+            status: merged,
+            head_oid: Some("remote-head".to_string()),
+        }];
+
+        let resolved = resolve_candidate_for_worktree(&worktree, &candidates)
+            .expect("expected known merged PR fallback");
+
+        assert_eq!(resolved.number, 42);
+        assert!(resolved.merged);
     }
 }
