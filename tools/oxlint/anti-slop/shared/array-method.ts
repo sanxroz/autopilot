@@ -66,6 +66,13 @@ export function isKnownArrayExpression(
   if (node.type === "ArrayExpression") return true;
   if (node.type === "CallExpression") {
     const method = arrayMethodTarget(node.callee);
+    if (method?.name === "from") {
+      const owner = unwrapArrayExpression(method.object);
+      if (owner.type === "Identifier" && owner.name === "Array") {
+        const variable = resolveArrayBinding(sourceCode, owner);
+        if (variable === null || variable.defs.length === 0) return true;
+      }
+    }
     return (
       method !== null &&
       ["map", "filter", "flatMap", "slice", "concat", "toSorted", "toReversed", "toSpliced"].includes(method.name) &&

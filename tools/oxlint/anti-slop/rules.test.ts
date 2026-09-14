@@ -20,6 +20,7 @@ tester.run("no-chained-type-assertions", noChainedTypeAssertionsRule, {
 tester.run("no-reduce-accumulator-copy", noReduceAccumulatorCopyRule, {
   valid: [
     "declare const values: Iterable<number>; values.reduce((acc: number[], value) => acc.concat(value));",
+    "declare const rows: number[][]; function copy(Array: { from(value: number[][]): number[][] }) { return Array.from(rows).reduce((acc, row) => acc.concat(row)); }",
     "[1, 2].reduce((sum, value) => sum + value, 0);",
   ],
   invalid: [
@@ -29,6 +30,14 @@ tester.run("no-reduce-accumulator-copy", noReduceAccumulatorCopyRule, {
     },
     {
       code: "[1, 2].reduce((acc, value) => acc.concat(value), [] as number[]);",
+      errors: [{ messageId: "accumulatorCopy" }],
+    },
+    {
+      code: "declare const rows: number[][]; Array.from(rows).reduce((acc, row) => acc.concat(row));",
+      errors: [{ messageId: "accumulatorCopy" }],
+    },
+    {
+      code: "declare const rows: number[][]; [1].reduce((acc, row) => acc.concat(row), Array.from(rows));",
       errors: [{ messageId: "accumulatorCopy" }],
     },
   ],
