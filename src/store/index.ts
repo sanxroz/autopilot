@@ -1504,14 +1504,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
         for (const worktreeStatus of result.worktree_statuses) {
           if (
-            currentBranchesByWorktreePath.get(worktreeStatus.worktree_path) !==
-            worktreeStatus.branch
+            currentBranchesByWorktreePath.get(worktreeStatus.worktree_path) ===
+              worktreeStatus.branch &&
+            worktreeStatus.status
           ) {
-            delete nextByWorktreePath[worktreeStatus.worktree_path];
-            continue;
-          }
-
-          if (worktreeStatus.status) {
             nextByWorktreePath[worktreeStatus.worktree_path] = worktreeStatus.status;
             continue;
           }

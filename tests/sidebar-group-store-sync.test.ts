@@ -119,6 +119,20 @@ describe("sidebar group store synchronization", () => {
       }]);
 
       expect(useAppStore.getState().prStatusByWorktreePath[alpha.path]).toBeUndefined();
+
+      useAppStore.getState().setPRStatusBatch([{
+        repo_path: repository.info.path,
+        statuses: [],
+        worktree_statuses: [{
+          worktree_path: alpha.path,
+          branch: "alpha",
+          status: null,
+        }],
+        checked_worktrees: [alpha.path],
+        failed_worktrees: [],
+      }]);
+
+      expect(useAppStore.getState().prStatusByBranch[repository.info.path]?.alpha).toBeUndefined();
     } finally {
       invokeHandler = async () => undefined;
     }
