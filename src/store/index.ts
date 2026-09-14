@@ -930,17 +930,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   updateWorktreeBranch: async (worktreePath: string) => {
     const branch = await invoke<string | null>('get_worktree_branch_name', { worktreePath });
-    set((state) => ({
-      repositories: state.repositories.map((repo) => ({
-        ...repo,
-        worktrees: repo.worktrees.map((wt) =>
-          wt.path === worktreePath ? { ...wt, branch } : wt
-        ),
-      })),
-      selectedWorktree: state.selectedWorktree?.path === worktreePath
-        ? { ...state.selectedWorktree, branch }
-        : state.selectedWorktree,
-    }));
+    set((state) => {
+      const prStatusByWorktreePath = { ...state.prStatusByWorktreePath };
+      if (prStatusByWorktreePath[worktreePath]?.head_branch !== branch) {
+        delete prStatusByWorktreePath[worktreePath];
+      }
+
+      return {
+        repositories: state.repositories.map((repo) => ({
+          ...repo,
+          worktrees: repo.worktrees.map((wt) =>
+            wt.path === worktreePath ? { ...wt, branch } : wt
+          ),
+        })),
+        selectedWorktree: state.selectedWorktree?.path === worktreePath
+          ? { ...state.selectedWorktree, branch }
+          : state.selectedWorktree,
+        prStatusByWorktreePath,
+      };
+    });
   },
 
   selectWorktree: async (worktree: WorktreeInfo) => {
@@ -1477,10 +1485,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => {
       const nextByRepo = { ...state.prStatusByBranch };
       const nextByWorktreePath = { ...state.prStatusByWorktreePath };
+      const currentBranchesByWorktreePath = new Map(
+        state.repositories.flatMap((repo) =>
+          repo.worktrees.map((worktree) => [worktree.path, worktree.branch] as const)
+        )
+      );
 
       for (const result of results) {
         const existingRepoStatuses = nextByRepo[result.repo_path] ?? {};
         const nextRepoStatuses = { ...existingRepoStatuses };
+        const currentRepoBranches = new Set(
+          state.repositories
+            .find((repo) => repo.info.path === result.repo_path)
+            ?.worktrees.map((worktree) => worktree.branch) ?? []
+        );
         const refreshedStatuses = new Map(
           result.statuses.map((pr) => [pr.head_branch, pr])
         );
@@ -1490,13 +1508,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
         }
 
         for (const worktreeStatus of result.worktree_statuses) {
-          if (worktreeStatus.status) {
+          if (
+            currentBranchesByWorktreePath.get(worktreeStatus.worktree_path) ===
+              worktreeStatus.branch &&
+            worktreeStatus.status
+          ) {
             nextByWorktreePath[worktreeStatus.worktree_path] = worktreeStatus.status;
             continue;
           }
 
           delete nextByWorktreePath[worktreeStatus.worktree_path];
-          if (!refreshedStatuses.has(worktreeStatus.branch)) {
+          if (
+            !refreshedStatuses.has(worktreeStatus.branch) &&
+            !currentRepoBranches.has(worktreeStatus.branch)
+          ) {
             delete nextRepoStatuses[worktreeStatus.branch];
           }
         }

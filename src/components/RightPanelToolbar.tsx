@@ -312,7 +312,15 @@ export function RightPanelToolbar({
         </div>
       )}
 
-      {canMergePR && !hasMerged && (
+      {prStatus?.merged || hasMerged ? (
+        <span
+          role="status"
+          className="flex h-6 items-center gap-1 rounded-md bg-semantic-merged-muted px-2.5 text-[11px] font-medium text-semantic-merged"
+        >
+          <GitMerge className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+          Merged
+        </span>
+      ) : canMergePR ? (
         <Tooltip content={isMerging ? "Finishing merge on GitHub…" : "Merge via GitHub"}>
           <button
             type="button"
@@ -329,7 +337,7 @@ export function RightPanelToolbar({
             {isMerging ? "Merging…" : "Merge"}
           </button>
         </Tooltip>
-      )}
+      ) : null}
     </div>
   );
 }
