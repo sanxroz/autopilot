@@ -1,0 +1,36 @@
+src/components/PRDetailView.tsx
+  s_fe5862de470c63::t_851ff01e206219 374,404
+src/components/RightPanel/NotesTab.tsx
+  s_fe5862de470c63::t_851ff01e206219 292
+src/components/RightPanel/CommentsTab.tsx
+  s_fe5862de470c63::t_851ff01e206219 115
+src/components/RightPanelToolbar.tsx
+  s_fe5862de470c63::t_851ff01e206219 209,264,316
+src/components/PRDetailView/PRDiffPanel.tsx
+  s_fe5862de470c63::t_851ff01e206219 473,483
+src/components/Sidebar.tsx
+  s_fe5862de470c63::t_851ff01e206219 1001,1045
+src/components/SettingsPanel.tsx
+  s_fe5862de470c63::t_851ff01e206219 242
+src/components/WorkspaceHeader.tsx
+  s_fe5862de470c63::t_851ff01e206219 62,146,172
+tests/tooltip.test.ts
+  s_fe5862de470c63::t_851ff01e206219 4-7,9,12-13,32,36,62
+  s_fe5862de470c63::t_5938778f0857a5 15-16,64-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "398f89707f0b819843af136aa7b15d455cd87c81",
+  "prompts": {},
+  "sessions": {
+    "s_fe5862de470c63": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09d38-19b4-7eb1-89d8-d23e80a09a07",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
