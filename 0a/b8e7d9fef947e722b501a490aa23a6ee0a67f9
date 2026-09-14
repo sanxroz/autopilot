@@ -1,0 +1,21 @@
+tools/oxlint/anti-slop/shared/array-method.ts
+  s_9a90a1738f9d40::t_e69acf88ebd9c5 69-75
+tools/oxlint/anti-slop/rules.test.ts
+  s_9a90a1738f9d40::t_e69acf88ebd9c5 23,35-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "0ab8e7d9fef947e722b501a490aa23a6ee0a67f9",
+  "prompts": {},
+  "sessions": {
+    "s_9a90a1738f9d40": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09d74-6e61-7870-9e04-7be4411cd6b0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
