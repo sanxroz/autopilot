@@ -67,6 +67,18 @@ describe("designed tooltips", () => {
         new RegExp(`<Tooltip[^>]*content=\\{[^>]*${label}`),
       );
     }
+
+    const sidebarSource =
+      sources[targetFiles.indexOf("src/components/Sidebar.tsx")];
+    expect(sidebarSource).toMatch(
+      /<Tooltip\s+content=\{[^}]+\}\s+side="right">\s*<button[^>]*data-space-path=/,
+    );
+
+    const toolbarSource =
+      sources[targetFiles.indexOf("src/components/RightPanelToolbar.tsx")];
+    expect(toolbarSource).toMatch(
+      /<Tooltip\s+key=\{[^}]+\}\s+content=\{[^}]+\}>\s*<button[^>]*role="tab"/,
+    );
   });
 
   test("uses app theme tokens and reduced-motion-safe styling", async () => {
