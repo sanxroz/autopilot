@@ -146,9 +146,11 @@ export function WorkspaceHeader({
       <Tooltip content={canCreateTab ? "New terminal layout" : "Select a session to create a terminal layout"}>
         <button
           type="button"
-          onClick={() => void createTerminalTab()}
-          disabled={!canCreateTab}
-          className="flex h-6 w-8 shrink-0 items-center justify-center rounded-md text-sm text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 disabled:cursor-default disabled:text-muted disabled:hover:bg-transparent"
+          onClick={() => {
+            if (canCreateTab) void createTerminalTab();
+          }}
+          aria-disabled={!canCreateTab}
+          className="flex h-6 w-8 shrink-0 items-center justify-center rounded-md text-sm text-tertiary transition-colors hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 aria-disabled:cursor-default aria-disabled:text-muted aria-disabled:hover:bg-transparent"
           aria-label="New terminal layout"
         >
           +

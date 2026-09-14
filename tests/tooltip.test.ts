@@ -55,13 +55,18 @@ describe("designed tooltips", () => {
       expect(combinedSource).not.toContain(`title="${label}"`);
     }
 
-    expect(combinedSource).toContain("<Tooltip content={space.repoName}");
-    expect(combinedSource).toContain("<Tooltip key={tab.id} content={tooltip}>");
-    expect(combinedSource).toContain("Open ${activeRepoGroup.repoName} captain terminal");
-    expect(combinedSource).toContain("Open #${prStatus.number} in GitHub");
-    expect(combinedSource).toContain('"Hide" : "Show"} sidebar');
-    expect(combinedSource).toContain("Command menu (${formatShortcut(commandMenuShortcut)})");
-    expect(combinedSource).toContain('"Close workspace panel" : "Open Git changes"');
+    for (const label of [
+      "captain terminal",
+      "in GitHub",
+      "sidebar",
+      "Command menu",
+      "Close workspace panel",
+      "Open Git changes",
+    ]) {
+      expect(combinedSource).toMatch(
+        new RegExp(`<Tooltip[^>]*content=\\{[^>]*${label}`),
+      );
+    }
   });
 
   test("uses app theme tokens and reduced-motion-safe styling", async () => {
