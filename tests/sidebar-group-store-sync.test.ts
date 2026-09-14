@@ -105,6 +105,20 @@ describe("sidebar group store synchronization", () => {
       expect(useAppStore.getState().repositories[0]?.worktrees[0]?.branch).toBe("main");
       expect(useAppStore.getState().selectedWorktree?.branch).toBe("main");
       expect(useAppStore.getState().prStatusByWorktreePath[alpha.path]).toBeUndefined();
+
+      useAppStore.getState().setPRStatusBatch([{
+        repo_path: repository.info.path,
+        statuses: [mergedPRStatus],
+        worktree_statuses: [{
+          worktree_path: alpha.path,
+          branch: "alpha",
+          status: mergedPRStatus,
+        }],
+        checked_worktrees: [alpha.path],
+        failed_worktrees: [],
+      }]);
+
+      expect(useAppStore.getState().prStatusByWorktreePath[alpha.path]).toBeUndefined();
     } finally {
       invokeHandler = async () => undefined;
     }
@@ -123,6 +137,21 @@ describe("sidebar group store synchronization", () => {
       await useAppStore.getState().updateWorktreeBranch(alpha.path);
 
       expect(useAppStore.getState().prStatusByWorktreePath[alpha.path]).toBe(mergedPRStatus);
+
+      const updatedStatus = { ...mergedPRStatus, title: "Updated merged PR" };
+      useAppStore.getState().setPRStatusBatch([{
+        repo_path: repository.info.path,
+        statuses: [updatedStatus],
+        worktree_statuses: [{
+          worktree_path: alpha.path,
+          branch: "alpha",
+          status: updatedStatus,
+        }],
+        checked_worktrees: [alpha.path],
+        failed_worktrees: [],
+      }]);
+
+      expect(useAppStore.getState().prStatusByWorktreePath[alpha.path]).toBe(updatedStatus);
     } finally {
       invokeHandler = async () => undefined;
     }

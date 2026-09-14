@@ -1485,6 +1485,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => {
       const nextByRepo = { ...state.prStatusByBranch };
       const nextByWorktreePath = { ...state.prStatusByWorktreePath };
+      const currentBranchesByWorktreePath = new Map(
+        state.repositories.flatMap((repo) =>
+          repo.worktrees.map((worktree) => [worktree.path, worktree.branch] as const)
+        )
+      );
 
       for (const result of results) {
         const existingRepoStatuses = nextByRepo[result.repo_path] ?? {};
@@ -1498,6 +1503,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
         }
 
         for (const worktreeStatus of result.worktree_statuses) {
+          if (
+            currentBranchesByWorktreePath.get(worktreeStatus.worktree_path) !==
+            worktreeStatus.branch
+          ) {
+            delete nextByWorktreePath[worktreeStatus.worktree_path];
+            continue;
+          }
+
           if (worktreeStatus.status) {
             nextByWorktreePath[worktreeStatus.worktree_path] = worktreeStatus.status;
             continue;
