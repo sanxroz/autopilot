@@ -27,7 +27,7 @@ function enclosingReducer(node: ESTree.Node) {
       const firstParameter = callback.params[0];
       const accumulator = firstParameter?.type === "AssignmentPattern" ? firstParameter.left : firstParameter;
       if (accumulator?.type !== "Identifier") return null;
-      return { callback, accumulator, initialValue: owner.arguments[1] };
+      return { callback, accumulator, receiver: method.object, initialValue: owner.arguments[1] };
     }
     parent = parent.parent;
   }
@@ -98,8 +98,10 @@ export const noReduceAccumulatorCopyRule = defineRule({
           copiesAccumulator = source !== undefined && isAccumulator(source);
         } else if (["concat", "slice", "toSpliced", "toSorted", "toReversed", "with"].includes(method.name)) {
           const initialValue = reducer.initialValue;
-          const arrayAccumulator = initialValue !== undefined &&
-            isKnownArrayExpression(context.sourceCode, initialValue);
+          const arrayAccumulator = isKnownArrayExpression(
+            context.sourceCode,
+            initialValue ?? reducer.receiver,
+          );
           copiesAccumulator = arrayAccumulator && isAccumulator(method.object);
         }
         if (copiesAccumulator) context.report({ node, messageId: "accumulatorCopy" });
