@@ -1,0 +1,20 @@
+src-tauri/src/commands/github.rs
+  s_66e1d52634f07b::t_9e322663fc53f6 733-741,751,760-761,764-765,957-964,968-975,1070-1073,1077-1115,3014-3059
+  s_66e1d52634f07b::t_ff0fcdb8e5a2a0 965-967,1074-1076
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "7a9b36e22ed505504345dea50e2aafcdfa4c2615",
+  "prompts": {},
+  "sessions": {
+    "s_66e1d52634f07b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0a0af-6a37-7e71-b1cc-0f960aa4f164",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
