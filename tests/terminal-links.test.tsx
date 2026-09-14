@@ -56,12 +56,20 @@ mock.module("@xterm/addon-fit", () => ({
   },
 }));
 mock.module("@xterm/addon-search", () => ({ SearchAddon: class {} }));
+mock.module("@xterm/addon-serialize", () => ({
+  SerializeAddon: class {
+    serialize() { return ""; }
+  },
+}));
 mock.module("@xterm/addon-web-links", () => ({ WebLinksAddon: class {} }));
 mock.module("@xterm/xterm", () => ({
   Terminal: class {
     rows = 24;
     options: Record<string, unknown>;
-    parser = { registerOscHandler: () => ({ dispose() {} }) };
+    parser = {
+      registerOscHandler: () => ({ dispose() {} }),
+      registerCsiHandler: () => ({ dispose() {} }),
+    };
     constructor(options: { linkHandler: { activate: LinkHandler } }) {
       this.options = options;
       activateLink = options.linkHandler.activate;
