@@ -36,6 +36,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
+import { Tooltip } from "./ui/tooltip";
 import {
   canStartSpaceDrag,
   findSpaceForWorktree,
@@ -933,28 +934,28 @@ export function Sidebar({
                   spaceDropTarget.position === "before" && (
                     <div className="absolute inset-x-1 top-[-3px] h-0.5 rounded-full bg-border-strong" />
                   )}
-                <button
-                  type="button"
-                  data-space-path={space.repoPath}
-                  onPointerDown={(event) =>
-                    handleSpacePointerDown(event, space.repoPath)
-                  }
-                  onClick={() => handleSpaceSelect(space.repoPath)}
-                  onFocus={(event) =>
-                    event.currentTarget.scrollIntoView({ block: "nearest" })
-                  }
-                  className={cn(
-                    "relative flex h-11 w-11 items-center justify-center rounded-xl text-tertiary transition-[background-color,color,opacity] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 motion-reduce:transition-none",
-                    draggedSpacePath && "cursor-grabbing",
-                    isDragSource && "opacity-70",
-                    isActive
-                      ? "bg-hover text-primary"
-                      : "hover:bg-hover hover:text-primary",
-                  )}
-                  aria-pressed={isActive}
-                  aria-label={`Show ${space.repoName} sessions${activity === "attention" ? ", needs attention" : activity === "running" ? ", activity running" : ""}`}
-                  title={space.repoName}
-                >
+                <Tooltip content={space.repoName} side="right">
+                  <button
+                    type="button"
+                    data-space-path={space.repoPath}
+                    onPointerDown={(event) =>
+                      handleSpacePointerDown(event, space.repoPath)
+                    }
+                    onClick={() => handleSpaceSelect(space.repoPath)}
+                    onFocus={(event) =>
+                      event.currentTarget.scrollIntoView({ block: "nearest" })
+                    }
+                    className={cn(
+                      "relative flex h-11 w-11 items-center justify-center rounded-xl text-tertiary transition-[background-color,color,opacity] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 motion-reduce:transition-none",
+                      draggedSpacePath && "cursor-grabbing",
+                      isDragSource && "opacity-70",
+                      isActive
+                        ? "bg-hover text-primary"
+                        : "hover:bg-hover hover:text-primary",
+                    )}
+                    aria-pressed={isActive}
+                    aria-label={`Show ${space.repoName} sessions${activity === "attention" ? ", needs attention" : activity === "running" ? ", activity running" : ""}`}
+                  >
                   {showAvatar ? (
                     <img
                       src={avatarUrl}
@@ -986,7 +987,8 @@ export function Sidebar({
                       aria-hidden="true"
                     />
                   )}
-                </button>
+                  </button>
+                </Tooltip>
                 {spaceDropTarget?.path === space.repoPath &&
                   spaceDropTarget.position === "after" && (
                     <div className="absolute inset-x-1 bottom-[-3px] h-0.5 rounded-full bg-border-strong" />
@@ -996,17 +998,18 @@ export function Sidebar({
           })}
         </div>
         <div className="flex shrink-0 justify-center pt-1.5">
-          <button
-            type="button"
-            onClick={handleAddRepository}
-            className="group flex h-11 w-9 items-center justify-center text-tertiary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
-            title="Add Space"
-            aria-label="Add Space"
-          >
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg transition-[background-color,color] group-hover:bg-hover group-hover:text-primary group-active:scale-[0.97] motion-reduce:transition-none">
-              <Plus className="h-3.5 w-3.5" />
-            </span>
-          </button>
+          <Tooltip content="Add a repository to Spaces" side="right">
+            <button
+              type="button"
+              onClick={handleAddRepository}
+              className="group flex h-11 w-9 items-center justify-center text-tertiary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
+              aria-label="Add Space"
+            >
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg transition-[background-color,color] group-hover:bg-hover group-hover:text-primary group-active:scale-[0.97] motion-reduce:transition-none">
+                <Plus className="h-3.5 w-3.5" />
+              </span>
+            </button>
+          </Tooltip>
         </div>
       </nav>
 
@@ -1029,16 +1032,18 @@ export function Sidebar({
 
           {activeRepoGroup && (
             <div className="flex shrink-0 items-center">
-              <button
+              <Tooltip content="New session">
+                <button
                 type="button"
                 onClick={() => handleCreateWorktree(activeRepoGroup.repoPath)}
                 className="flex h-8 w-8 items-center justify-center rounded-md text-tertiary hover:bg-hover hover:text-primary active:scale-[0.97] focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
-                title="New session"
                 aria-label={`Create a new ${activeRepoGroup.repoName} session`}
               >
                 <Plus className="h-3.5 w-3.5" />
-              </button>
-              <button
+                </button>
+              </Tooltip>
+              <Tooltip content="Toggle captain terminal">
+                <button
                 type="button"
                 onClick={() =>
                   onToggleCaptainTerminal(activeRepoGroup.repoPath)
@@ -1049,24 +1054,25 @@ export function Sidebar({
                     ? "text-accent-primary"
                     : "text-tertiary hover:text-primary",
                 )}
-                title={`Open ${activeRepoGroup.repoName} captain terminal`}
                 aria-label={`Open ${activeRepoGroup.repoName} captain terminal`}
                 aria-pressed={
                   captainTerminalRepoPath === activeRepoGroup.repoPath
                 }
               >
                 <SquareTerminal className="h-3.5 w-3.5" />
-              </button>
+                </button>
+              </Tooltip>
               <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button
-                    className="flex h-8 w-8 items-center justify-center rounded-md text-tertiary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
-                    title="Space actions"
-                    aria-label={`${activeRepoGroup.repoName} space actions`}
-                  >
-                    <Ellipsis className="h-3.5 w-3.5" />
-                  </button>
-                </DropdownMenuTrigger>
+                <Tooltip content="Space actions">
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="flex h-8 w-8 items-center justify-center rounded-md text-tertiary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
+                      aria-label={`${activeRepoGroup.repoName} space actions`}
+                    >
+                      <Ellipsis className="h-3.5 w-3.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                </Tooltip>
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem
                     disabled={repositories[0]?.info.path === activeRepoGroup.repoPath}
@@ -1458,41 +1464,43 @@ export function Sidebar({
 
       <div className="pb-1.5">
         <div className="flex h-11 shrink-0 items-center justify-between">
-          <button
-            type="button"
-            onClick={() => setShortcutsHelpOpen(true)}
-            className="group -ml-2 flex h-11 w-9 items-center justify-center text-tertiary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
-            title="Keyboard shortcuts"
-            aria-label="Show keyboard shortcuts"
-          >
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg transition-[background-color,color] group-hover:bg-hover group-hover:text-primary motion-reduce:transition-none">
-              <CircleHelp className="h-3.5 w-3.5" />
-            </span>
-          </button>
-
-          <div className="flex items-center pr-1">
+          <Tooltip content="Keyboard shortcuts" side="right">
             <button
               type="button"
-              onClick={handleToggleTheme}
-              className="group flex h-11 w-9 items-center justify-center text-tertiary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
-              title={themeMode === "dark" ? "Light theme" : "Dark theme"}
-              aria-label={themeMode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              onClick={() => setShortcutsHelpOpen(true)}
+              className="group -ml-2 flex h-11 w-9 items-center justify-center text-tertiary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
+              aria-label="Show keyboard shortcuts"
             >
               <span className="flex h-7 w-7 items-center justify-center rounded-lg transition-[background-color,color] group-hover:bg-hover group-hover:text-primary motion-reduce:transition-none">
-                {themeMode === "dark" ? (
-                  <Sun className="h-3.5 w-3.5" />
-                ) : (
-                  <Moon className="h-3.5 w-3.5" />
-                )}
+                <CircleHelp className="h-3.5 w-3.5" />
               </span>
             </button>
-            <button
-              type="button"
-              onClick={toggleSettings}
-              className="group flex h-11 w-9 items-center justify-center focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
-              title={githubSettings.ghAuthUser ? `Signed in as ${githubSettings.ghAuthUser}` : "GitHub Setup"}
-              aria-label={githubSettings.ghAuthUser ? `Account settings for ${githubSettings.ghAuthUser}` : "GitHub Setup"}
-            >
+          </Tooltip>
+
+          <div className="flex items-center pr-1">
+            <Tooltip content={themeMode === "dark" ? "Light theme" : "Dark theme"}>
+              <button
+                type="button"
+                onClick={handleToggleTheme}
+                className="group flex h-11 w-9 items-center justify-center text-tertiary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
+                aria-label={themeMode === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              >
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg transition-[background-color,color] group-hover:bg-hover group-hover:text-primary motion-reduce:transition-none">
+                  {themeMode === "dark" ? (
+                    <Sun className="h-3.5 w-3.5" />
+                  ) : (
+                    <Moon className="h-3.5 w-3.5" />
+                  )}
+                </span>
+              </button>
+            </Tooltip>
+            <Tooltip content={githubSettings.ghAuthUser ? `Signed in as ${githubSettings.ghAuthUser}` : "GitHub Setup"}>
+              <button
+                type="button"
+                onClick={toggleSettings}
+                className="group flex h-11 w-9 items-center justify-center focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
+                aria-label={githubSettings.ghAuthUser ? `Account settings for ${githubSettings.ghAuthUser}` : "GitHub Setup"}
+              >
               <span className="flex h-7 w-7 items-center justify-center rounded-lg transition-colors group-hover:bg-hover motion-reduce:transition-none">
                 {githubSettings.ghAuthUser ? (
                   <img
@@ -1506,7 +1514,8 @@ export function Sidebar({
                   </span>
                 )}
               </span>
-            </button>
+              </button>
+            </Tooltip>
           </div>
         </div>
       </div>

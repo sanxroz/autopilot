@@ -24,6 +24,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
+import { Tooltip } from "./ui/tooltip";
 
 export type RightPanelTabId = "git" | "pr" | "notes";
 
@@ -202,35 +203,39 @@ export function RightPanelToolbar({
         aria-label="Right panel"
         className="flex items-center gap-0.5"
       >
-        {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={displayedTab === tab.id}
-              aria-label={
-                tab.id === "notes" && hasNotes ? "Notes, has content" : tab.label
-              }
-              title={
-                tab.id === "notes" && hasNotes ? "Notes (has content)" : tab.label
-              }
-              onClick={() => onActiveTabChange(tab.id)}
-              className={cn(
-                "relative flex h-6 w-8 items-center justify-center rounded-md transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1",
-                displayedTab === tab.id
-                  ? "text-primary"
-                  : "text-muted hover:bg-hover hover:text-secondary",
-              )}
-            >
-              <tab.icon className="h-4 w-4" strokeWidth={1.5} />
-              {tab.id === "notes" && hasNotes && (
-                <span
-                  className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-accent-primary ring-1 ring-[var(--color-bg-primary)]"
-                  aria-hidden="true"
-                />
-              )}
-            </button>
-        ))}
+        {tabs.map((tab) => {
+          const tooltip = tab.id === "notes" && hasNotes
+            ? "Notes (has content)"
+            : `Open ${tab.label.toLowerCase()} panel`;
+
+          return (
+            <Tooltip key={tab.id} content={tooltip}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={displayedTab === tab.id}
+                aria-label={
+                  tab.id === "notes" && hasNotes ? "Notes, has content" : tab.label
+                }
+                onClick={() => onActiveTabChange(tab.id)}
+                className={cn(
+                  "relative flex h-6 w-8 items-center justify-center rounded-md transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1",
+                  displayedTab === tab.id
+                    ? "text-primary"
+                    : "text-muted hover:bg-hover hover:text-secondary",
+                )}
+              >
+                <tab.icon className="h-4 w-4" strokeWidth={1.5} />
+                {tab.id === "notes" && hasNotes && (
+                  <span
+                    className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-accent-primary ring-1 ring-[var(--color-bg-primary)]"
+                    aria-hidden="true"
+                  />
+                )}
+              </button>
+            </Tooltip>
+          );
+        })}
       </div>
 
       {worktreePath && (
@@ -241,40 +246,42 @@ export function RightPanelToolbar({
           )}
         >
           {prStatus && (
-            <a
-              href={prStatus.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex h-full items-center gap-1 border-r border-border-subtle px-2.5 font-mono text-[11px] tabular-nums text-secondary transition-colors hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-[-2px]"
-              title={`Open #${prStatus.number} in GitHub`}
-              aria-label={`Open pull request #${prStatus.number} in GitHub`}
-            >
-              PR #{prStatus.number}
-              <ExternalLink className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
-            </a>
+            <Tooltip content={`Open #${prStatus.number} in GitHub`}>
+              <a
+                href={prStatus.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex h-full items-center gap-1 border-r border-border-subtle px-2.5 font-mono text-[11px] tabular-nums text-secondary transition-colors hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-[-2px]"
+                aria-label={`Open pull request #${prStatus.number} in GitHub`}
+              >
+                PR #{prStatus.number}
+                <ExternalLink className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
+              </a>
+            </Tooltip>
           )}
 
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                data-shortcut-action="open-with"
-                className={cn(
-                  "flex h-full items-center gap-1.5 px-2 text-[11px] font-medium text-secondary transition-colors hover:bg-hover hover:text-primary",
-                  prStatus ? "w-7 justify-center px-0" : "rounded-md",
-                )}
-                aria-label="Open workspace with another application"
-                title="Open workspace with another application"
-              >
-                {!prStatus && (
-                  <span>
-                    {isLoadingIdes && installedIdes.length === 0
-                      ? "Detecting…"
-                      : "Open with"}
-                  </span>
-                )}
-                <ChevronDown className="h-3 w-3" strokeWidth={1.5} />
-              </button>
-            </DropdownMenuTrigger>
+            <Tooltip content="Choose an application for this workspace">
+              <DropdownMenuTrigger asChild>
+                <button
+                  data-shortcut-action="open-with"
+                  className={cn(
+                    "flex h-full items-center gap-1.5 px-2 text-[11px] font-medium text-secondary transition-colors hover:bg-hover hover:text-primary",
+                    prStatus ? "w-7 justify-center px-0" : "rounded-md",
+                  )}
+                  aria-label="Open workspace with another application"
+                >
+                  {!prStatus && (
+                    <span>
+                      {isLoadingIdes && installedIdes.length === 0
+                        ? "Detecting…"
+                        : "Open with"}
+                    </span>
+                  )}
+                  <ChevronDown className="h-3 w-3" strokeWidth={1.5} />
+                </button>
+              </DropdownMenuTrigger>
+            </Tooltip>
             <DropdownMenuContent align="end">
               {isLoadingIdes && installedIdes.length === 0 ? (
                 <DropdownMenuItem disabled className="gap-2">
@@ -306,21 +313,22 @@ export function RightPanelToolbar({
       )}
 
       {canMergePR && !hasMerged && (
-        <button
-          type="button"
-          onClick={handleMerge}
-          disabled={isMerging}
-          className="flex h-6 items-center gap-1 rounded-md bg-semantic-success px-2.5 text-[11px] font-medium text-white transition-colors hover:bg-semantic-success/90 active:scale-[0.97] disabled:cursor-wait disabled:opacity-50"
-          title={isMerging ? "Merging pull request…" : "Merge pull request"}
-          aria-label={isMerging ? "Merging pull request" : "Merge pull request"}
-        >
-          {isMerging ? (
-            <Loader className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
-          ) : (
-            <GitMerge className="h-3.5 w-3.5" strokeWidth={1.5} />
-          )}
-          {isMerging ? "Merging…" : "Merge"}
-        </button>
+        <Tooltip content={isMerging ? "Finishing merge on GitHub…" : "Merge via GitHub"}>
+          <button
+            type="button"
+            onClick={handleMerge}
+            disabled={isMerging}
+            className="flex h-6 items-center gap-1 rounded-md bg-semantic-success px-2.5 text-[11px] font-medium text-white transition-colors hover:bg-semantic-success/90 active:scale-[0.97] disabled:cursor-wait disabled:opacity-50"
+            aria-label={isMerging ? "Merging pull request" : "Merge pull request"}
+          >
+            {isMerging ? (
+              <Loader className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
+            ) : (
+              <GitMerge className="h-3.5 w-3.5" strokeWidth={1.5} />
+            )}
+            {isMerging ? "Merging…" : "Merge"}
+          </button>
+        </Tooltip>
       )}
     </div>
   );

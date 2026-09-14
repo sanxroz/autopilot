@@ -11,6 +11,7 @@ import App from "./App";
 import "./index.css";
 import { preloadDiffHighlighter } from "./lib/diff-highlighter";
 import { initializeTheme } from "./theme";
+import { Provider as TooltipProvider } from "./components/ui/tooltip";
 
 preloadDiffHighlighter();
 initializeTheme("dark");
@@ -24,16 +25,18 @@ const createDiffEditor: CreateEditor<undefined> = (options) =>
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <EditProvider createEditor={createDiffEditor}>
-      <WorkerPoolContextProvider
-        poolOptions={{
-          workerFactory: () => new DiffsWorker(),
-          poolSize: 1,
-          totalASTLRUCacheSize: 20,
-        }}
-        highlighterOptions={{}}
-      >
-        <App />
-      </WorkerPoolContextProvider>
+      <TooltipProvider delayDuration={350} skipDelayDuration={300}>
+        <WorkerPoolContextProvider
+          poolOptions={{
+            workerFactory: () => new DiffsWorker(),
+            poolSize: 1,
+            totalASTLRUCacheSize: 20,
+          }}
+          highlighterOptions={{}}
+        >
+          <App />
+        </WorkerPoolContextProvider>
+      </TooltipProvider>
     </EditProvider>
   </React.StrictMode>,
 );

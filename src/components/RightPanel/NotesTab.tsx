@@ -11,6 +11,7 @@ import {
   markdownSanitizeSchema,
 } from "../../lib/markdown-components";
 import { useAppStore } from "../../store";
+import { Tooltip } from "../ui/tooltip";
 
 const EXTERNAL_NOTE_SYNC_INTERVAL_MS = 2000;
 const LOCAL_EDIT_GRACE_PERIOD_MS = 3000;
@@ -257,15 +258,16 @@ export function NotesTab({ worktreePath }: NotesTabProps) {
               aria-describedby={contextError ? "autopilot-context-error" : undefined}
               spellCheck={false}
             />
-            <button
-              type="button"
-              onClick={() => setIsEditingContext(false)}
-              className={currentWorkActionClassName}
-              title="Preview current work"
-              aria-label="Show rendered current work"
-            >
-              <Check className="h-3 w-3" />
-            </button>
+            <Tooltip content="Preview current work">
+              <button
+                type="button"
+                onClick={() => setIsEditingContext(false)}
+                className={currentWorkActionClassName}
+                aria-label="Show rendered current work"
+              >
+                <Check className="h-3 w-3" />
+              </button>
+            </Tooltip>
           </div>
         ) : (
           <div
@@ -287,15 +289,16 @@ export function NotesTab({ worktreePath }: NotesTabProps) {
                 <p className="text-muted">No current work yet. Double-click to edit.</p>
               )}
             </article>
-            <button
-              type="button"
-              onClick={() => setIsEditingContext(true)}
-              className={`${currentWorkActionClassName} opacity-0 group-hover/current-work:opacity-100 group-focus-within/current-work:opacity-100`}
-              title="Edit current work"
-              aria-label="Edit current work"
-            >
-              <Pencil className="h-3 w-3" />
-            </button>
+            <Tooltip content="Modify current work notes">
+              <button
+                type="button"
+                onClick={() => setIsEditingContext(true)}
+                className={`${currentWorkActionClassName} opacity-0 group-hover/current-work:opacity-100 group-focus-within/current-work:opacity-100`}
+                aria-label="Edit current work"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+            </Tooltip>
           </div>
         )}
         {contextError && (
