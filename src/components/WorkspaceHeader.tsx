@@ -59,7 +59,7 @@ export function WorkspaceHeader({
         sidebarOpen ? "pl-0.5" : "pl-[75px]",
       )}
     >
-      <Tooltip content={`${sidebarOpen ? "Hide" : "Show"} sidebar (${formatShortcut(sidebarShortcut)})`}>
+      <Tooltip content={`Sidebar (${formatShortcut(sidebarShortcut)})`}>
         <button
           type="button"
           onClick={onToggleSidebar}
@@ -143,7 +143,7 @@ export function WorkspaceHeader({
         })}
       </div>
 
-      <Tooltip content={canCreateTab ? "New terminal layout" : "Select a session to create a terminal layout"}>
+      <Tooltip content={canCreateTab ? "Add another terminal layout" : "Select a session to create a terminal layout"}>
         <button
           type="button"
           onClick={() => {
@@ -169,7 +169,7 @@ export function WorkspaceHeader({
             />
           </div>
         )}
-        <Tooltip content={codeReviewOpen ? "Close workspace panel" : "Open Git changes"}>
+        <Tooltip content="Toggle Git, PR, and notes panel">
           <button
             type="button"
             onClick={() => setCodeReviewOpen(!codeReviewOpen)}

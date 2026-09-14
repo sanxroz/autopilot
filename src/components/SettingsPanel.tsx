@@ -239,7 +239,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             <h3 className="text-sm font-semibold text-primary">
               {sectionTitles[activeSection]}
             </h3>
-            <Tooltip content="Close settings">
+            <Tooltip content="Dismiss settings panel">
               <button
                 onClick={onClose}
                 className="rounded-md p-1.5 text-tertiary transition-colors hover:bg-hover"

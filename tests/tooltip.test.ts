@@ -1,17 +1,19 @@
 import { describe, expect, test } from "bun:test";
 
 const tooltipLabels = [
-  "Back to board",
-  "Open in GitHub",
-  "Previous file",
-  "Next file",
+  "Return to pull request board",
+  "View this pull request on GitHub",
+  "Review previous changed file",
+  "Review next changed file",
   "PR actions",
-  "Close image",
+  "Dismiss image preview",
   "Manage reviewers",
   "Preview current work",
-  "Edit current work",
-  "Close settings",
+  "Modify current work notes",
+  "Dismiss settings panel",
   "Refresh diagnostics",
+  "Toggle captain terminal",
+  "Toggle Git, PR, and notes panel",
 ];
 
 const targetFiles = [
@@ -27,11 +29,11 @@ const targetFiles = [
 ];
 
 const navigationTooltips = [
-  "Add Space",
+  "Add a repository to Spaces",
   "New session",
   "Space actions",
   "Keyboard shortcuts",
-  "Open workspace with another application",
+  "Choose an application for this workspace",
 ];
 
 describe("designed tooltips", () => {
@@ -56,12 +58,11 @@ describe("designed tooltips", () => {
     }
 
     for (const label of [
-      "captain terminal",
       "in GitHub",
-      "sidebar",
+      "Sidebar",
       "Command menu",
-      "Close workspace panel",
-      "Open Git changes",
+      "Finishing merge on GitHub",
+      "Merge via GitHub",
     ]) {
       expect(combinedSource).toMatch(
         new RegExp(`<Tooltip[^>]*content=\\{[^>]*${label}`),

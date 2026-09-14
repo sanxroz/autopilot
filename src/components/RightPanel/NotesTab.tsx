@@ -289,7 +289,7 @@ export function NotesTab({ worktreePath }: NotesTabProps) {
                 <p className="text-muted">No current work yet. Double-click to edit.</p>
               )}
             </article>
-            <Tooltip content="Edit current work">
+            <Tooltip content="Modify current work notes">
               <button
                 type="button"
                 onClick={() => setIsEditingContext(true)}

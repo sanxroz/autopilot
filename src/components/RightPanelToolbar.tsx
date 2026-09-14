@@ -206,7 +206,7 @@ export function RightPanelToolbar({
         {tabs.map((tab) => {
           const tooltip = tab.id === "notes" && hasNotes
             ? "Notes (has content)"
-            : tab.label;
+            : `Open ${tab.label.toLowerCase()} panel`;
 
           return (
             <Tooltip key={tab.id} content={tooltip}>
@@ -261,7 +261,7 @@ export function RightPanelToolbar({
           )}
 
           <DropdownMenu>
-            <Tooltip content="Open workspace with another application">
+            <Tooltip content="Choose an application for this workspace">
               <DropdownMenuTrigger asChild>
                 <button
                   data-shortcut-action="open-with"
@@ -313,7 +313,7 @@ export function RightPanelToolbar({
       )}
 
       {canMergePR && !hasMerged && (
-        <Tooltip content={isMerging ? "Merging pull request…" : "Merge pull request"}>
+        <Tooltip content={isMerging ? "Finishing merge on GitHub…" : "Merge via GitHub"}>
           <button
             type="button"
             onClick={handleMerge}

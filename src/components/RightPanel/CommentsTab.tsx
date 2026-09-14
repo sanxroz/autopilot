@@ -112,7 +112,7 @@ function ImageModal({ src, alt, onClose }: { src: string; alt: string; onClose: 
       aria-modal="true"
       aria-label={`Image: ${alt}`}
     >
-      <Tooltip content="Close image">
+      <Tooltip content="Dismiss image preview">
         <button
           onClick={onClose}
           className="absolute top-4 right-4 p-2 rounded-full bg-secondary"

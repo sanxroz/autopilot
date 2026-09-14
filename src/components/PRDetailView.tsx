@@ -371,7 +371,7 @@ export function PRDetailView({
       <div className="shrink-0 border-b border-border-subtle">
         {/* Top row: back + title + external link */}
         <div className="flex items-start gap-3 px-5 pt-4 pb-3">
-          <Tooltip content="Back to board">
+          <Tooltip content="Return to pull request board">
             <button
               onClick={onBack}
               className="mt-0.5 shrink-0 rounded-md p-1 text-tertiary hover:text-primary hover:bg-hover transition-colors"
@@ -401,7 +401,7 @@ export function PRDetailView({
             </div>
           </div>
 
-          <Tooltip content="Open in GitHub">
+          <Tooltip content="View this pull request on GitHub">
             <a
               href={pr.url}
               target="_blank"

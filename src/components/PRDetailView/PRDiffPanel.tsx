@@ -470,7 +470,7 @@ export function PRDiffPanel({
       {/* File header bar */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle px-4 py-2">
         <div className="flex items-center gap-1">
-          <Tooltip content="Previous file">
+          <Tooltip content="Review previous changed file">
             <button
               onClick={goToPrev}
               disabled={!hasPrev}
@@ -480,7 +480,7 @@ export function PRDiffPanel({
               <ChevronLeft className="size-3.5" />
             </button>
           </Tooltip>
-          <Tooltip content="Next file">
+          <Tooltip content="Review next changed file">
             <button
               onClick={goToNext}
               disabled={!hasNext}

@@ -998,7 +998,7 @@ export function Sidebar({
           })}
         </div>
         <div className="flex shrink-0 justify-center pt-1.5">
-          <Tooltip content="Add Space" side="right">
+          <Tooltip content="Add a repository to Spaces" side="right">
             <button
               type="button"
               onClick={handleAddRepository}
@@ -1042,7 +1042,7 @@ export function Sidebar({
                 <Plus className="h-3.5 w-3.5" />
                 </button>
               </Tooltip>
-              <Tooltip content={`Open ${activeRepoGroup.repoName} captain terminal`}>
+              <Tooltip content="Toggle captain terminal">
                 <button
                 type="button"
                 onClick={() =>
