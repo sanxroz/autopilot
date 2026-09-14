@@ -1,0 +1,19 @@
+.github/workflows/anti-slop.yml
+  s_e4b45e7f12265f::t_e11f54a9d7ec8d 1-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "d9b06865bbd517ab3dfab3415984f89897697103",
+  "prompts": {},
+  "sessions": {
+    "s_e4b45e7f12265f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a09d37-f4ca-7920-9d69-7ce459f4d2c9",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
