@@ -1494,6 +1494,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
       for (const result of results) {
         const existingRepoStatuses = nextByRepo[result.repo_path] ?? {};
         const nextRepoStatuses = { ...existingRepoStatuses };
+        const currentRepoBranches = new Set(
+          state.repositories
+            .find((repo) => repo.info.path === result.repo_path)
+            ?.worktrees.map((worktree) => worktree.branch) ?? []
+        );
         const refreshedStatuses = new Map(
           result.statuses.map((pr) => [pr.head_branch, pr])
         );
@@ -1513,7 +1518,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
           }
 
           delete nextByWorktreePath[worktreeStatus.worktree_path];
-          if (!refreshedStatuses.has(worktreeStatus.branch)) {
+          if (
+            !refreshedStatuses.has(worktreeStatus.branch) &&
+            !currentRepoBranches.has(worktreeStatus.branch)
+          ) {
             delete nextRepoStatuses[worktreeStatus.branch];
           }
         }

@@ -171,6 +171,36 @@ describe("sidebar group store synchronization", () => {
     }
   });
 
+  test("keeps branch PR status when a stale worktree response targets a branch still in use", () => {
+    const secondAlpha = { ...beta, branch: "alpha" };
+    useAppStore.setState({
+      repositories: [{ ...repository, worktrees: [alpha, secondAlpha] }],
+      prStatusByBranch: {
+        [repository.info.path]: { alpha: mergedPRStatus },
+      },
+      prStatusByWorktreePath: { [secondAlpha.path]: mergedPRStatus },
+    });
+
+    useAppStore.getState().setPRStatusBatch([{
+      repo_path: repository.info.path,
+      statuses: [],
+      worktree_statuses: [{
+        worktree_path: "/repo/removed-worktree",
+        branch: "alpha",
+        status: null,
+      }],
+      checked_worktrees: ["/repo/removed-worktree"],
+      failed_worktrees: [],
+    }]);
+
+    expect(
+      useAppStore.getState().prStatusByBranch[repository.info.path]?.alpha
+    ).toBe(mergedPRStatus);
+    expect(
+      useAppStore.getState().prStatusByWorktreePath[secondAlpha.path]
+    ).toBe(mergedPRStatus);
+  });
+
   test("persists reordered Spaces", async () => {
     const secondRepository: Repository = {
       ...repository,
