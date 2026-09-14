@@ -77,17 +77,22 @@ const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 type Root = import("react-dom/client").Root;
 const { RightPanelToolbar } = await import("../src/components/RightPanelToolbar");
+const { Provider: TooltipProvider } = await import("../src/components/ui/tooltip");
 
 let container: HTMLDivElement;
 let root: Root;
 
 async function renderToolbar() {
   await act(async () => {
-    root.render(React.createElement(RightPanelToolbar, {
-      worktreePath: "/repo/worktree",
-      activeTab: "git",
-      onActiveTabChange: () => {},
-    }));
+    root.render(
+      <TooltipProvider>
+        <RightPanelToolbar
+          worktreePath="/repo/worktree"
+          activeTab="git"
+          onActiveTabChange={() => {}}
+        />
+      </TooltipProvider>
+    );
   });
 }
 

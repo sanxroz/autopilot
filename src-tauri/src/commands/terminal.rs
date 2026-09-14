@@ -355,23 +355,32 @@ struct TerminalOutput {
 pub struct TerminalOutputSnapshot {
     data: String,
     sequence: u64,
+    truncated: bool,
 }
 
 impl TerminalOutputSnapshot {
-    fn new(data: impl Into<String>, sequence: u64) -> Self {
+    fn new(data: impl Into<String>, sequence: u64, truncated: bool) -> Self {
         Self {
             data: data.into(),
             sequence,
+            truncated,
         }
     }
 }
 
+#[derive(Clone)]
 struct TerminalReplayBuffer {
-    chunks: VecDeque<String>,
+    chunks: VecDeque<TerminalReplayChunk>,
     bytes: usize,
     max_bytes: usize,
     chunk_max_bytes: usize,
     sequence: u64,
+}
+
+#[derive(Clone)]
+struct TerminalReplayChunk {
+    outputs: Vec<TerminalOutput>,
+    bytes: usize,
 }
 
 impl TerminalReplayBuffer {
@@ -386,43 +395,62 @@ impl TerminalReplayBuffer {
     }
 
     fn push(&mut self, data: String) -> TerminalOutput {
-        self.bytes += data.len();
-        let append_to_last_chunk = self
+        self.sequence += 1;
+        let output = TerminalOutput {
+            data,
+            sequence: self.sequence,
+        };
+        self.bytes += output.data.len();
+        let chunk_max_bytes = self.chunk_max_bytes;
+        if let Some(chunk) = self
             .chunks
-            .back()
-            .is_some_and(|chunk| chunk.len() + data.len() <= self.chunk_max_bytes);
-        if append_to_last_chunk {
-            if let Some(chunk) = self.chunks.back_mut() {
-                chunk.push_str(&data);
-            }
+            .back_mut()
+            .filter(|chunk| chunk.bytes + output.data.len() <= chunk_max_bytes)
+        {
+            chunk.bytes += output.data.len();
+            chunk.outputs.push(output.clone());
         } else {
-            self.chunks.push_back(data.clone());
+            self.chunks.push_back(TerminalReplayChunk {
+                bytes: output.data.len(),
+                outputs: vec![output.clone()],
+            });
         }
 
         while self.bytes > self.max_bytes {
             let Some(removed) = self.chunks.pop_front() else {
                 break;
             };
-            self.bytes -= removed.len();
+            self.bytes -= removed.bytes;
         }
 
-        self.sequence += 1;
-        TerminalOutput {
-            data,
-            sequence: self.sequence,
-        }
+        output
     }
 
-    fn snapshot(&self) -> TerminalOutputSnapshot {
+    fn snapshot_after(&self, sequence: Option<u64>) -> TerminalOutputSnapshot {
+        let first_retained_sequence = self
+            .chunks
+            .front()
+            .and_then(|chunk| chunk.outputs.first())
+            .map(|output| output.sequence);
+        let truncated = sequence.is_some_and(|sequence| {
+            sequence < self.sequence
+                && first_retained_sequence.is_none_or(|first| sequence.saturating_add(1) < first)
+        });
         TerminalOutputSnapshot::new(
-            self.chunks.iter().map(String::as_str).collect::<String>(),
+            self.chunks
+                .iter()
+                .flat_map(|chunk| &chunk.outputs)
+                .filter(|output| sequence.is_none_or(|sequence| output.sequence > sequence))
+                .map(|output| output.data.as_str())
+                .collect::<String>(),
             self.sequence,
+            truncated,
         )
     }
 }
 
 pub struct CompletedTerminalOutputCache {
-    entries: VecDeque<(String, TerminalOutputSnapshot)>,
+    entries: VecDeque<(String, TerminalReplayBuffer)>,
     bytes: usize,
     max_bytes: usize,
     max_entries: usize,
@@ -444,35 +472,39 @@ impl CompletedTerminalOutputCache {
         }
     }
 
-    fn get(&self, terminal_id: &str) -> Option<TerminalOutputSnapshot> {
+    fn get(
+        &self,
+        terminal_id: &str,
+        after_sequence: Option<u64>,
+    ) -> Option<TerminalOutputSnapshot> {
         self.entries
             .iter()
             .find(|(id, _)| id == terminal_id)
-            .map(|(_, snapshot)| snapshot.clone())
+            .map(|(_, replay)| replay.snapshot_after(after_sequence))
     }
 
-    fn insert(&mut self, terminal_id: String, snapshot: TerminalOutputSnapshot) {
+    fn insert(&mut self, terminal_id: String, replay: TerminalReplayBuffer) {
         if let Some(index) = self.entries.iter().position(|(id, _)| id == &terminal_id) {
             if let Some((_, removed)) = self.entries.remove(index) {
-                self.bytes -= removed.data.len();
+                self.bytes -= removed.bytes;
             }
         }
 
-        self.bytes += snapshot.data.len();
-        self.entries.push_back((terminal_id, snapshot));
+        self.bytes += replay.bytes;
+        self.entries.push_back((terminal_id, replay));
 
         while self.bytes > self.max_bytes || self.entries.len() > self.max_entries {
             let Some((_, removed)) = self.entries.pop_front() else {
                 break;
             };
-            self.bytes -= removed.data.len();
+            self.bytes -= removed.bytes;
         }
     }
 
     fn remove(&mut self, terminal_id: &str) {
         if let Some(index) = self.entries.iter().position(|(id, _)| id == terminal_id) {
             if let Some((_, removed)) = self.entries.remove(index) {
-                self.bytes -= removed.data.len();
+                self.bytes -= removed.bytes;
             }
         }
     }
@@ -1575,13 +1607,13 @@ pub fn spawn_terminal(
             }
         }
 
-        let snapshot = replay_for_events.lock().snapshot();
+        let completed_replay = replay_for_events.lock().clone();
         {
             let mut terminals = state_terminals.lock();
             if terminals.remove(&tid).is_some() {
                 state_completed_terminal_outputs
                     .lock()
-                    .insert(tid.clone(), snapshot);
+                    .insert(tid.clone(), completed_replay);
             }
         }
         state_agent_terminals.lock().remove(&tid);
@@ -1650,14 +1682,20 @@ pub async fn write_to_terminal(
 pub fn get_terminal_output(
     state: State<'_, AppState>,
     terminal_id: String,
+    after_sequence: Option<u64>,
 ) -> Result<TerminalOutputSnapshot, String> {
     let live_snapshot = state
         .terminals
         .lock()
         .get(&terminal_id)
-        .map(|session| session.replay.lock().snapshot());
+        .map(|session| session.replay.lock().snapshot_after(after_sequence));
     live_snapshot
-        .or_else(|| state.completed_terminal_outputs.lock().get(&terminal_id))
+        .or_else(|| {
+            state
+                .completed_terminal_outputs
+                .lock()
+                .get(&terminal_id, after_sequence)
+        })
         .ok_or("Terminal not found".to_string())
 }
 
@@ -2592,13 +2630,13 @@ pub fn spawn_terminal_with_command(
             ws.is_alive.store(false, Ordering::Relaxed);
         }
 
-        let snapshot = replay_for_events.lock().snapshot();
+        let completed_replay = replay_for_events.lock().clone();
         {
             let mut terminals = state_terminals.lock();
             if terminals.remove(&tid).is_some() {
                 state_completed_terminal_outputs
                     .lock()
-                    .insert(tid.clone(), snapshot);
+                    .insert(tid.clone(), completed_replay);
             }
         }
         state_agent_terminals.lock().remove(&tid);
@@ -3018,7 +3056,48 @@ mod tests {
         buffer.push("def".to_string());
         buffer.push("ghi".to_string());
 
-        assert_eq!(buffer.snapshot().data, "ghi");
+        assert_eq!(buffer.snapshot_after(None).data, "ghi");
+    }
+
+    #[test]
+    fn terminal_replay_buffer_returns_only_output_after_a_sequence() {
+        let mut buffer = TerminalReplayBuffer::new(64);
+
+        let first = buffer.push("abc".to_string());
+        buffer.push("def".to_string());
+
+        let snapshot = buffer.snapshot_after(Some(first.sequence));
+        assert_eq!(snapshot.data, "def");
+        assert_eq!(snapshot.sequence, 2);
+        assert!(!snapshot.truncated);
+    }
+
+    #[test]
+    fn terminal_replay_buffer_reports_an_evicted_sequence_gap() {
+        let mut buffer = TerminalReplayBuffer::new(6);
+
+        let first = buffer.push("abc".to_string());
+        buffer.push("def".to_string());
+        buffer.push("ghi".to_string());
+
+        let snapshot = buffer.snapshot_after(Some(first.sequence));
+        assert_eq!(snapshot.data, "ghi");
+        assert_eq!(snapshot.sequence, 3);
+        assert!(snapshot.truncated);
+    }
+
+    #[test]
+    fn completed_terminal_output_cache_respects_the_replay_sequence() {
+        let mut replay = TerminalReplayBuffer::new(64);
+        let first = replay.push("abc".to_string());
+        replay.push("def".to_string());
+        let mut cache = CompletedTerminalOutputCache::new(64);
+        cache.insert("terminal".to_string(), replay);
+
+        let snapshot = cache.get("terminal", Some(first.sequence)).unwrap();
+        assert_eq!(snapshot.data, "def");
+        assert_eq!(snapshot.sequence, 2);
+        assert!(!snapshot.truncated);
     }
 
     #[test]
@@ -3072,18 +3151,23 @@ mod tests {
     #[test]
     fn completed_output_cache_evicts_the_oldest_snapshot_at_its_byte_limit() {
         let mut cache = CompletedTerminalOutputCache::new(6);
+        let replay = |data: &str| {
+            let mut replay = TerminalReplayBuffer::new(6);
+            replay.push(data.to_string());
+            replay
+        };
 
-        cache.insert("first".to_string(), TerminalOutputSnapshot::new("abc", 1));
-        cache.insert("second".to_string(), TerminalOutputSnapshot::new("def", 2));
-        cache.insert("third".to_string(), TerminalOutputSnapshot::new("ghi", 3));
+        cache.insert("first".to_string(), replay("abc"));
+        cache.insert("second".to_string(), replay("def"));
+        cache.insert("third".to_string(), replay("ghi"));
 
-        assert!(cache.get("first").is_none());
+        assert!(cache.get("first", None).is_none());
         assert_eq!(
-            cache.get("second").map(|snapshot| snapshot.data),
+            cache.get("second", None).map(|snapshot| snapshot.data),
             Some("def".to_string())
         );
         assert_eq!(
-            cache.get("third").map(|snapshot| snapshot.data),
+            cache.get("third", None).map(|snapshot| snapshot.data),
             Some("ghi".to_string())
         );
     }
@@ -3096,13 +3180,18 @@ mod tests {
             max_bytes: 1,
             max_entries: 2,
         };
+        let replay = || {
+            let mut replay = TerminalReplayBuffer::new(1);
+            replay.push(String::new());
+            replay
+        };
 
-        cache.insert("first".to_string(), TerminalOutputSnapshot::new("", 1));
-        cache.insert("second".to_string(), TerminalOutputSnapshot::new("", 2));
-        cache.insert("third".to_string(), TerminalOutputSnapshot::new("", 3));
+        cache.insert("first".to_string(), replay());
+        cache.insert("second".to_string(), replay());
+        cache.insert("third".to_string(), replay());
 
-        assert!(cache.get("first").is_none());
-        assert!(cache.get("second").is_some());
-        assert!(cache.get("third").is_some());
+        assert!(cache.get("first", None).is_none());
+        assert!(cache.get("second", None).is_some());
+        assert!(cache.get("third", None).is_some());
     }
 }

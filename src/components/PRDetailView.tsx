@@ -18,6 +18,7 @@ import { PRStatusBadge } from './PRStatusBadge';
 import { PRFileTree } from './PRDetailView/PRFileTree';
 import { PRDiffPanel } from './PRDetailView/PRDiffPanel';
 import { PRMetadataSidebar } from './PRDetailView/PRMetadataSidebar';
+import { Tooltip } from './ui/tooltip';
 import type { PRStatus, PRFile, PRCommit, PRComment } from '../types/github';
 
 type PendingReviewComment = {
@@ -370,14 +371,15 @@ export function PRDetailView({
       <div className="shrink-0 border-b border-border-subtle">
         {/* Top row: back + title + external link */}
         <div className="flex items-start gap-3 px-5 pt-4 pb-3">
-          <button
-            onClick={onBack}
-            className="mt-0.5 shrink-0 rounded-md p-1 text-tertiary hover:text-primary hover:bg-hover transition-colors"
-            title="Back to board"
-            aria-label="Back to board"
-          >
-            <ArrowLeft className="size-4" />
-          </button>
+          <Tooltip content="Return to pull request board">
+            <button
+              onClick={onBack}
+              className="mt-0.5 shrink-0 rounded-md p-1 text-tertiary hover:text-primary hover:bg-hover transition-colors"
+              aria-label="Back to board"
+            >
+              <ArrowLeft className="size-4" />
+            </button>
+          </Tooltip>
 
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
@@ -399,16 +401,17 @@ export function PRDetailView({
             </div>
           </div>
 
-          <a
-            href={pr.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="shrink-0 rounded-md p-1.5 text-tertiary hover:text-primary hover:bg-hover transition-colors"
-            title="Open in GitHub"
-            aria-label="Open in GitHub"
-          >
-            <ExternalLink className="size-3.5" />
-          </a>
+          <Tooltip content="View this pull request on GitHub">
+            <a
+              href={pr.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 rounded-md p-1.5 text-tertiary hover:text-primary hover:bg-hover transition-colors"
+              aria-label="Open in GitHub"
+            >
+              <ExternalLink className="size-3.5" />
+            </a>
+          </Tooltip>
         </div>
 
         {/* Metadata row */}
