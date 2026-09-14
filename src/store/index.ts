@@ -930,17 +930,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   updateWorktreeBranch: async (worktreePath: string) => {
     const branch = await invoke<string | null>('get_worktree_branch_name', { worktreePath });
-    set((state) => ({
-      repositories: state.repositories.map((repo) => ({
-        ...repo,
-        worktrees: repo.worktrees.map((wt) =>
-          wt.path === worktreePath ? { ...wt, branch } : wt
-        ),
-      })),
-      selectedWorktree: state.selectedWorktree?.path === worktreePath
-        ? { ...state.selectedWorktree, branch }
-        : state.selectedWorktree,
-    }));
+    set((state) => {
+      const prStatusByWorktreePath = { ...state.prStatusByWorktreePath };
+      if (prStatusByWorktreePath[worktreePath]?.head_branch !== branch) {
+        delete prStatusByWorktreePath[worktreePath];
+      }
+
+      return {
+        repositories: state.repositories.map((repo) => ({
+          ...repo,
+          worktrees: repo.worktrees.map((wt) =>
+            wt.path === worktreePath ? { ...wt, branch } : wt
+          ),
+        })),
+        selectedWorktree: state.selectedWorktree?.path === worktreePath
+          ? { ...state.selectedWorktree, branch }
+          : state.selectedWorktree,
+        prStatusByWorktreePath,
+      };
+    });
   },
 
   selectWorktree: async (worktree: WorktreeInfo) => {

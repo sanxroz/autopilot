@@ -18,7 +18,6 @@ import { getOpenWithIconSources } from "../lib/open-with";
 import { useAppStore } from "../store";
 import type { InstalledIde } from "../types";
 import { cn } from "../utils/cn";
-import { shouldShowMergedStatus } from "./right-panel-toolbar-state";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -306,7 +305,7 @@ export function RightPanelToolbar({
         </div>
       )}
 
-      {shouldShowMergedStatus(prStatus?.merged, hasMerged) ? (
+      {prStatus?.merged || hasMerged ? (
         <span
           role="status"
           title="Pull request merged"

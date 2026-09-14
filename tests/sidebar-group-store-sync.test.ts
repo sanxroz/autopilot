@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import * as tauriCore from "@tauri-apps/api/core";
 import type { Repository, WorktreeInfo } from "../src/types";
+import type { PRStatus } from "../src/types/github";
 
 let diskValues = new Map<string, unknown>();
 let cacheValues = new Map<string, unknown>();
@@ -65,7 +66,68 @@ const repository: Repository = {
   isExpanded: true,
 };
 
+const mergedPRStatus: PRStatus = {
+  number: 120,
+  title: "Merged PR",
+  url: "https://github.com/sanxroz/autopilot/pull/120",
+  state: "merged",
+  merged: true,
+  draft: false,
+  review_decision: null,
+  checks_status: "success",
+  mergeable: null,
+  additions: 1,
+  deletions: 0,
+  head_branch: "alpha",
+  base_branch: "master",
+  author: "sanxroz",
+  created_at: "2026-09-13T00:00:00Z",
+  updated_at: "2026-09-13T00:00:00Z",
+  labels: [],
+  requested_reviewers: [],
+  has_unresolved_review_threads: false,
+  is_bot: false,
+};
+
 describe("sidebar group store synchronization", () => {
+  test("invalidates cached PR status when the worktree branch changes", async () => {
+    invokeHandler = async (command) =>
+      command === "get_worktree_branch_name" ? "main" : undefined;
+    useAppStore.setState({
+      repositories: [repository],
+      selectedWorktree: alpha,
+      prStatusByWorktreePath: { [alpha.path]: mergedPRStatus },
+    });
+
+    try {
+      await useAppStore.getState().updateWorktreeBranch(alpha.path);
+
+      expect(useAppStore.getState().repositories[0]?.worktrees[0]?.branch).toBe("main");
+      expect(useAppStore.getState().selectedWorktree?.branch).toBe("main");
+      expect(useAppStore.getState().prStatusByWorktreePath[alpha.path]).toBeUndefined();
+    } finally {
+      invokeHandler = async () => undefined;
+    }
+  });
+
+  test("keeps cached PR status when HEAD changes on the same branch", async () => {
+    invokeHandler = async (command) =>
+      command === "get_worktree_branch_name" ? "alpha" : undefined;
+    useAppStore.setState({
+      repositories: [repository],
+      selectedWorktree: alpha,
+      prStatusByWorktreePath: { [alpha.path]: mergedPRStatus },
+    });
+
+    try {
+      await useAppStore.getState().updateWorktreeBranch(alpha.path);
+
+      expect(useAppStore.getState().prStatusByWorktreePath[alpha.path]).toBe(mergedPRStatus);
+    } finally {
+      invokeHandler = async () => undefined;
+    }
+  });
+
   test("persists reordered Spaces", async () => {
     const secondRepository: Repository = {
       ...repository,
