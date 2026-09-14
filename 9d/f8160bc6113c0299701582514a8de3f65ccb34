@@ -1,0 +1,27 @@
+src/hooks/usePRStatus.ts
+  s_66e1d52634f07b::t_a337c4ef8cd6e9 14,33
+tests/pr-status-refresh.test.ts
+  s_66e1d52634f07b::t_a337c4ef8cd6e9 45,87-106
+  s_66e1d52634f07b::t_7c6eb89fa969b0 10,22
+src/types/github.ts
+  s_66e1d52634f07b::t_a337c4ef8cd6e9 32
+src-tauri/src/commands/github.rs
+  s_66e1d52634f07b::t_a337c4ef8cd6e9 363,733-741,2835,2860,2886,2908,2926-2946
+  s_66e1d52634f07b::t_6faa5353c38e26 362
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9df8160bc6113c0299701582514a8de3f65ccb34",
+  "prompts": {},
+  "sessions": {
+    "s_66e1d52634f07b": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0a0af-6a37-7e71-b1cc-0f960aa4f164",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
