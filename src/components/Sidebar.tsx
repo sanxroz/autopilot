@@ -1082,7 +1082,10 @@ export function Sidebar({
                     Move up
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    disabled={repositories.at(-1)?.info.path === activeRepoGroup.repoPath}
+                    disabled={
+                      repositories[repositories.length - 1]?.info.path ===
+                      activeRepoGroup.repoPath
+                    }
                     onSelect={() => void handleSpaceMove(activeRepoGroup.repoPath, 1)}
                   >
                     <ArrowDown />
