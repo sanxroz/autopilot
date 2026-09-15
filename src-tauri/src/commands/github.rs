@@ -1104,11 +1104,17 @@ fn fetch_prs_rest_fallback(
                         head_oid,
                     });
                 } else {
-                    failed_branches.insert(worktree.branch.clone());
+                    eprintln!(
+                        "Known PR {number} does not match branch {}",
+                        worktree.branch
+                    );
                 }
             }
             _ => {
-                failed_branches.insert(worktree.branch.clone());
+                eprintln!(
+                    "Failed to fetch known PR {number} for branch {}",
+                    worktree.branch
+                );
             }
         }
     }
