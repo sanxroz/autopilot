@@ -29,6 +29,7 @@ export interface WorktreePRLookup {
   worktree_path: string;
   branch: string;
   head_oid: string | null;
+  known_pr_number: number | null;
 }
 
 export interface RepoWithWorktrees {

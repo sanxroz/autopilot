@@ -7,6 +7,7 @@ const invoke = mock(
   () => new Promise<unknown[]>((resolve) => requests.push(resolve)),
 );
 const setPRStatusBatch = mock((_results: unknown[]) => {});
+const prStatusByWorktreePath: Record<string, { number: number }> = {};
 const state = {
   repositories: [{
     info: { path: "/repo" },
@@ -18,6 +19,7 @@ const state = {
   }],
   githubSettings: { ghCliAvailable: true },
   collapsedRepos: new Set<string>(),
+  prStatusByWorktreePath,
   setPRStatusBatch,
 };
 const useAppStore = Object.assign(() => state, { getState: () => state });
@@ -40,6 +42,7 @@ describe("refreshPRStatuses", () => {
       }],
     }];
     state.collapsedRepos = new Set<string>();
+    state.prStatusByWorktreePath = {};
   });
 
   test("discards an older response that resolves after a newer refresh", async () => {
@@ -80,5 +83,26 @@ describe("refreshPRStatuses", () => {
     expect(setPRStatusBatch).toHaveBeenCalledTimes(2);
     expect(setPRStatusBatch).toHaveBeenNthCalledWith(1, visibleResults);
     expect(setPRStatusBatch).toHaveBeenNthCalledWith(2, collapsedResults);
+  });
+
+  test("sends the known PR number so merged PRs remain attached", async () => {
+    state.prStatusByWorktreePath = {
+      "/repo/worktree": { number: 42 },
+    };
+
+    const refresh = refreshPRStatuses();
+    expect(invoke).toHaveBeenCalledWith("get_all_prs_for_repos", {
+      repos: [{
+        repo_path: "/repo",
+        worktrees: [{
+          worktree_path: "/repo/worktree",
+          branch: "feature",
+          head_oid: null,
+          known_pr_number: 42,
+        }],
+      }],
+    });
+    requests[0]?.([{ repo_path: "/repo", statuses: [], failed_worktrees: [] }]);
+    await refresh;
   });
 });
