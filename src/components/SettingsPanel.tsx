@@ -16,12 +16,17 @@ import {
   FolderOpen,
   Keyboard,
   RefreshCw,
+  Moon,
+  Sun,
+  Github,
+  Search,
 } from "lucide-react";
 import { Checkbox } from "./ui/checkbox";
 import { useAppStore } from "../store";
 import { cn } from "../utils/cn";
 import { Tooltip } from "./ui/tooltip";
 import { AI_AGENTS, type AIAgent, type Repository } from "../types";
+import { useThemeMode } from "../hooks/useTheme";
 import {
   DEFAULT_KEYBOARD_SHORTCUTS,
   SHORTCUT_DEFINITIONS,
@@ -53,6 +58,13 @@ interface TerminalRecoveryResult {
   drainedInputBytes: number;
 }
 
+interface SettingsResource {
+  kind: "skill" | "agent" | "mcp";
+  name: string;
+  path: string;
+  scope: string;
+}
+
 type NavSection =
   | "account"
   | "appearance"
@@ -68,6 +80,7 @@ interface NavItem {
   readonly id: NavSection;
   readonly label: string;
   readonly icon: React.ReactNode;
+  readonly group: "General" | "Workspace" | "System";
   readonly beta?: boolean;
 }
 
@@ -81,12 +94,12 @@ function SectionHeading({
   description?: string;
 }) {
   return (
-    <div className="space-y-1.5">
-      <h4 className="text-xs font-medium uppercase tracking-[0.04em] text-tertiary">
+    <div className="space-y-1">
+      <h4 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
         {title}
       </h4>
       {description ? (
-        <p className="max-w-[52ch] text-sm leading-6 text-secondary">
+        <p className="max-w-[56ch] text-[13px] leading-5 text-secondary">
           {description}
         </p>
       ) : null}
@@ -102,7 +115,7 @@ function SettingsCard({
   className?: string;
 }) {
   return (
-    <div className={cn("rounded-xl border border-border bg-primary", className)}>
+    <div className={className}>
       {children}
     </div>
   );
@@ -118,7 +131,7 @@ function SettingsRow({
   return (
     <div
       className={cn(
-        "flex items-start justify-between gap-4 px-4 py-4 [&:not(:last-child)]:border-b [&:not(:last-child)]:border-border",
+        "flex items-start justify-between gap-3 px-3 py-3",
         className
       )}
     >
@@ -138,7 +151,7 @@ function SettingsLabel({
     <div className="space-y-1">
       <div className="text-sm font-medium text-primary">{title}</div>
       {description ? (
-        <p className="max-w-[52ch] text-xs leading-5 text-tertiary">
+        <p className="max-w-[52ch] text-xs leading-4 text-tertiary">
           {description}
         </p>
       ) : null}
@@ -161,15 +174,15 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
   const [activeSection, setActiveSection] = useState<NavSection>("account");
 
   const navItems: readonly NavItem[] = [
-    { id: "account", label: "Account", icon: <User className="w-3.5 h-3.5" /> },
-    { id: "appearance", label: "Appearance", icon: <Palette className="w-3.5 h-3.5" /> },
-    { id: "preferences", label: "Preferences", icon: <SlidersHorizontal className="w-3.5 h-3.5" /> },
-    { id: "shortcuts", label: "Keyboard Shortcuts", icon: <Keyboard className="w-3.5 h-3.5" /> },
-    { id: "projects", label: "Projects", icon: <FolderOpen className="w-3.5 h-3.5" /> },
-    { id: "skills", label: "Skills", icon: <BookOpen className="w-3.5 h-3.5" />, beta: true },
-    { id: "agents", label: "Custom Agents", icon: <Bot className="w-3.5 h-3.5" />, beta: true },
-    { id: "mcp", label: "MCP Servers", icon: <Server className="w-3.5 h-3.5" /> },
-    { id: "debug", label: "Debug", icon: <Bug className="w-3.5 h-3.5" /> },
+    { id: "account", label: "Account", icon: <User className="w-3.5 h-3.5" />, group: "General" },
+    { id: "appearance", label: "Appearance", icon: <Palette className="w-3.5 h-3.5" />, group: "General" },
+    { id: "preferences", label: "Preferences", icon: <SlidersHorizontal className="w-3.5 h-3.5" />, group: "General" },
+    { id: "shortcuts", label: "Keyboard Shortcuts", icon: <Keyboard className="w-3.5 h-3.5" />, group: "General" },
+    { id: "projects", label: "Projects", icon: <FolderOpen className="w-3.5 h-3.5" />, group: "Workspace" },
+    { id: "skills", label: "Skills", icon: <BookOpen className="w-3.5 h-3.5" />, group: "Workspace", beta: true },
+    { id: "agents", label: "Custom Agents", icon: <Bot className="w-3.5 h-3.5" />, group: "Workspace", beta: true },
+    { id: "mcp", label: "MCP Servers", icon: <Server className="w-3.5 h-3.5" />, group: "Workspace" },
+    { id: "debug", label: "Debug", icon: <Bug className="w-3.5 h-3.5" />, group: "System" },
   ];
 
   const sectionTitles: Record<NavSection, string> = {
@@ -183,10 +196,21 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     mcp: "MCP Servers",
     debug: "Debug",
   };
+  const sectionDescriptions: Record<NavSection, string> = {
+    account: "Your connected GitHub identity.",
+    appearance: "Choose how Autopilot looks.",
+    preferences: "Defaults for agents and repository sync.",
+    shortcuts: "Customize commands used across the app.",
+    projects: "Configure connected repositories.",
+    skills: "Skills available to your agents.",
+    agents: "Agent definitions from your configuration.",
+    mcp: "Connected Model Context Protocol servers.",
+    debug: "Diagnostics and local integrations.",
+  };
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55"
       onClick={onClose}
       onKeyDown={(event) => {
         if (event.key === "Escape") onClose();
@@ -196,25 +220,30 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       aria-label="Settings"
     >
       <div
-        className="flex h-[560px] w-full max-w-[900px] overflow-hidden rounded-xl border border-border bg-secondary shadow-2xl"
+        className="app-panel flex h-[560px] w-full max-w-[900px] overflow-hidden rounded-xl border border-border bg-secondary shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex w-[220px] flex-shrink-0 flex-col bg-tertiary">
-          <div className="px-4 py-4">
+          <div className="px-4 py-3.5">
             <h2 className="text-sm font-semibold text-primary">Settings</h2>
           </div>
 
-          <nav className="flex-1 px-2 pb-4">
+          <nav className="flex-1 overflow-y-auto px-2 pb-3">
             <ul className="space-y-0.5">
-              {navItems.map((item) => {
+              {navItems.map((item, index) => {
                 const isActive = activeSection === item.id;
                 return (
                   <li key={item.id}>
+                    {index === 0 || navItems[index - 1].group !== item.group ? (
+                      <div className={cn("px-2.5 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted", index === 0 && "pt-1")}>
+                        {item.group}
+                      </div>
+                    ) : null}
                     <button
                       onClick={() => setActiveSection(item.id)}
                       className={cn(
-                        "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors",
-                        isActive ? "bg-active text-primary" : "text-secondary hover:bg-hover"
+                        "flex h-9 w-full items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent-primary",
+                        isActive ? "bg-active text-primary" : "text-secondary hover:bg-hover hover:text-primary"
                       )}
                     >
                       <span className={isActive ? "text-primary" : "text-tertiary"}>
@@ -222,9 +251,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                       </span>
                       <span className="flex-1 text-left">{item.label}</span>
                       {item.beta ? (
-                        <span className="rounded-full bg-hover px-1.5 py-0.5 text-[10px] font-medium text-tertiary">
-                          Beta
-                        </span>
+                        <span className="text-[10px] font-medium text-muted">Beta</span>
                       ) : null}
                     </button>
                   </li>
@@ -232,17 +259,43 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               })}
             </ul>
           </nav>
+          <button
+            type="button"
+            onClick={() => setActiveSection("account")}
+            className="m-2 flex items-center gap-2.5 rounded-md px-2 py-2 text-left hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
+          >
+            {githubSettings.ghAuthUser ? (
+              <img
+                src={`https://github.com/${githubSettings.ghAuthUser}.png?size=64`}
+                alt=""
+                className="h-8 w-8 rounded-md"
+              />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-active text-tertiary">
+                <User className="h-3.5 w-3.5" />
+              </div>
+            )}
+            <div className="min-w-0">
+              <div className="truncate text-xs font-medium text-primary">
+                {githubSettings.ghAuthUser ?? "GitHub account"}
+              </div>
+              <div className="text-[11px] text-tertiary">Manage account</div>
+            </div>
+          </button>
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <div className="flex items-center justify-between border-b border-border px-6 py-4">
-            <h3 className="text-sm font-semibold text-primary">
-              {sectionTitles[activeSection]}
-            </h3>
+          <div className="flex h-[61px] items-center justify-between px-6">
+            <div>
+              <h3 className="text-sm font-semibold text-primary">
+                {sectionTitles[activeSection]}
+              </h3>
+              <p className="mt-0.5 text-xs text-tertiary">{sectionDescriptions[activeSection]}</p>
+            </div>
             <Tooltip content="Dismiss settings panel">
               <button
                 onClick={onClose}
-                className="rounded-md p-1.5 text-tertiary transition-colors hover:bg-hover"
+                className="flex h-8 w-8 items-center justify-center rounded-md text-tertiary transition-colors hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
                 aria-label="Close settings"
               >
                 <X className="h-3.5 w-3.5" />
@@ -255,10 +308,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               <AccountSection githubSettings={githubSettings} />
             ) : null}
             {activeSection === "appearance" ? (
-              <PlaceholderSection
-                title="Appearance"
-                description="Customize the look and feel of the application."
-              />
+              <AppearanceSection />
             ) : null}
             {activeSection === "preferences" ? (
               <PreferencesSection
@@ -279,38 +329,189 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               />
             ) : null}
             {activeSection === "skills" ? (
-              <PlaceholderSection
-                title="Skills"
-                description="Manage your AI skills and capabilities."
-              />
+              <ResourcesSection kind="skill" repositories={repositories} />
             ) : null}
             {activeSection === "agents" ? (
-              <PlaceholderSection
-                title="Custom Agents"
-                description="Create and manage custom AI agents."
-              />
+              <ResourcesSection kind="agent" repositories={repositories} />
             ) : null}
             {activeSection === "mcp" ? (
-              <PlaceholderSection
-                title="MCP Servers"
-                description="Configure Model Context Protocol servers."
-              />
+              <ResourcesSection kind="mcp" repositories={repositories} />
             ) : null}
             {activeSection === "debug" ? (
               <DebugSection githubSettings={githubSettings} />
             ) : null}
           </div>
 
-          <div className="flex justify-end border-t border-border px-6 py-4">
-            <button
-              onClick={onClose}
-              className="rounded-lg bg-accent-primary px-4 py-2 text-sm font-medium text-bg-primary transition-colors hover:bg-accent-hover"
-            >
-              Close
-            </button>
-          </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function AppearanceSection() {
+  const themeMode = useThemeMode();
+  const setThemeMode = useAppStore((state) => state.setThemeMode);
+
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      {([
+        { id: "dark", label: "Dark", icon: Moon, preview: "bg-[#0d0e0f]" },
+        { id: "light", label: "Light", icon: Sun, preview: "bg-[#f0efed]" },
+      ] as const).map((option) => {
+        const Icon = option.icon;
+        const selected = themeMode === option.id;
+        return (
+          <button
+            key={option.id}
+            type="button"
+            onClick={() => void setThemeMode(option.id)}
+            aria-pressed={selected}
+            className={cn(
+              "rounded-lg border p-1.5 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary",
+              selected ? "border-border-strong bg-active" : "border-border-subtle bg-primary hover:bg-hover",
+            )}
+          >
+            <div className={cn("h-20 overflow-hidden rounded-md p-2", option.preview)}>
+              <div className="flex h-full gap-1.5 rounded bg-black/10 p-1.5 ring-1 ring-black/10">
+                <div className="w-1/3 rounded bg-white/10" />
+                <div className="flex-1 space-y-1.5 rounded bg-white/10 p-1.5">
+                  <div className="h-2 w-2/3 rounded-full bg-white/40" />
+                  <div className="h-5 rounded bg-white/10" />
+                  <div className="h-5 rounded bg-white/10" />
+                </div>
+              </div>
+            </div>
+            <div className="flex h-9 items-center gap-2 px-1.5">
+              <Icon className="h-4 w-4 text-secondary" />
+              <span className="text-sm font-medium text-primary">{option.label}</span>
+              {selected ? <Check className="ml-auto h-4 w-4 text-accent-primary" /> : null}
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ResourcesSection({
+  kind,
+  repositories,
+}: {
+  kind: SettingsResource["kind"];
+  repositories: readonly Repository[];
+}) {
+  const [resources, setResources] = useState<SettingsResource[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+
+  const refresh = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const discovered = await invoke<SettingsResource[]>("discover_settings_resources", {
+        repoPaths: repositories.map((repository) => repository.info.path),
+      });
+      setResources(discovered);
+      setError(null);
+    } catch (resourceError) {
+      setError(String(resourceError));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [repositories]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const copy = {
+    skill: {
+      label: "skills",
+      empty: "No skills found",
+      icon: BookOpen,
+    },
+    agent: {
+      label: "agents",
+      empty: "No custom agents found",
+      icon: Bot,
+    },
+    mcp: {
+      label: "servers",
+      empty: "No MCP servers found",
+      icon: Server,
+    },
+  }[kind];
+  const ResourceIcon = copy.icon;
+  const filtered = resources.filter(
+    (resource) =>
+      resource.kind === kind &&
+      `${resource.name} ${resource.scope} ${resource.path}`.toLowerCase().includes(query.toLowerCase()),
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-2">
+        <label className="relative min-w-0 flex-1">
+          <span className="sr-only">Filter {copy.label}</span>
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-tertiary" />
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={`Filter ${copy.label}…`}
+            spellCheck={false}
+            autoComplete="off"
+            className="h-9 w-full rounded-md border border-border-subtle bg-primary pl-8 pr-3 text-sm text-primary outline-none placeholder:text-tertiary focus:ring-2 focus:ring-accent-primary"
+          />
+        </label>
+        <button
+          type="button"
+          onClick={() => void refresh()}
+          disabled={isLoading}
+          aria-label={`Refresh ${copy.label}`}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border-subtle bg-primary text-secondary hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary disabled:opacity-60"
+        >
+          <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin motion-reduce:animate-none")} />
+        </button>
+      </div>
+
+      {error ? (
+        <p role="alert" className="rounded-lg bg-semantic-error/10 px-3 py-2 text-[13px] text-semantic-error">
+          Could not scan settings: {error}
+        </p>
+      ) : null}
+
+      <SettingsCard>
+        {isLoading && resources.length === 0 ? (
+          <SettingsRow><SettingsLabel title="Scanning configuration…" /></SettingsRow>
+        ) : null}
+        {!isLoading && filtered.length === 0 ? (
+          <SettingsRow>
+            <SettingsLabel
+              title={query ? "No matching results" : copy.empty}
+              description={query ? "Try a name, repository, or path." : "Add a definition under .agents, .codex, or .claude to see it here."}
+            />
+          </SettingsRow>
+        ) : null}
+        {filtered.map((resource) => (
+          <SettingsRow key={`${resource.kind}:${resource.path}:${resource.name}`} className="items-center">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-tertiary text-secondary">
+                <ResourceIcon className="h-3.5 w-3.5" />
+              </div>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium text-primary">{resource.name}</div>
+                <div className="mt-0.5 truncate font-mono text-[11px] text-tertiary" title={resource.path}>
+                  {resource.path}
+                </div>
+              </div>
+            </div>
+            <span className="shrink-0 rounded-md bg-tertiary px-2 py-1 text-[11px] font-medium text-secondary">
+              {resource.scope}
+            </span>
+          </SettingsRow>
+        ))}
+      </SettingsCard>
     </div>
   );
 }
@@ -355,12 +556,7 @@ function KeyboardShortcutsSection() {
   };
 
   return (
-    <div className="space-y-4">
-      <SectionHeading
-        title="Navigation"
-        description={`Start with ${formatShortcut(keyboardShortcuts.commandMenu)} to search every action. Customize the compact 60% bindings here; the help button beside your avatar also shows full-keyboard arrow alternatives.`}
-      />
-
+    <div className="space-y-3">
       {error ? (
         <p role="alert" className="rounded-lg bg-semantic-error/10 px-3 py-2 text-xs text-semantic-error">
           {error}
@@ -380,7 +576,7 @@ function KeyboardShortcutsSection() {
                   <button
                     type="button"
                     onClick={() => saveShortcut(definition.id, DEFAULT_KEYBOARD_SHORTCUTS[definition.id])}
-                    className="min-h-11 rounded-md px-2 text-xs text-tertiary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
+                    className="h-9 rounded-md px-2 text-xs text-tertiary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
                   >
                     Reset
                   </button>
@@ -395,7 +591,7 @@ function KeyboardShortcutsSection() {
                   onKeyDown={(event) => recordShortcut(definition.id, event)}
                   aria-label={`Change ${definition.label} shortcut`}
                   className={cn(
-                    "min-h-11 min-w-24 rounded-lg border px-3 font-mono text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary",
+                    "h-9 min-w-24 rounded-md border px-2.5 font-mono text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary",
                     isRecording
                       ? "border-accent-primary bg-active text-primary"
                       : "border-border bg-secondary text-secondary hover:bg-hover",
@@ -418,43 +614,48 @@ function AccountSection({
   githubSettings: { ghCliAvailable: boolean; ghAuthUser: string | null };
 }) {
   return (
-    <div className="space-y-6">
-      <SectionHeading
-        title="GitHub account"
-        description="Connect the GitHub CLI once to keep pull request and review actions tied to your account."
-      />
-
+    <div className="space-y-3">
+      <SectionHeading title="GitHub connection" />
       <SettingsCard>
         {githubSettings.ghCliAvailable && githubSettings.ghAuthUser ? (
-          <SettingsRow className="items-center">
-            <div className="flex items-center gap-3">
-              <img
-                src={`https://github.com/${githubSettings.ghAuthUser}.png`}
-                alt={githubSettings.ghAuthUser}
-                className="h-12 w-12 rounded-full border border-border"
-              />
-              <div className="space-y-1">
-                <div className="text-sm font-medium text-primary">
-                  {githubSettings.ghAuthUser}
+          <>
+            <SettingsRow className="items-center rounded-lg bg-tertiary">
+              <SettingsLabel title="Profile" />
+              <div className="flex min-w-0 items-center gap-3">
+                <img
+                  src={`https://github.com/${githubSettings.ghAuthUser}.png?size=128`}
+                  alt=""
+                  className="h-10 w-10 rounded-md"
+                />
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium text-primary">
+                    {githubSettings.ghAuthUser}
+                  </div>
+                  <div className="text-xs text-tertiary">@{githubSettings.ghAuthUser}</div>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-tertiary">
-                  <svg
-                    className="h-3.5 w-3.5"
-                    viewBox="0 0 16 16"
-                    fill="currentColor"
-                  >
-                    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
-                  </svg>
-                  <span>@{githubSettings.ghAuthUser}</span>
-                </div>
+                <a
+                  href={`https://github.com/${githubSettings.ghAuthUser}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ml-3 flex h-9 shrink-0 items-center rounded-md px-2.5 text-xs font-medium text-secondary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
+                >
+                  View profile
+                </a>
               </div>
-            </div>
-          </SettingsRow>
+            </SettingsRow>
+            <SettingsRow className="mt-2 items-center rounded-lg bg-tertiary">
+              <SettingsLabel title="GitHub CLI" />
+              <div className="flex items-center gap-1.5 text-xs text-secondary">
+                <Check className="h-3.5 w-3.5 text-semantic-success" />
+                Authenticated
+              </div>
+            </SettingsRow>
+          </>
         ) : (
-          <SettingsRow>
+          <SettingsRow className="rounded-lg bg-tertiary p-4">
             <div className="flex min-w-0 items-start gap-3">
-              <div className="rounded-md bg-tertiary p-2">
-                <Terminal className="h-3.5 w-3.5 text-secondary" />
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-tertiary">
+                <Github className="h-5 w-5 text-secondary" />
               </div>
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
@@ -463,7 +664,7 @@ function AccountSection({
                   </span>
                   <AlertCircle className="h-3.5 w-3.5 text-semantic-error" />
                 </div>
-                <p className="max-w-[48ch] text-xs leading-5 text-tertiary">
+                <p className="max-w-[48ch] text-[13px] leading-5 text-secondary">
                   {githubSettings.ghCliAvailable
                     ? "Installed, but not authenticated. Run `gh auth login` to finish setup."
                     : "GitHub CLI is not installed yet. Run `brew install gh` before connecting your account."}
@@ -473,7 +674,7 @@ function AccountSection({
                     href="https://cli.github.com"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex text-xs font-medium text-accent-primary transition-colors hover:text-accent-hover"
+                    className="inline-flex h-9 items-center text-xs font-medium text-accent-primary transition-colors hover:text-accent-hover"
                   >
                     GitHub CLI docs
                   </a>
@@ -553,7 +754,7 @@ function DebugSection({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div className="space-y-3">
         <div className="flex items-start justify-between gap-4">
           <SectionHeading
@@ -566,7 +767,7 @@ function DebugSection({
               onClick={() => void refreshDiagnostics()}
               disabled={isLoading}
               aria-label="Refresh terminal diagnostics"
-              className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary text-secondary hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary disabled:opacity-60"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-secondary hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary disabled:opacity-60"
             >
               <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin motion-reduce:animate-none")} />
             </button>
@@ -653,7 +854,7 @@ function DebugSection({
                           type="button"
                           onClick={() => setConfirmingId(null)}
                           disabled={isRecovering}
-                          className="min-h-11 rounded-lg px-3 text-xs text-secondary hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary disabled:opacity-60"
+                          className="h-9 rounded-md px-2.5 text-xs text-secondary hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary disabled:opacity-60"
                         >
                           Cancel
                         </button>
@@ -662,7 +863,7 @@ function DebugSection({
                           autoFocus
                           onClick={() => void recoverTerminal(terminal)}
                           disabled={isRecovering}
-                          className="min-h-11 rounded-lg bg-semantic-error px-3 text-xs font-medium text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-semantic-error disabled:opacity-60"
+                          className="h-9 rounded-md bg-semantic-error px-2.5 text-xs font-medium text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-semantic-error disabled:opacity-60"
                         >
                           {isRecovering ? "Recovering…" : "End process"}
                         </button>
@@ -675,7 +876,7 @@ function DebugSection({
                           setMessage(null);
                         }}
                         aria-label={`Recover terminal for ${worktreeName}`}
-                        className="min-h-11 rounded-lg border border-border bg-secondary px-3 text-xs font-medium text-secondary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
+                        className="h-9 rounded-md border border-border bg-secondary px-2.5 text-xs font-medium text-secondary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
                       >
                         Recover
                       </button>
@@ -755,23 +956,20 @@ function PreferencesSection({
     AI_AGENTS.find((agent) => agent.id === defaultAIAgent) ?? AI_AGENTS[0];
 
   return (
-    <div className="space-y-8">
-      <div className="space-y-3">
-        <SectionHeading
-          title="AI integration"
-          description="Choose the default agent used for commit messages and other assistant-driven actions."
-        />
-
-        <div className="space-y-5">
-          <div className="space-y-2">
-            <SettingsLabel
-              title="Default AI agent"
-              description="Used automatically until a command overrides it."
-            />
-            <div className="relative">
+    <SettingsCard>
+      <SettingsRow className="items-center">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-tertiary text-secondary">
+                <Bot className="h-3.5 w-3.5" />
+              </div>
+              <SettingsLabel title="Default AI agent" description="Used for assistant actions." />
+            </div>
+            <div className="relative w-56 shrink-0">
               <button
+                type="button"
                 onClick={() => setIsOpen((open) => !open)}
-                className="flex w-full items-center justify-between rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm text-primary transition-colors hover:bg-hover"
+                aria-expanded={isOpen}
+                className="flex h-9 w-full items-center justify-between rounded-md border border-border bg-secondary px-2.5 text-sm text-primary transition-colors hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
               >
                 <span>{selectedAgent.name}</span>
                 <ChevronDown
@@ -782,16 +980,17 @@ function PreferencesSection({
                 />
               </button>
               {isOpen ? (
-                <div className="absolute left-0 right-0 top-full z-10 mt-1 rounded-lg border border-border bg-secondary py-1 shadow-lg">
+                <div className="absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden rounded-lg bg-solid py-1 shadow-xl ring-1 ring-border">
                   {AI_AGENTS.map((agent) => (
                     <button
                       key={agent.id}
+                      type="button"
                       onClick={() => {
                         void setDefaultAIAgent(agent.id);
                         setIsOpen(false);
                       }}
                       className={cn(
-                        "flex w-full items-center justify-between px-3 py-2 text-sm transition-colors",
+                        "flex h-10 w-full items-center justify-between px-3 text-sm transition-colors",
                         agent.id === defaultAIAgent
                           ? "bg-active text-primary"
                           : "text-secondary hover:bg-hover"
@@ -809,47 +1008,45 @@ function PreferencesSection({
                 </div>
               ) : null}
             </div>
+      </SettingsRow>
+      <SettingsRow className="items-center">
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-tertiary text-secondary">
+            <RefreshCw className="h-3.5 w-3.5" />
           </div>
-
-          <div className="space-y-2 border-t border-border pt-5">
-            <div className="flex items-start justify-between gap-4">
-              <SettingsLabel
-                title="Auto-fetch tracked remotes"
-                description="Keeps `main`-based diffs current in the background."
-              />
-              <Checkbox
-                checked={autoFetchEnabled}
-                onCheckedChange={(checked) => {
-                  void setAutoFetchEnabled(checked === true);
-                }}
-                aria-label="Enable auto-fetch"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <SettingsLabel
-                title="Fetch interval"
-                description="How often Autopilot runs `git fetch --all --prune`."
-              />
-              <select
-                value={String(autoFetchIntervalMinutes)}
-                onChange={(event) => {
-                  void setAutoFetchIntervalMinutes(Number(event.target.value));
-                }}
-                disabled={!autoFetchEnabled}
-                className="w-full rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm text-primary outline-none transition-shadow focus:ring-2 focus:ring-accent-primary focus:ring-offset-2 focus:ring-offset-bg-secondary disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {AUTO_FETCH_INTERVAL_OPTIONS.map((minutes) => (
-                  <option key={minutes} value={minutes}>
-                    Every {minutes} minutes
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
+          <SettingsLabel title="Auto-fetch remotes" description="Keep remote branches current." />
         </div>
-      </div>
-    </div>
+        <Checkbox
+          checked={autoFetchEnabled}
+          onCheckedChange={(checked) => {
+            void setAutoFetchEnabled(checked === true);
+          }}
+          aria-label="Enable auto-fetch"
+        />
+      </SettingsRow>
+      <SettingsRow className="items-center">
+        <div className="flex items-center gap-3">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-tertiary text-secondary">
+            <Terminal className="h-3.5 w-3.5" />
+          </div>
+          <SettingsLabel title="Fetch interval" />
+        </div>
+        <select
+          value={String(autoFetchIntervalMinutes)}
+          onChange={(event) => {
+            void setAutoFetchIntervalMinutes(Number(event.target.value));
+          }}
+          disabled={!autoFetchEnabled}
+          className="h-9 w-56 shrink-0 rounded-md border border-border bg-secondary px-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-accent-primary disabled:cursor-not-allowed disabled:text-muted"
+        >
+          {AUTO_FETCH_INTERVAL_OPTIONS.map((minutes) => (
+            <option key={minutes} value={minutes}>
+              Every {minutes} minutes
+            </option>
+          ))}
+        </select>
+      </SettingsRow>
+    </SettingsCard>
   );
 }
 
@@ -872,57 +1069,49 @@ function ProjectsSection({
   }
 
   return (
-    <div className="space-y-6">
-      <SectionHeading
-        title="Post-create scripts"
-        description="These commands run inside each new worktree right after it is created."
-      />
-
-      <div className="space-y-2">
-        <SettingsLabel title="Need a prompt?" />
-        <textarea
-          readOnly
-          value='Write a post-create shell script for this repo. Keep it idempotent, use POSIX shell, and copy any shared files from `AUTOPILOT_MAIN_WORKTREE_PATH` only when they exist.'
-          className="min-h-[88px] w-full rounded-lg border border-border bg-secondary px-3 py-2.5 text-sm leading-6 text-primary outline-none"
-        />
-      </div>
-
-      <div className="space-y-4">
-        {repositories.map((repository) => {
+    <div className="space-y-3">
+      {repositories.map((repository) => {
           const commands = repoPostCreateCommandsByPath[repository.info.path] ?? "";
 
           return (
-            <div key={repository.info.path} className="space-y-2 border-t border-border pt-4 first:border-t-0 first:pt-0">
-              <div className="space-y-1">
-                <div className="text-sm font-medium text-primary">
-                  {repository.info.name}
+            <SettingsCard key={repository.info.path}>
+              <div className="flex items-center gap-3 px-3 py-2.5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-tertiary text-secondary">
+                  <FolderOpen className="h-3.5 w-3.5" />
                 </div>
-                <div className="break-all text-xs leading-5 text-tertiary">
-                  {repository.info.path}
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-semibold text-primary">
+                    {repository.info.name}
+                  </div>
+                  <div className="mt-0.5 truncate font-mono text-[11px] text-tertiary" title={repository.info.path}>
+                    {repository.info.path}
+                  </div>
                 </div>
+                <span className="text-[11px] font-medium text-tertiary">
+                  {commands.trim() ? "Configured" : "Optional"}
+                </span>
               </div>
-
-              <textarea
-                id={`post-create-${repository.info.path}`}
-                value={commands}
-                onChange={(event) => {
-                  void setRepoPostCreateCommands(
-                    repository.info.path,
-                    event.target.value
-                  );
-                }}
-                placeholder={`cp "$AUTOPILOT_MAIN_WORKTREE_PATH/.env" .env\nnpm install`}
-                className="min-h-[120px] w-full rounded-lg border border-border bg-secondary px-3 py-2.5 font-mono text-xs text-primary outline-none transition-shadow focus:ring-2 focus:ring-accent-primary focus:ring-offset-2 focus:ring-offset-bg-secondary"
-              />
-
-              <p className="text-xs leading-5 text-tertiary">
-                Available env vars: `AUTOPILOT_REPO_PATH`, `AUTOPILOT_MAIN_WORKTREE_PATH`,
-                `AUTOPILOT_WORKTREE_PATH`, `AUTOPILOT_WORKTREE_NAME`.
-              </p>
-            </div>
+              <div className="space-y-2 p-3">
+                <label htmlFor={`post-create-${repository.info.path}`} className="text-[13px] font-medium text-primary">
+                  Post-create commands
+                </label>
+                <textarea
+                  id={`post-create-${repository.info.path}`}
+                  value={commands}
+                  onChange={(event) => {
+                    void setRepoPostCreateCommands(repository.info.path, event.target.value);
+                  }}
+                  spellCheck={false}
+                  placeholder={`cp "$AUTOPILOT_MAIN_WORKTREE_PATH/.env" .env\nnpm install`}
+                  className="min-h-[88px] w-full resize-y rounded-md border border-border bg-secondary px-2.5 py-2 font-mono text-sm leading-5 text-primary outline-none placeholder:text-tertiary focus:ring-2 focus:ring-accent-primary"
+                />
+                <p className="text-xs leading-5 text-tertiary">
+                  Runs from the new worktree. Autopilot provides repository and worktree path variables.
+                </p>
+              </div>
+            </SettingsCard>
           );
-        })}
-      </div>
+      })}
     </div>
   );
 }
@@ -935,10 +1124,7 @@ function PlaceholderSection({
   description: string;
 }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center py-12 text-center">
-      <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-border bg-tertiary">
-        <SlidersHorizontal className="h-3.5 w-3.5 text-tertiary" />
-      </div>
+    <div className="flex h-full flex-col items-center justify-center text-center">
       <h4 className="mb-1 text-sm font-medium text-primary">{title}</h4>
       <p className="max-w-[240px] text-xs leading-5 text-tertiary">{description}</p>
     </div>
