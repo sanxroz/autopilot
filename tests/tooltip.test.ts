@@ -8,8 +8,6 @@ const tooltipLabels = [
   "PR actions",
   "Dismiss image preview",
   "Manage reviewers",
-  "Preview current work",
-  "Modify current work notes",
   "Dismiss settings panel",
   "Refresh diagnostics",
   "Toggle captain terminal",

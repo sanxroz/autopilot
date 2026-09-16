@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import {
   ChevronDown,
   ExternalLink,
@@ -82,7 +81,6 @@ export function RightPanelToolbar({
   const personalNotes = useAppStore((state) =>
     state.getSidebarNotesMarkdown(worktreePath),
   );
-  const [hasCurrentWorkNotes, setHasCurrentWorkNotes] = useState(false);
   const [openingIdeId, setOpeningIdeId] = useState<string | null>(null);
 
   const repoPath = useMemo(
@@ -120,71 +118,6 @@ export function RightPanelToolbar({
     }
   }, [activeTab, onActiveTabChange, prStatus]);
 
-  useEffect(() => {
-    let cancelled = false;
-    let refreshInFlight = false;
-    let refreshNeeded = false;
-
-    setHasCurrentWorkNotes(false);
-    if (!worktreePath) return;
-
-    const refreshCurrentWorkNotes = async () => {
-      if (cancelled || document.visibilityState !== "visible") return;
-      if (refreshInFlight) {
-        refreshNeeded = true;
-        return;
-      }
-
-      refreshInFlight = true;
-      try {
-        const hasContent = await invoke<boolean>("has_autopilot_context", {
-          worktreePath,
-        });
-        if (!cancelled) setHasCurrentWorkNotes(hasContent);
-      } catch {
-        // Preserve the last known state when the file cannot be checked.
-      } finally {
-        refreshInFlight = false;
-        if (refreshNeeded) {
-          refreshNeeded = false;
-          void refreshCurrentWorkNotes();
-        }
-      }
-    };
-
-    const unlistenContextChanged = listen<{ worktree_path: string }>(
-      "autopilot-context-changed",
-      (event) => {
-        if (event.payload.worktree_path === worktreePath) {
-          void refreshCurrentWorkNotes();
-        }
-      },
-    ).then(
-      (unlisten) => {
-        void refreshCurrentWorkNotes();
-        return unlisten;
-      },
-      () => {
-        void refreshCurrentWorkNotes();
-        return () => {};
-      },
-    );
-    const refreshWhenVisible = () => {
-      if (document.visibilityState === "visible") {
-        void refreshCurrentWorkNotes();
-      }
-    };
-
-    document.addEventListener("visibilitychange", refreshWhenVisible);
-    window.addEventListener("focus", refreshWhenVisible);
-    return () => {
-      cancelled = true;
-      unlistenContextChanged.then((unlisten) => unlisten());
-      document.removeEventListener("visibilitychange", refreshWhenVisible);
-      window.removeEventListener("focus", refreshWhenVisible);
-    };
-  }, [worktreePath]);
-
   const tabs: Array<{ id: RightPanelTabId; label: string; icon: LucideIcon }> = [
     { id: "git", label: "Git changes", icon: GitBranch },
     ...(prStatus
@@ -192,7 +125,7 @@ export function RightPanelToolbar({
       : []),
     { id: "notes", label: "Notes", icon: NotepadText },
   ];
-  const hasNotes = hasCurrentWorkNotes || personalNotes.trim().length > 0;
+  const hasNotes = personalNotes.trim().length > 0;
   const canMergePR = prStatus ? isReadyToMerge(prStatus) : false;
   const displayedTab = activeTab;
 
