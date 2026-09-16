@@ -103,10 +103,6 @@ fn is_git_internal_path(relative_path: &Path) -> bool {
         .any(|component| component.as_os_str() == ".git")
 }
 
-fn is_autopilot_context_path(worktree_path: &Path, path: &Path) -> bool {
-    worktree_event_relative_path(worktree_path, path).as_deref() == Some(Path::new(".autopilot.md"))
-}
-
 impl GitWatcher {
     pub fn new(app_handle: AppHandle) -> Self {
         Self {
@@ -348,34 +344,11 @@ impl GitWatcher {
             },
         ));
 
-        let app_handle = self.app_handle.clone();
-        let worktree_path_clone = worktree_path.clone();
-        let (context_change_tx, context_change_rx) = tokio::sync::watch::channel(());
-        tauri::async_runtime::spawn(emit_after_quiet(
-            context_change_rx,
-            Duration::from_millis(300),
-            move || {
-                let _ = app_handle.emit(
-                    "autopilot-context-changed",
-                    FileChangeEvent {
-                        worktree_path: worktree_path_clone.clone(),
-                    },
-                );
-            },
-        ));
-
         let watcher = RecommendedWatcher::new(
             move |res: Result<Event, notify::Error>| {
                 if let Ok(event) = res {
                     match event.kind {
                         EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
-                            if event
-                                .paths
-                                .iter()
-                                .any(|path| is_autopilot_context_path(&ignored_path_root, path))
-                            {
-                                let _ = context_change_tx.send(());
-                            }
                             if !event.paths.is_empty()
                                 && event.paths.iter().all(|path| {
                                     is_ignored_worktree_event_path(
@@ -504,7 +477,7 @@ pub fn stop_watching_worktree_files(
 
 #[cfg(test)]
 mod tests {
-    use super::{emit_after_quiet, is_autopilot_context_path};
+    use super::emit_after_quiet;
     use std::time::Duration;
 
     #[tokio::test]
@@ -536,19 +509,5 @@ mod tests {
         drop(change_tx);
         debounce_task.await.expect("debouncer task should finish");
         assert!(emit_rx.try_recv().is_err());
-    }
-
-    #[test]
-    fn identifies_only_the_root_autopilot_context_file() {
-        let worktree = std::env::temp_dir().join("worktree");
-
-        assert!(is_autopilot_context_path(
-            &worktree,
-            &worktree.join(".autopilot.md")
-        ));
-        assert!(!is_autopilot_context_path(
-            &worktree,
-            &worktree.join("nested/.autopilot.md")
-        ));
     }
 }
