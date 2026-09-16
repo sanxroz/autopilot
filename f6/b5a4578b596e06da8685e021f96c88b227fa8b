@@ -1,0 +1,21 @@
+tests/right-panel-toolbar.test.tsx
+  s_bf3ec4800a7dfe::t_b37f6ca58ab754 43-44,52-57,61-68,94,117,158-178,184-205
+  s_bf3ec4800a7dfe::t_1facf363a7b9f1 179-183
+  s_bf3ec4800a7dfe::t_97eb56231f42c5 206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f6b5a4578b596e06da8685e021f96c88b227fa8b",
+  "prompts": {},
+  "sessions": {
+    "s_bf3ec4800a7dfe": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ac53-cb05-7382-8a77-1858edf6d1e0",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
