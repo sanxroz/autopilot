@@ -1,0 +1,25 @@
+src/components/RightPanelToolbar.tsx
+  s_aa69e2cdc20d2a::t_e779871f4a6bcd 128
+src/components/RightPanel/NotesTab.tsx
+  s_aa69e2cdc20d2a::t_67df9eb3b7ff09 8-9,20-33
+src-tauri/src/commands/watcher.rs
+  s_aa69e2cdc20d2a::t_356b08f9e1a388 480
+src-tauri/src/lib.rs
+  s_aa69e2cdc20d2a::t_95ba3e56f4a712 5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "93ef4b88b3917077abaf19cc218c4598ad4a6bcd",
+  "prompts": {},
+  "sessions": {
+    "s_aa69e2cdc20d2a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ac33-c44e-7c93-85ce-096778498e15",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
