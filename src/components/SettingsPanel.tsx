@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   X,
   Check,
@@ -633,14 +634,13 @@ function AccountSection({
                   </div>
                   <div className="text-xs text-tertiary">@{githubSettings.ghAuthUser}</div>
                 </div>
-                <a
-                  href={`https://github.com/${githubSettings.ghAuthUser}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
+                  onClick={() => void openUrl(`https://github.com/${githubSettings.ghAuthUser}`)}
                   className="ml-3 flex h-9 shrink-0 items-center rounded-md px-2.5 text-xs font-medium text-secondary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
                 >
                   View profile
-                </a>
+                </button>
               </div>
             </SettingsRow>
             <SettingsRow className="mt-2 items-center rounded-lg bg-tertiary">
@@ -1106,7 +1106,7 @@ function ProjectsSection({
                   className="min-h-[88px] w-full resize-y rounded-md border border-border bg-secondary px-2.5 py-2 font-mono text-sm leading-5 text-primary outline-none placeholder:text-tertiary focus:ring-2 focus:ring-accent-primary"
                 />
                 <p className="text-xs leading-5 text-tertiary">
-                  Runs from the new worktree. Autopilot provides repository and worktree path variables.
+                  Runs from the new worktree. Available variables: `AUTOPILOT_REPO_PATH`, `AUTOPILOT_MAIN_WORKTREE_PATH`, `AUTOPILOT_WORKTREE_PATH`, and `AUTOPILOT_WORKTREE_NAME`.
                 </p>
               </div>
             </SettingsCard>
