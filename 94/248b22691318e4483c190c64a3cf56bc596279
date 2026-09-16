@@ -1,0 +1,26 @@
+src/components/SettingsPanel.tsx
+  s_86e49bfa89e590::t_54559b7e9e2a6f 3,637-639,643,1109
+src-tauri/Cargo.toml
+  s_86e49bfa89e590::t_54559b7e9e2a6f 25
+src-tauri/src/commands/settings_discovery.rs
+  s_86e49bfa89e590::t_8e89e2a34f0d44 44-58,67-80,133-135,221-223
+  s_86e49bfa89e590::t_54559b7e9e2a6f 39,43,61-62,66,83-84,87,90-94,98-102,104,107-114,122,125,129,132,140-141,151-152,161,185-186,201-220,224
+src-tauri/Cargo.lock
+  s_86e49bfa89e590::t_4629233ac32cd3 260
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "94248b22691318e4483c190c64a3cf56bc596279",
+  "prompts": {},
+  "sessions": {
+    "s_86e49bfa89e590": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0aa7f-ca3b-7d61-b059-63ced5634d00",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
