@@ -40,6 +40,8 @@ const readyPRStatus: PRStatus = {
 
 let prStatus: PRStatus | null = readyPRStatus;
 let hasMerged = false;
+let notesByWorktreePath: Record<string, string> = {};
+const storeListeners = new Set<() => void>();
 const store = {
   repositories: [{
     info: { path: "/repo" },
@@ -47,11 +49,23 @@ const store = {
   }],
   installedIdes: [],
   isLoadingInstalledIdes: false,
-  getSidebarNotesMarkdown: () => "",
+  getSidebarNotesMarkdown: (worktreePath: string | null) =>
+    worktreePath ? notesByWorktreePath[worktreePath] ?? "" : "",
+  setSidebarNotesMarkdown: async (worktreePath: string, notes: string) => {
+    notesByWorktreePath = { ...notesByWorktreePath, [worktreePath]: notes };
+    storeListeners.forEach((listener) => listener());
+  },
 };
 
 mock.module("../src/store", () => ({
-  useAppStore: (selector: (state: typeof store) => unknown) => selector(store),
+  useAppStore: (selector: (state: typeof store) => unknown) =>
+    React.useSyncExternalStore(
+      (listener) => {
+        storeListeners.add(listener);
+        return () => storeListeners.delete(listener);
+      },
+      () => selector(store),
+    ),
 }));
 mock.module("../src/hooks/usePRStatus", () => ({
   usePRStatusForWorktree: () => prStatus,
@@ -77,6 +91,7 @@ const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 type Root = import("react-dom/client").Root;
 const { RightPanelToolbar } = await import("../src/components/RightPanelToolbar");
+const { NotesTab } = await import("../src/components/RightPanel/NotesTab");
 const { Provider: TooltipProvider } = await import("../src/components/ui/tooltip");
 
 let container: HTMLDivElement;
@@ -99,6 +114,7 @@ async function renderToolbar() {
 beforeEach(() => {
   prStatus = readyPRStatus;
   hasMerged = false;
+  notesByWorktreePath = {};
   container = browserWindow.document.createElement("div");
   browserWindow.document.body.append(container);
   root = createRoot(container);
@@ -138,5 +154,54 @@ describe("RightPanelToolbar", () => {
 
     expect(container.querySelector('[aria-label="Merge pull request"]')).toBeNull();
     expect(container.querySelector('[role="status"]')).toBeNull();
+  });
+
+  test("persists edited personal notes and marks the toolbar tab as non-empty", async () => {
+    await act(async () => {
+      root.render(
+        <TooltipProvider>
+          <NotesTab worktreePath="/repo/worktree" />
+          <RightPanelToolbar
+            worktreePath="/repo/worktree"
+            activeTab="notes"
+            onActiveTabChange={() => {}}
+          />
+        </TooltipProvider>,
+      );
+    });
+
+    expect(container.querySelector('[aria-label="Notes"]')).not.toBeNull();
+    const textarea = container.querySelector<HTMLTextAreaElement>('[aria-label="Personal notes"]');
+    expect(textarea).not.toBeNull();
+
+    await act(async () => {
+      if (!textarea) return;
+      const valueSetter = Object.getOwnPropertyDescriptor(
+        browserWindow.HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
+      valueSetter?.call(textarea, "Follow up on review feedback");
+      textarea.dispatchEvent(new browserWindow.Event("input", { bubbles: true }));
+    });
+
+    expect(container.querySelector('[aria-label="Notes, has content"]')).not.toBeNull();
+
+    await act(async () => {
+      root.render(
+        <TooltipProvider>
+          <NotesTab worktreePath={null} />
+        </TooltipProvider>,
+      );
+    });
+    await act(async () => {
+      root.render(
+        <TooltipProvider>
+          <NotesTab worktreePath="/repo/worktree" />
+        </TooltipProvider>,
+      );
+    });
+
+    expect(container.querySelector<HTMLTextAreaElement>('[aria-label="Personal notes"]')?.value)
+      .toBe("Follow up on review feedback");
   });
 });
