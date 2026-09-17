@@ -2,7 +2,10 @@
 
 mod commands;
 
-use commands::{editor, git, github, github_checks, process, settings_lock, terminal, watcher};
+use commands::{
+    editor, git, github, github_checks, process, settings_discovery, settings_lock, terminal,
+    watcher,
+};
 use parking_lot::Mutex;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -243,6 +246,7 @@ pub fn run() {
             process::get_all_worktrees_process_status,
             settings_lock::acquire_settings_lock,
             settings_lock::release_settings_lock,
+            settings_discovery::discover_settings_resources,
             terminal::spawn_terminal,
             terminal::spawn_terminal_with_command,
             terminal::write_to_terminal,

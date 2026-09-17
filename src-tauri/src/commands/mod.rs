@@ -6,6 +6,7 @@ pub mod git;
 pub mod github;
 pub mod github_checks;
 pub mod process;
+pub mod settings_discovery;
 pub mod settings_lock;
 pub mod terminal;
 pub mod watcher;
