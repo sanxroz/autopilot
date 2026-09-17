@@ -236,6 +236,7 @@ dependencies = [
  "cocoa",
  "dirs 5.0.1",
  "git2",
+ "httpdate",
  "libc",
  "notify",
  "objc",

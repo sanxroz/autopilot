@@ -212,7 +212,7 @@ export function AgentUsageIndicator() {
         <button
           ref={triggerRef}
           type="button"
-          className="group flex h-11 w-9 items-center justify-center focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
+          className="group flex h-11 w-11 items-center justify-center focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1"
           aria-label={label}
           aria-pressed={pinned}
           onClick={() => {
@@ -223,7 +223,6 @@ export function AgentUsageIndicator() {
             });
           }}
           onPointerEnter={() => setOpen(true)}
-          onPointerLeave={closeUnlessPinned}
           onFocus={() => setOpen(true)}
           onBlur={closeUnlessPinned}
           onKeyDown={(event) => {
@@ -247,7 +246,6 @@ export function AgentUsageIndicator() {
       sideOffset={8}
       className="w-72 select-text overflow-hidden rounded-xl p-0 font-normal shadow-xl"
       onPointerEnter={() => setOpen(true)}
-      onPointerLeave={closeUnlessPinned}
       >
         <div>
           <div className="flex items-center gap-2 px-3.5 pb-2.5 pt-3.5">

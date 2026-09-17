@@ -1482,7 +1482,7 @@ export function Sidebar({
           </Tooltip>
 
           <div className="flex items-center pr-1">
-            <AgentUsageIndicator />
+            {isOpen && <AgentUsageIndicator />}
             <Tooltip content={themeMode === "dark" ? "Light theme" : "Dark theme"}>
               <button
                 type="button"

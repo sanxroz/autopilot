@@ -203,7 +203,28 @@ afterEach(async () => {
 
 describe("Sidebar Space dragging", () => {
   test("shows one combined usage control", () => {
-    expect(container.querySelectorAll('button[aria-label*="usage"]').length).toBe(1);
+    const usageControl = container.querySelector<HTMLButtonElement>('button[aria-label*="usage"]');
+
+    expect(usageControl).not.toBeNull();
+    expect(usageControl?.classList.contains("w-11")).toBe(true);
+  });
+
+  test("unmounts the usage control while the sidebar is closed", async () => {
+    await act(async () => {
+      root.render(
+        React.createElement(
+          TooltipProvider,
+          null,
+          React.createElement(Sidebar, {
+            isOpen: false,
+            captainTerminalRepoPath: null,
+            onToggleCaptainTerminal: () => {},
+          }),
+        ),
+      );
+    });
+
+    expect(container.querySelector('button[aria-label*="usage"]')).toBeNull();
   });
 
   test("waits for the owner pointer to cross the threshold and restores on cancel", async () => {

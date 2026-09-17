@@ -196,6 +196,15 @@ struct ClaudeUsageResponse {
     seven_day_sonnet: Option<ClaudeUsageWindow>,
 }
 
+impl ClaudeUsageResponse {
+    fn has_usage_window(&self) -> bool {
+        self.five_hour.is_some()
+            || self.seven_day.is_some()
+            || self.seven_day_opus.is_some()
+            || self.seven_day_sonnet.is_some()
+    }
+}
+
 fn claude_window(window: ClaudeUsageWindow, duration_minutes: u64) -> RateLimitWindow {
     RateLimitWindow {
         used_percent: window.utilization.clamp(0.0, 100.0),
@@ -223,6 +232,18 @@ fn claude_retry_error() -> Option<String> {
     ))
 }
 
+fn retry_after_seconds(value: Option<&str>, now: SystemTime) -> u64 {
+    value
+        .and_then(|value| {
+            value.parse::<u64>().ok().or_else(|| {
+                httpdate::parse_http_date(value)
+                    .ok()
+                    .map(|retry_at| retry_at.duration_since(now).unwrap_or_default().as_secs())
+            })
+        })
+        .unwrap_or(300)
+}
+
 #[tauri::command]
 pub async fn get_claude_usage() -> Result<CodexUsage, String> {
     if let Some(error) = claude_retry_error() {
@@ -246,12 +267,13 @@ pub async fn get_claude_usage() -> Result<CodexUsage, String> {
         return Err("Claude Code sign-in expired. Run `claude auth login`.".to_string());
     }
     if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-        let retry_seconds = response
-            .headers()
-            .get(reqwest::header::RETRY_AFTER)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(300);
+        let retry_seconds = retry_after_seconds(
+            response
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|value| value.to_str().ok()),
+            SystemTime::now(),
+        );
         if let Ok(mut retry_at) = CLAUDE_RETRY_AT.get_or_init(|| Mutex::new(None)).lock() {
             *retry_at = Some(Instant::now() + Duration::from_secs(retry_seconds));
         }
@@ -270,6 +292,9 @@ pub async fn get_claude_usage() -> Result<CodexUsage, String> {
         .json()
         .await
         .map_err(|_| "Claude returned an invalid usage response")?;
+    if !response.has_usage_window() {
+        return Err("Claude returned no recognized usage windows".to_string());
+    }
 
     let plan = credentials.claude_ai_oauth.subscription_type;
     let primary = RateLimitSnapshot {
@@ -350,5 +375,37 @@ mod tests {
         assert_eq!(window.used_percent, 42.5);
         assert_eq!(window.window_duration_mins, Some(300));
         assert_eq!(window.resets_at, Some(1_789_606_800));
+    }
+
+    #[test]
+    fn parses_retry_after_seconds_and_http_dates() {
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000);
+
+        assert_eq!(retry_after_seconds(Some("120"), now), 120);
+        assert_eq!(
+            retry_after_seconds(
+                Some(&httpdate::fmt_http_date(now + Duration::from_secs(90))),
+                now
+            ),
+            90
+        );
+        assert_eq!(
+            retry_after_seconds(
+                Some(&httpdate::fmt_http_date(now - Duration::from_secs(1))),
+                now
+            ),
+            0
+        );
+        assert_eq!(retry_after_seconds(Some("invalid"), now), 300);
+    }
+
+    #[test]
+    fn rejects_claude_responses_without_usage_windows() {
+        let empty: ClaudeUsageResponse = serde_json::from_str("{}").unwrap();
+        let populated: ClaudeUsageResponse =
+            serde_json::from_str(r#"{"five_hour":{"utilization":0.0,"resets_at":null}}"#).unwrap();
+
+        assert!(!empty.has_usage_window());
+        assert!(populated.has_usage_window());
     }
 }
