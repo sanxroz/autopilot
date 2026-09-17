@@ -113,6 +113,7 @@ const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
 type Root = import("react-dom/client").Root;
 const { Sidebar } = await import("../src/components/Sidebar");
+const { Provider: TooltipProvider } = await import("../src/components/ui/tooltip");
 
 let container: HTMLDivElement;
 let root: Root;
@@ -160,11 +161,17 @@ beforeEach(async () => {
   root = createRoot(container);
 
   await act(async () => {
-    root.render(React.createElement(Sidebar, {
-      isOpen: true,
-      captainTerminalRepoPath: null,
-      onToggleCaptainTerminal: () => {},
-    }));
+    root.render(
+      React.createElement(
+        TooltipProvider,
+        null,
+        React.createElement(Sidebar, {
+          isOpen: true,
+          captainTerminalRepoPath: null,
+          onToggleCaptainTerminal: () => {},
+        }),
+      ),
+    );
   });
 
   Array.from(
@@ -195,6 +202,10 @@ afterEach(async () => {
 });
 
 describe("Sidebar Space dragging", () => {
+  test("shows one combined usage control", () => {
+    expect(container.querySelectorAll('button[aria-label*="usage"]').length).toBe(1);
+  });
+
   test("waits for the owner pointer to cross the threshold and restores on cancel", async () => {
     await act(async () => pointer(spaceButton("alpha"), "pointerdown", 7, 20));
     await act(async () => pointer(browserWindow, "pointermove", 7, 29));
@@ -234,11 +245,17 @@ describe("Sidebar Space dragging", () => {
   test("commits a drag when reduced motion is enabled", async () => {
     reducedMotion = true;
     await act(async () => {
-      root.render(React.createElement(Sidebar, {
-        isOpen: true,
-        captainTerminalRepoPath: null,
-        onToggleCaptainTerminal: () => {},
-      }));
+      root.render(
+        React.createElement(
+          TooltipProvider,
+          null,
+          React.createElement(Sidebar, {
+            isOpen: true,
+            captainTerminalRepoPath: null,
+            onToggleCaptainTerminal: () => {},
+          }),
+        ),
+      );
     });
 
     await act(async () => pointer(spaceButton("beta"), "pointerdown", 17, 68));
