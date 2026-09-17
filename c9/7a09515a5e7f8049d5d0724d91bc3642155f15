@@ -1,0 +1,67 @@
+tests/agent-usage-indicator.test.ts
+  s_8b1a7a9bc9eb2a::t_6cdc7a5e5ee240 1,3-16
+  s_8b1a7a9bc9eb2a::t_9e24317508cab3 2
+src-tauri/src/commands/mod.rs
+  s_8b1a7a9bc9eb2a::t_6cdc7a5e5ee240 12
+src/lib/agent-usage.ts
+  s_8b1a7a9bc9eb2a::t_9e24317508cab3 1-21
+tests/sidebar-space-drag.test.tsx
+  s_8b1a7a9bc9eb2a::t_61efcab9c399d1 248-258
+  s_8b1a7a9bc9eb2a::t_88ff88bba5bf78 116,164-174
+  s_8b1a7a9bc9eb2a::t_1184e0278de3a5 205-208
+src-tauri/src/lib.rs
+  s_8b1a7a9bc9eb2a::t_6cdc7a5e5ee240 262
+  s_8b1a7a9bc9eb2a::t_4603cfa2da5237 263
+src/components/Sidebar.tsx
+  s_8b1a7a9bc9eb2a::t_1184e0278de3a5 1485
+  s_8b1a7a9bc9eb2a::t_6cdc7a5e5ee240 40
+src-tauri/src/commands/usage.rs
+  s_8b1a7a9bc9eb2a::t_314f7706bb5374 8,10,14,210-211,217-225,228-230,247-261
+  s_8b1a7a9bc9eb2a::t_4603cfa2da5237 143-155,185-209,226-227,232-246,262-263,268-283,294-298,309-317
+  s_8b1a7a9bc9eb2a::t_d4afb333b445e7 1-5,9,11-13,15-70,73,75-111,117-142,318-338,354
+  s_8b1a7a9bc9eb2a::t_d1098bf52dd1b5 264-267,284-293,299-308
+  s_8b1a7a9bc9eb2a::t_4ed3c676f07c6d 212-216
+  s_8b1a7a9bc9eb2a::t_b25a72745dc188 339-351,353
+  s_8b1a7a9bc9eb2a::t_199bee046309e4 352
+  s_8b1a7a9bc9eb2a::t_6ecc934a644b6e 71-72,74
+  s_8b1a7a9bc9eb2a::t_9a1686b9973003 6-7,156-184,231
+  s_8b1a7a9bc9eb2a::t_4f3dbbee94759d 112-116
+src-tauri/Cargo.toml
+  s_8b1a7a9bc9eb2a::t_199bee046309e4 38
+src/components/AgentUsageIndicator.tsx
+  s_8b1a7a9bc9eb2a::t_2455e7770b8118 165-166
+  s_8b1a7a9bc9eb2a::t_fd704fd8cdc11a 192,195,238,256,262-266
+  s_8b1a7a9bc9eb2a::t_9e24317508cab3 9,152-155,158
+  s_8b1a7a9bc9eb2a::t_78e226c35b4739 81-84,86-87,104-106
+  s_8b1a7a9bc9eb2a::t_b05e99473a5ed3 54,56-60,62,64,121-122
+  s_8b1a7a9bc9eb2a::t_6cdc7a5e5ee240 2,8,10-29,31-32,39-40,53,55,68-73,76,78,132-133,146-151,156-157,159-161,198,203,245-246,252,259,315,318-319
+  s_8b1a7a9bc9eb2a::t_b6f9280f7646f8 207,229-233
+  s_8b1a7a9bc9eb2a::t_01429a6087e843 88-103,253
+  s_8b1a7a9bc9eb2a::t_fe9e4e9188fd91 248
+  s_8b1a7a9bc9eb2a::t_4926e76599eb07 30,33-38,67,74-75,77,79-80,187-189,247,292,298,302
+  s_8b1a7a9bc9eb2a::t_1184e0278de3a5 41-52,107-120,123-127,134-145,175-186,194,196-197,236-237,239,254-255,257-258,260-261,267-274,276-291,293-297,299-301,303-305,307-314
+  s_8b1a7a9bc9eb2a::t_9635fb3877c10e 85
+  s_8b1a7a9bc9eb2a::t_81f9c5180b5993 1,130-131,162-164,167-174,213,244
+  s_8b1a7a9bc9eb2a::t_98a976b7331b99 190-191,193
+  s_8b1a7a9bc9eb2a::t_b62bb8e3a946d6 128-129,199-202,204-206,208-212,214-228,234-235,240-243,249-251,275,316-317
+  s_8b1a7a9bc9eb2a::t_b3c694520f2bba 61,63,65-66,306
+  s_8b1a7a9bc9eb2a::t_225557a76fee19 3-7
+src-tauri/Cargo.lock
+  s_8b1a7a9bc9eb2a::t_cfe3b1ed3e2616 246
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c97a09515a5e7f8049d5d0724d91bc3642155f15",
+  "prompts": {},
+  "sessions": {
+    "s_8b1a7a9bc9eb2a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0aa81-a708-79e1-bc43-1579b570fa56",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
