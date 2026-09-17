@@ -482,6 +482,15 @@ function ResourcesSection({
         </p>
       ) : null}
 
+      <div role="status" className="sr-only">
+        {isLoading
+          ? "Scanning configuration…"
+          : error
+            ? ""
+            : filtered.length === 0
+              ? query ? "No matching results" : copy.empty
+              : `${filtered.length} result${filtered.length === 1 ? "" : "s"} found`}
+      </div>
       <SettingsCard>
         {isLoading && resources.length === 0 ? (
           <SettingsRow><SettingsLabel title="Scanning configuration…" /></SettingsRow>
