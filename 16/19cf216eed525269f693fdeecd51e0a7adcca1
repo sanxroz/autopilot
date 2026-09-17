@@ -1,0 +1,19 @@
+src/components/SettingsPanel.tsx
+  s_f85b20ec1d3380::t_a79d0dcb203626 485-493
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1619cf216eed525269f693fdeecd51e0a7adcca1",
+  "prompts": {},
+  "sessions": {
+    "s_f85b20ec1d3380": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0ad38-8062-7210-b8a2-6fbcef948283",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "sanxroz <san7yx@gmail.com>"
+    }
+  }
+}
