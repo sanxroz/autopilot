@@ -12,6 +12,7 @@ tests/sidebar-space-drag.test.tsx
 src-tauri/src/lib.rs
   s_8b1a7a9bc9eb2a::t_6cdc7a5e5ee240 262
   s_8b1a7a9bc9eb2a::t_4603cfa2da5237 263
+  s_8b1a7a9bc9eb2a::t_76c019bb354961 6
 src/components/Sidebar.tsx
   s_8b1a7a9bc9eb2a::t_1184e0278de3a5 1485
   s_8b1a7a9bc9eb2a::t_6cdc7a5e5ee240 40
