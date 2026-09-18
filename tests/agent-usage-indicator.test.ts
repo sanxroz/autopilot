@@ -13,4 +13,10 @@ describe("agent usage display", () => {
     expect(formatResetTime((now + 45 * 60_000) / 1000, now)).toBe("Resets in 45m");
     expect(formatResetTime((now + 3 * 60 * 60_000) / 1000, now)).toBe("Resets in 3h");
   });
+
+  test("labels elapsed reset times", () => {
+    const now = Date.UTC(2026, 8, 16, 12);
+    expect(formatResetTime(now / 1000, now)).toBe("Reset time elapsed");
+    expect(formatResetTime((now - 5 * 60_000) / 1000, now)).toBe("Reset time elapsed");
+  });
 });

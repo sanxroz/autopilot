@@ -216,11 +216,9 @@ export function AgentUsageIndicator() {
           aria-label={label}
           aria-pressed={pinned}
           onClick={() => {
-            setPinned((current) => {
-              const next = !current;
-              setOpen(next);
-              return next;
-            });
+            const next = !pinned;
+            setPinned(next);
+            setOpen(next);
           }}
           onPointerEnter={() => setOpen(true)}
           onFocus={() => setOpen(true)}

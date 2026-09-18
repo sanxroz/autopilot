@@ -10,7 +10,8 @@ export function formatQuotaWindow(minutes: number | null): string {
 export function formatResetTime(timestamp: number | null, now = Date.now()): string {
   if (timestamp === null) return "Reset time unavailable";
   const reset = timestamp * 1000;
-  const remainingMinutes = Math.max(0, Math.round((reset - now) / 60_000));
+  if (reset <= now) return "Reset time elapsed";
+  const remainingMinutes = Math.round((reset - now) / 60_000);
   if (remainingMinutes < 60) return `Resets in ${remainingMinutes}m`;
   if (remainingMinutes < 1_440) return `Resets in ${Math.round(remainingMinutes / 60)}h`;
   return `Resets ${new Intl.DateTimeFormat(undefined, {

@@ -203,10 +203,12 @@ afterEach(async () => {
 
 describe("Sidebar Space dragging", () => {
   test("shows one combined usage control", () => {
-    const usageControl = container.querySelector<HTMLButtonElement>('button[aria-label*="usage"]');
+    const usageControls = container.querySelectorAll<HTMLButtonElement>(
+      'button[aria-label*="usage"]',
+    );
 
-    expect(usageControl).not.toBeNull();
-    expect(usageControl?.classList.contains("w-11")).toBe(true);
+    expect(usageControls).toHaveLength(1);
+    expect(usageControls[0]?.classList.contains("w-11")).toBe(true);
   });
 
   test("unmounts the usage control while the sidebar is closed", async () => {
