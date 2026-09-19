@@ -7,7 +7,7 @@ import {
 } from "../src/lib/sidebar-groups";
 
 describe("sidebar worktree groups", () => {
-  test("creates a new group when one worktree is held over another", () => {
+  test("creates a new group when one worktree is grouped with another", () => {
     const result = createSidebarGroup(
       {
         groups: [],
@@ -135,6 +135,26 @@ describe("sidebar worktree groups", () => {
     expect(result.groups).toEqual<SidebarWorktreeGroup[]>([
       { id: "group-1", name: "First", worktreePaths: ["alpha"] },
       { id: "group-2", name: "Second", worktreePaths: ["gamma", "beta"] },
+    ]);
+  });
+
+  test("returns a worktree to automatic grouping without changing its order", () => {
+    const result = moveWorktreeInSidebar(
+      {
+        groups: [
+          { id: "group-1", name: "Manual", worktreePaths: ["alpha", "beta"] },
+        ],
+        orderedWorktreePaths: ["alpha", "beta", "gamma"],
+      },
+      {
+        sourceWorktreePath: "beta",
+        position: "auto",
+      },
+    );
+
+    expect(result.orderedWorktreePaths).toEqual(["alpha", "beta", "gamma"]);
+    expect(result.groups).toEqual<SidebarWorktreeGroup[]>([
+      { id: "group-1", name: "Manual", worktreePaths: ["alpha"] },
     ]);
   });
 

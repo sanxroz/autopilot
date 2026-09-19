@@ -6,7 +6,7 @@ export interface SidebarWorktreeGroup {
 
 export interface SidebarWorktreeDrop {
   readonly sourceWorktreePath: string;
-  readonly position: "before" | "after" | "inside";
+  readonly position: "before" | "after" | "inside" | "auto";
   readonly targetWorktreePath?: string;
   readonly targetGroupId?: string;
 }
@@ -208,7 +208,7 @@ export function moveWorktreeInSidebar(
           "after"
         )
       : insertPath(nextOrder, drop.sourceWorktreePath, nextOrder.length);
-  } else if (drop.targetWorktreePath) {
+  } else if (drop.position !== "auto" && drop.targetWorktreePath) {
     nextOrder = insertPathRelativeToTarget(
       nextOrder,
       drop.sourceWorktreePath,
@@ -236,6 +236,7 @@ export function moveWorktreeInSidebar(
     });
   } else if (
     drop.position !== "inside" &&
+    drop.position !== "auto" &&
     sourceGroup &&
     targetGroupFromWorktree &&
     sourceGroup.id === targetGroupFromWorktree.id &&
