@@ -4,7 +4,7 @@ mod commands;
 
 use commands::{
     editor, git, github, github_checks, process, settings_discovery, settings_lock, terminal,
-    watcher,
+    usage, watcher,
 };
 use parking_lot::Mutex;
 use std::collections::HashMap;
@@ -259,6 +259,8 @@ pub fn run() {
             terminal::recover_terminal_process,
             terminal::close_terminal,
             terminal::close_terminals_for_worktree,
+            usage::get_codex_usage,
+            usage::get_claude_usage,
             watcher::start_watching_repository,
             watcher::stop_watching_repository,
             watcher::stop_all_watchers,

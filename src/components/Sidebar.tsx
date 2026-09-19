@@ -37,6 +37,7 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { Tooltip } from "./ui/tooltip";
+import { AgentUsageIndicator } from "./AgentUsageIndicator";
 import {
   canStartSpaceDrag,
   findSpaceForWorktree,
@@ -1481,6 +1482,7 @@ export function Sidebar({
           </Tooltip>
 
           <div className="flex items-center pr-1">
+            {isOpen && <AgentUsageIndicator />}
             <Tooltip content={themeMode === "dark" ? "Light theme" : "Dark theme"}>
               <button
                 type="button"

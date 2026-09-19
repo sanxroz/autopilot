@@ -9,4 +9,5 @@ pub mod process;
 pub mod settings_discovery;
 pub mod settings_lock;
 pub mod terminal;
+pub mod usage;
 pub mod watcher;
