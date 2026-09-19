@@ -8,6 +8,7 @@ use std::time::SystemTime;
 use std::time::{Duration, Instant};
 
 const CODEX_USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
+static CODEX_RETRY_AT: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 static CLAUDE_RETRY_AT: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -140,8 +141,33 @@ fn convert_codex_usage(response: CodexApiUsage) -> Result<CodexUsage, String> {
     })
 }
 
+fn retry_error(provider: &str, retry_at: &OnceLock<Mutex<Option<Instant>>>) -> Option<String> {
+    let remaining = retry_at
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .ok()?
+        .as_ref()?
+        .saturating_duration_since(Instant::now());
+    if remaining.is_zero() {
+        return None;
+    }
+    Some(format!(
+        "{provider} usage is temporarily limited. Try again in {}m.",
+        remaining.as_secs().div_ceil(60)
+    ))
+}
+
+fn set_retry_at(retry_at: &OnceLock<Mutex<Option<Instant>>>, retry_seconds: u64) {
+    if let Ok(mut retry_at) = retry_at.get_or_init(|| Mutex::new(None)).lock() {
+        *retry_at = Some(Instant::now() + Duration::from_secs(retry_seconds));
+    }
+}
+
 #[tauri::command]
 pub async fn get_codex_usage() -> Result<CodexUsage, String> {
+    if let Some(error) = retry_error("Codex", &CODEX_RETRY_AT) {
+        return Err(error);
+    }
     let auth_path = dirs::home_dir()
         .ok_or("Home directory unavailable")?
         .join(".codex/auth.json");
@@ -161,6 +187,20 @@ pub async fn get_codex_usage() -> Result<CodexUsage, String> {
         .map_err(|error| format!("Could not read Codex usage: {error}"))?;
     if response.status() == reqwest::StatusCode::UNAUTHORIZED {
         return Err("Codex sign-in expired. Sign in again and retry.".to_string());
+    }
+    if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        let retry_seconds = retry_after_seconds(
+            response
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|value| value.to_str().ok()),
+            SystemTime::now(),
+        );
+        set_retry_at(&CODEX_RETRY_AT, retry_seconds);
+        return Err(format!(
+            "Codex usage is temporarily limited. Try again in {}m.",
+            retry_seconds.div_ceil(60)
+        ));
     }
     if !response.status().is_success() {
         return Err(format!(
@@ -251,22 +291,6 @@ fn claude_window(window: ClaudeUsageWindow, duration_minutes: u64) -> RateLimitW
     }
 }
 
-fn claude_retry_error() -> Option<String> {
-    let retry_at = CLAUDE_RETRY_AT.get_or_init(|| Mutex::new(None));
-    let remaining = retry_at
-        .lock()
-        .ok()?
-        .as_ref()?
-        .saturating_duration_since(Instant::now());
-    if remaining.is_zero() {
-        return None;
-    }
-    Some(format!(
-        "Claude usage is temporarily limited. Try again in {}m.",
-        remaining.as_secs().div_ceil(60)
-    ))
-}
-
 fn retry_after_seconds(value: Option<&str>, now: SystemTime) -> u64 {
     value
         .and_then(|value| {
@@ -281,7 +305,7 @@ fn retry_after_seconds(value: Option<&str>, now: SystemTime) -> u64 {
 
 #[tauri::command]
 pub async fn get_claude_usage() -> Result<CodexUsage, String> {
-    if let Some(error) = claude_retry_error() {
+    if let Some(error) = retry_error("Claude", &CLAUDE_RETRY_AT) {
         return Err(error);
     }
     let credentials = read_claude_credentials()?;
@@ -309,9 +333,7 @@ pub async fn get_claude_usage() -> Result<CodexUsage, String> {
                 .and_then(|value| value.to_str().ok()),
             SystemTime::now(),
         );
-        if let Ok(mut retry_at) = CLAUDE_RETRY_AT.get_or_init(|| Mutex::new(None)).lock() {
-            *retry_at = Some(Instant::now() + Duration::from_secs(retry_seconds));
-        }
+        set_retry_at(&CLAUDE_RETRY_AT, retry_seconds);
         return Err(format!(
             "Claude usage is temporarily limited. Try again in {}m.",
             retry_seconds.div_ceil(60)
@@ -428,6 +450,18 @@ mod tests {
             0
         );
         assert_eq!(retry_after_seconds(Some("invalid"), now), 300);
+    }
+
+    #[test]
+    fn suppresses_requests_until_retry_deadline() {
+        let retry_at = OnceLock::new();
+
+        set_retry_at(&retry_at, 120);
+
+        assert_eq!(
+            retry_error("Codex", &retry_at).as_deref(),
+            Some("Codex usage is temporarily limited. Try again in 2m.")
+        );
     }
 
     #[test]
