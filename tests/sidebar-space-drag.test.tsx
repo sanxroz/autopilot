@@ -26,10 +26,16 @@ browserWindow.HTMLElement.prototype.setPointerCapture = function (pointerId: num
 browserWindow.HTMLElement.prototype.scrollIntoView = () => {};
 
 const reorderCalls: string[][] = [];
+const groupCalls: Array<[string, string, string]> = [];
 let reducedMotion = false;
 const repositories = ["alpha", "beta", "gamma"].map((path) => ({
   info: { name: path, path },
-  worktrees: [],
+  worktrees: path === "alpha"
+    ? [
+        { name: "source", path: "/alpha/source", branch: "source", last_modified: null },
+        { name: "target", path: "/alpha/target", branch: "target", last_modified: null },
+      ]
+    : [],
   isExpanded: true,
 }));
 const store = {
@@ -43,7 +49,10 @@ const store = {
   selectedWorktree: null,
   createWorktreeAuto: async () => null,
   deleteWorktree: async () => {},
-  createSidebarGroup: async () => null,
+  createSidebarGroup: async (repoPath: string, sourcePath: string, targetPath: string) => {
+    groupCalls.push([repoPath, sourcePath, targetPath]);
+    return null;
+  },
   moveWorktreeInSidebar: async () => {},
   renameSidebarGroup: async () => {},
   setThemeMode: () => {},
@@ -64,6 +73,7 @@ mock.module("../src/store", () => ({ useAppStore }));
 mock.module("../src/hooks/useTheme", () => ({ useThemeMode: () => "dark" }));
 mock.module("@tauri-apps/plugin-dialog", () => ({ open: async () => null }));
 mock.module("framer-motion", () => ({
+  AnimatePresence: ({ children }: { children?: React.ReactNode }) => children,
   motion: {
     div: forwardRef<HTMLDivElement, Record<string, unknown>>(
       ({ layout: _layout, animate: _animate, transition: _transition, ...props }, ref) =>
@@ -107,6 +117,13 @@ mock.module("../src/components/ui/dropdown-menu", () => ({
   DropdownMenuItem: menuItem,
   DropdownMenuSeparator: () => null,
   DropdownMenuTrigger: passthrough,
+}));
+mock.module("../src/components/ui/tooltip", () => ({
+  Provider: passthrough,
+  Root: passthrough,
+  Trigger: passthrough,
+  Content: passthrough,
+  Tooltip: passthrough,
 }));
 
 const { act } = await import("react");
@@ -153,6 +170,7 @@ function renderedOrder() {
 
 beforeEach(async () => {
   reorderCalls.length = 0;
+  groupCalls.length = 0;
   capturedPointers.clear();
   reducedMotion = false;
   browserWindow.localStorage.clear();
@@ -296,5 +314,38 @@ describe("Sidebar Space dragging", () => {
 
     await act(async () => moveDown?.click());
     expect(reorderCalls).toEqual([["beta", "alpha", "gamma"]]);
+  });
+});
+
+describe("Sidebar session grouping", () => {
+  test("commits the same grouping target shown by the dashed outline", async () => {
+    const source = container.querySelector<HTMLElement>(
+      '[data-worktree-path="/alpha/source"]',
+    )!;
+    const target = container.querySelector<HTMLElement>(
+      '[data-worktree-path="/alpha/target"]',
+    )!;
+    target.getBoundingClientRect = () => ({
+      x: 0,
+      y: 100,
+      top: 100,
+      right: 200,
+      bottom: 140,
+      left: 0,
+      width: 200,
+      height: 40,
+      toJSON: () => ({}),
+    });
+    browserWindow.document.elementFromPoint = () => target;
+
+    await act(async () => pointer(source, "pointerdown", 23, 0));
+    await act(async () => pointer(browserWindow, "pointermove", 23, 120));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    });
+    expect(target.querySelector('[aria-label="Drop to group"]')).not.toBeNull();
+
+    await act(async () => pointer(browserWindow, "pointerup", 23, 120));
+    expect(groupCalls).toEqual([["alpha", "/alpha/source", "/alpha/target"]]);
   });
 });

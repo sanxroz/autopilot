@@ -344,6 +344,40 @@ describe("sidebar group store synchronization", () => {
     expect(persistedGroups["/repo"]).toHaveLength(1);
   });
 
+  test("renaming a newly created group preserves its members", async () => {
+    useAppStore.setState({
+      repositories: [repository],
+      worktreeOrdersByRepo: { "/repo": [alpha.path, beta.path] },
+      sidebarGroupsByRepo: {},
+    });
+
+    const groupId = await useAppStore
+      .getState()
+      .createSidebarGroup("/repo", alpha.path, beta.path);
+    if (!groupId) throw new Error("Expected the group to be created");
+
+    await useAppStore
+      .getState()
+      .renameSidebarGroup("/repo", groupId, "Analytics");
+
+    expect(useAppStore.getState().sidebarGroupsByRepo["/repo"]).toEqual([
+      {
+        id: groupId,
+        name: "Analytics",
+        worktreePaths: [beta.path, alpha.path],
+      },
+    ]);
+    expect(diskValues.get("sidebarGroupsByRepo")).toEqual({
+      "/repo": [
+        {
+          id: groupId,
+          name: "Analytics",
+          worktreePaths: [beta.path, alpha.path],
+        },
+      ],
+    });
+  });
+
   test("local settings writes preserve groups added externally", async () => {
     const externalGroups = {
       "/repo": [{ id: "external", name: "External", worktreePaths: [alpha.path] }],

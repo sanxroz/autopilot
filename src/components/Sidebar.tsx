@@ -1,5 +1,5 @@
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
-import { motion, useReducedMotion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   Plus,
@@ -61,7 +61,7 @@ const MIN_WIDTH = 240 + SPACE_RAIL_WIDTH;
 const MAX_WIDTH = 520 + SPACE_RAIL_WIDTH;
 const DEFAULT_WIDTH = 312 + SPACE_RAIL_WIDTH;
 const DRAG_START_THRESHOLD_PX = 10;
-const GROUP_HOLD_DELAY_MS = 1200;
+const GROUP_HOLD_DELAY_MS = 450;
 const IS_DEVELOPMENT_BUILD =
   import.meta.env.VITE_AUTOPILOT_DEVELOPMENT === "1";
 
@@ -152,14 +152,10 @@ export function Sidebar({
   } | null>(null);
   const [dropTarget, setDropTarget] = useState<{
     repoPath: string;
-    kind: "worktree" | "group";
+    kind: "worktree" | "group" | "ungroup" | "create-group";
     worktreePath?: string;
     groupId?: string;
-    position?: "before" | "after" | "inside";
-  } | null>(null);
-  const [groupingTarget, setGroupingTarget] = useState<{
-    repoPath: string;
-    worktreePath: string;
+    position?: "before" | "after" | "inside" | "auto";
   } | null>(null);
   const [editingGroup, setEditingGroup] = useState<{
     repoPath: string;
@@ -176,7 +172,6 @@ export function Sidebar({
   } | null>(null);
   const draggedWorktreeRef = useRef<typeof draggedWorktree>(null);
   const dropTargetRef = useRef<typeof dropTarget>(null);
-  const groupingTargetRef = useRef<typeof groupingTarget>(null);
   const groupHoverTimerRef = useRef<number | null>(null);
   const groupHoverCandidateRef = useRef<{
     repoPath: string;
@@ -218,11 +213,6 @@ export function Sidebar({
 
     dropTargetRef.current = value;
     setDropTarget(value);
-  };
-
-  const setCurrentGroupingTarget = (value: typeof groupingTarget) => {
-    groupingTargetRef.current = value;
-    setGroupingTarget(value);
   };
 
   const clearGroupHoverTimer = () => {
@@ -613,7 +603,6 @@ export function Sidebar({
     dragSessionRef.current = null;
     setCurrentDraggedWorktree(null);
     setCurrentDropTarget(null);
-    setCurrentGroupingTarget(null);
     setIsReorderPointerActive(false);
   };
 
@@ -649,13 +638,11 @@ export function Sidebar({
       const groupTarget = element?.closest<HTMLElement>(
         "[data-sidebar-group-drop-target='true']"
       );
-
       if (!worktreeTarget && groupTarget) {
         const repoPath = groupTarget.dataset.repoPath;
         const groupId = groupTarget.dataset.groupId;
         if (repoPath && groupId && repoPath === currentDrag.repoPath) {
           clearGroupHoverTimer();
-          setCurrentGroupingTarget(null);
           setCurrentDropTarget({
             repoPath,
             kind: "group",
@@ -668,8 +655,15 @@ export function Sidebar({
 
       if (!worktreeTarget) {
         clearGroupHoverTimer();
-        setCurrentGroupingTarget(null);
-        setCurrentDropTarget(null);
+        setCurrentDropTarget(
+          element && sessionsListRef.current?.contains(element)
+            ? {
+                repoPath: currentDrag.repoPath,
+                kind: "ungroup",
+                position: "auto",
+              }
+            : null
+        );
         return;
       }
 
@@ -682,38 +676,37 @@ export function Sidebar({
         worktreePath === currentDrag.worktreePath
       ) {
         clearGroupHoverTimer();
-        setCurrentGroupingTarget(null);
         setCurrentDropTarget(null);
         return;
       }
 
       const candidate = { repoPath, worktreePath };
-      const activeGrouping = groupingTargetRef.current;
       const currentCandidate = groupHoverCandidateRef.current;
       const isSameCandidate =
-        currentCandidate?.repoPath === candidate.repoPath &&
-        currentCandidate.worktreePath === candidate.worktreePath;
+        currentCandidate?.repoPath === repoPath &&
+        currentCandidate.worktreePath === worktreePath;
 
-      if (!isSameCandidate && !activeGrouping) {
+      if (!isSameCandidate) {
         clearGroupHoverTimer();
         groupHoverCandidateRef.current = candidate;
         groupHoverTimerRef.current = window.setTimeout(() => {
-          setCurrentGroupingTarget(candidate);
-          setCurrentDropTarget(null);
+          setCurrentDropTarget({
+            repoPath,
+            kind: "create-group",
+            worktreePath,
+            position: "inside",
+          });
           groupHoverTimerRef.current = null;
-          groupHoverCandidateRef.current = candidate;
         }, GROUP_HOLD_DELAY_MS);
       }
 
       if (
-        activeGrouping?.repoPath === repoPath &&
-        activeGrouping.worktreePath === worktreePath
+        dropTargetRef.current?.kind === "create-group" &&
+        dropTargetRef.current.repoPath === repoPath &&
+        dropTargetRef.current.worktreePath === worktreePath
       ) {
-        setCurrentDropTarget(null);
         return;
       }
-
-      setCurrentGroupingTarget(null);
 
       const bounds = worktreeTarget.getBoundingClientRect();
       const position = e.clientY < bounds.top + bounds.height / 2 ? "before" : "after";
@@ -728,7 +721,6 @@ export function Sidebar({
     const handlePointerUp = async () => {
       const currentDrag = draggedWorktreeRef.current;
       const currentDrop = dropTargetRef.current;
-      const currentGrouping = groupingTargetRef.current;
 
       if (!dragSessionRef.current?.isDragging) {
         const clickSession = dragSessionRef.current;
@@ -755,69 +747,75 @@ export function Sidebar({
         suppressNextWorktreeClickRef.current = false;
       }, 250);
 
-      if (
-        !currentDrag ||
-        (currentGrouping &&
-          (currentDrag.repoPath !== currentGrouping.repoPath ||
-            currentDrag.worktreePath === currentGrouping.worktreePath))
-      ) {
+      if (!currentDrag) {
         endWorktreeDrag();
         return;
       }
 
-      if (currentGrouping) {
-        const createdGroupId = await createSidebarGroup(
-          currentGrouping.repoPath,
-          currentDrag.worktreePath,
-          currentGrouping.worktreePath
-        );
-        if (createdGroupId) {
-          const createdGroup = useAppStore
-            .getState()
-            .sidebarGroupsByRepo[currentGrouping.repoPath]
-            ?.find((group) => group.id === createdGroupId);
+      try {
+        if (
+          currentDrop?.kind === "create-group" &&
+          currentDrop.worktreePath &&
+          currentDrag.repoPath === currentDrop.repoPath &&
+          currentDrag.worktreePath !== currentDrop.worktreePath
+        ) {
+          const createdGroupId = await createSidebarGroup(
+            currentDrop.repoPath,
+            currentDrag.worktreePath,
+            currentDrop.worktreePath
+          );
+          if (createdGroupId) {
+            const createdGroup = useAppStore
+              .getState()
+              .sidebarGroupsByRepo[currentDrop.repoPath]
+              ?.find((group) => group.id === createdGroupId);
 
-          if (createdGroup) {
-            setEditingGroup({
-              repoPath: currentGrouping.repoPath,
-              groupId: createdGroupId,
-              value: createdGroup.name,
-            });
+            if (createdGroup) {
+              setEditingGroup({
+                repoPath: currentDrop.repoPath,
+                groupId: createdGroupId,
+                value: createdGroup.name,
+              });
+            }
           }
+          return;
         }
+
+        if (
+          !currentDrop ||
+          currentDrag.repoPath !== currentDrop.repoPath ||
+          (currentDrop.kind === "worktree" &&
+            currentDrag.worktreePath === currentDrop.worktreePath)
+        ) {
+          return;
+        }
+
+        if (currentDrop.kind === "group" && currentDrop.groupId) {
+          await moveWorktreeInSidebar(currentDrop.repoPath, {
+            sourceWorktreePath: currentDrag.worktreePath,
+            targetGroupId: currentDrop.groupId,
+            position: "inside",
+          });
+        } else if (currentDrop.kind === "ungroup") {
+          setError(null);
+          await moveWorktreeInSidebar(currentDrop.repoPath, {
+            sourceWorktreePath: currentDrag.worktreePath,
+            position: "auto",
+          });
+        } else if (
+          currentDrop.kind === "worktree" &&
+          currentDrop.worktreePath &&
+          currentDrop.position
+        ) {
+          await moveWorktreeInSidebar(currentDrop.repoPath, {
+            sourceWorktreePath: currentDrag.worktreePath,
+            targetWorktreePath: currentDrop.worktreePath,
+            position: currentDrop.position,
+          });
+        }
+      } finally {
         endWorktreeDrag();
-        return;
       }
-
-      if (
-        !currentDrop ||
-        currentDrag.repoPath !== currentDrop.repoPath ||
-        (currentDrop.kind === "worktree" &&
-          currentDrag.worktreePath === currentDrop.worktreePath)
-      ) {
-        endWorktreeDrag();
-        return;
-      }
-
-      if (currentDrop.kind === "group" && currentDrop.groupId) {
-        await moveWorktreeInSidebar(currentDrop.repoPath, {
-          sourceWorktreePath: currentDrag.worktreePath,
-          targetGroupId: currentDrop.groupId,
-          position: "inside",
-        });
-      } else if (
-        currentDrop.kind === "worktree" &&
-        currentDrop.worktreePath &&
-        currentDrop.position
-      ) {
-        await moveWorktreeInSidebar(currentDrop.repoPath, {
-          sourceWorktreePath: currentDrag.worktreePath,
-          targetWorktreePath: currentDrop.worktreePath,
-          position: currentDrop.position,
-        });
-      }
-
-      endWorktreeDrag();
     };
 
     window.addEventListener("pointermove", handlePointerMove);
@@ -1142,10 +1140,32 @@ export function Sidebar({
 
         <div
           ref={sessionsListRef}
-          className="min-h-0 flex-1 overflow-y-auto scrollbar-hide"
+          className="relative min-h-0 flex-1 overflow-y-auto rounded-md scrollbar-hide"
           style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}
         >
-          <div className="flex flex-col gap-0.5">
+          <AnimatePresence initial={false}>
+            {dropTarget?.kind === "ungroup" &&
+              dropTarget.repoPath === activeRepoGroup?.repoPath && (
+                <motion.div
+                  key="ungroup-drop-surface"
+                  initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.985 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={shouldReduceMotion ? undefined : { opacity: 0, scale: 0.99 }}
+                  transition={
+                    shouldReduceMotion
+                      ? { duration: 0 }
+                      : { duration: 0.15, ease: [0.165, 0.84, 0.44, 1] }
+                  }
+                  className="pointer-events-none absolute inset-1 z-20 flex items-end justify-center rounded-lg border border-dashed border-accent-primary bg-accent-primary/10 p-2 will-change-transform"
+                  aria-hidden="true"
+                >
+                  <span className="rounded-md border border-accent-primary/30 bg-primary/90 px-2 py-1 text-[11px] font-medium text-accent-primary shadow-sm">
+                    Drop to ungroup
+                  </span>
+                </motion.div>
+              )}
+          </AnimatePresence>
+          <div className="relative z-0 flex flex-col gap-0.5">
           {activeRepoGroups.map((group) => {
             return (
               <div key={group.repoPath} className="w-full min-w-0">
@@ -1198,8 +1218,9 @@ export function Sidebar({
                            dropTarget.worktreePath === wt.path &&
                            dropTarget.position === "after";
                          const showGroupingTarget =
-                           groupingTarget?.repoPath === group.repoPath &&
-                           groupingTarget.worktreePath === wt.path;
+                           dropTarget?.repoPath === group.repoPath &&
+                           dropTarget.kind === "create-group" &&
+                           dropTarget.worktreePath === wt.path;
 
                          return (
                            <div
@@ -1211,10 +1232,29 @@ export function Sidebar({
                              className={cn("relative", isReorderPointerActive && "select-none")}
                            >
                              {showDropBefore && (
-                               <div className="absolute inset-x-2 top-0 h-0.5 rounded-full bg-border-strong" />
+                               <motion.div
+                                 initial={shouldReduceMotion ? false : { opacity: 0, scaleX: 0.65 }}
+                                 animate={{ opacity: 1, scaleX: 1 }}
+                                 transition={
+                                   shouldReduceMotion
+                                     ? { duration: 0 }
+                                     : { duration: 0.12, ease: [0.165, 0.84, 0.44, 1] }
+                                 }
+                                 className="pointer-events-none absolute inset-x-2 top-0 h-0.5 origin-center rounded-full bg-accent-primary shadow-[0_0_8px_rgba(122,162,247,0.35)] will-change-transform"
+                               />
                              )}
                              {showGroupingTarget && (
-                               <div className="absolute inset-0 rounded-md border border-dashed border-accent-primary pointer-events-none" />
+                               <motion.div
+                                 initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.98 }}
+                                 animate={{ opacity: 1, scale: 1 }}
+                                 transition={
+                                   shouldReduceMotion
+                                     ? { duration: 0 }
+                                     : { duration: 0.15, ease: [0.165, 0.84, 0.44, 1] }
+                                 }
+                                 className="pointer-events-none absolute inset-0 z-10 rounded-md border border-dashed border-accent-primary bg-accent-primary/10 will-change-transform"
+                                 aria-label="Drop to group"
+                               />
                              )}
                              <WorktreeItem
                                name={wt.name}
@@ -1234,7 +1274,16 @@ export function Sidebar({
                                )}
                              />
                              {showDropAfter && (
-                               <div className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-border-strong" />
+                               <motion.div
+                                 initial={shouldReduceMotion ? false : { opacity: 0, scaleX: 0.65 }}
+                                 animate={{ opacity: 1, scaleX: 1 }}
+                                 transition={
+                                   shouldReduceMotion
+                                     ? { duration: 0 }
+                                     : { duration: 0.12, ease: [0.165, 0.84, 0.44, 1] }
+                                 }
+                                 className="pointer-events-none absolute inset-x-2 bottom-0 h-0.5 origin-center rounded-full bg-accent-primary shadow-[0_0_8px_rgba(122,162,247,0.35)] will-change-transform"
+                               />
                              )}
                            </div>
                          );
