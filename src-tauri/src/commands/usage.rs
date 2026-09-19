@@ -1,16 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::io::{Read, Seek, SeekFrom};
-use std::path::{Path, PathBuf};
 #[cfg(target_os = "macos")]
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 use std::time::SystemTime;
 use std::time::{Duration, Instant};
 
-const MAX_SESSION_FILES: usize = 50;
-const MAX_TAIL_BYTES: u64 = 256 * 1024;
+const CODEX_USAGE_URL: &str = "https://chatgpt.com/backend-api/wham/usage";
 static CLAUDE_RETRY_AT: OnceLock<Mutex<Option<Instant>>> = OnceLock::new();
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -44,44 +41,6 @@ pub struct CodexUsage {
     pub rate_limits_by_limit_id: HashMap<String, RateLimitSnapshot>,
 }
 
-fn collect_session_files(directory: &Path, files: &mut Vec<(SystemTime, PathBuf)>) {
-    let Ok(entries) = fs::read_dir(directory) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            collect_session_files(&path, files);
-        } else if path.extension().and_then(|value| value.to_str()) == Some("jsonl") {
-            let modified = entry
-                .metadata()
-                .and_then(|metadata| metadata.modified())
-                .unwrap_or(SystemTime::UNIX_EPOCH);
-            files.push((modified, path));
-        }
-    }
-}
-
-fn read_tail(path: &Path) -> Result<String, String> {
-    let mut file = fs::File::open(path).map_err(|error| error.to_string())?;
-    let length = file.metadata().map_err(|error| error.to_string())?.len();
-    let start = length.saturating_sub(MAX_TAIL_BYTES);
-    file.seek(SeekFrom::Start(start))
-        .map_err(|error| error.to_string())?;
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes)
-        .map_err(|error| error.to_string())?;
-    Ok(String::from_utf8_lossy(&bytes).into_owned())
-}
-
-fn latest_rate_limit(path: &Path) -> Option<RateLimitSnapshot> {
-    let tail = read_tail(path).ok()?;
-    tail.lines().rev().find_map(|line| {
-        let event: serde_json::Value = serde_json::from_str(line).ok()?;
-        serde_json::from_value(event.pointer("/payload/rate_limits")?.clone()).ok()
-    })
-}
-
 fn clone_window(window: &RateLimitWindow) -> RateLimitWindow {
     RateLimitWindow {
         used_percent: window.used_percent,
@@ -90,54 +49,130 @@ fn clone_window(window: &RateLimitWindow) -> RateLimitWindow {
     }
 }
 
-fn read_usage_from(codex_home: &Path) -> Result<CodexUsage, String> {
-    let mut files = Vec::new();
-    collect_session_files(&codex_home.join("sessions"), &mut files);
-    files.sort_unstable_by(|left, right| right.0.cmp(&left.0));
+#[derive(Deserialize)]
+struct CodexAuth {
+    tokens: CodexTokens,
+}
 
-    let mut snapshots = HashMap::new();
-    for (_, path) in files.into_iter().take(MAX_SESSION_FILES) {
-        let Some(snapshot) = latest_rate_limit(&path) else {
-            continue;
-        };
-        let Some(limit_id) = snapshot.limit_id.clone() else {
-            continue;
-        };
-        snapshots.entry(limit_id).or_insert(snapshot);
+#[derive(Deserialize)]
+struct CodexTokens {
+    access_token: String,
+    account_id: String,
+}
+
+#[derive(Deserialize)]
+struct CodexApiWindow {
+    used_percent: f64,
+    limit_window_seconds: Option<u64>,
+    reset_at: Option<i64>,
+}
+
+#[derive(Deserialize)]
+struct CodexApiRateLimit {
+    primary_window: Option<CodexApiWindow>,
+    secondary_window: Option<CodexApiWindow>,
+}
+
+#[derive(Deserialize)]
+struct CodexAdditionalRateLimit {
+    limit_name: Option<String>,
+    metered_feature: String,
+    rate_limit: CodexApiRateLimit,
+}
+
+#[derive(Deserialize)]
+struct CodexApiUsage {
+    plan_type: Option<String>,
+    rate_limit: CodexApiRateLimit,
+    additional_rate_limits: Option<Vec<CodexAdditionalRateLimit>>,
+}
+
+fn codex_window(window: CodexApiWindow) -> RateLimitWindow {
+    RateLimitWindow {
+        used_percent: window.used_percent.clamp(0.0, 100.0),
+        window_duration_mins: window.limit_window_seconds.map(|seconds| seconds / 60),
+        resets_at: window.reset_at,
+    }
+}
+
+fn convert_codex_usage(response: CodexApiUsage) -> Result<CodexUsage, String> {
+    if response.rate_limit.primary_window.is_none()
+        && response.rate_limit.secondary_window.is_none()
+    {
+        return Err("Codex returned no recognized usage windows".to_string());
     }
 
-    let primary_id = if snapshots.contains_key("codex") {
-        "codex"
-    } else {
-        snapshots
-            .keys()
-            .next()
-            .map(String::as_str)
-            .ok_or("No Codex usage snapshot yet. Complete one Codex turn and try again.")?
+    let plan = response.plan_type;
+    let primary = RateLimitSnapshot {
+        limit_id: Some("codex".to_string()),
+        limit_name: Some("Codex".to_string()),
+        plan_type: plan.clone(),
+        primary: response.rate_limit.primary_window.map(codex_window),
+        secondary: response.rate_limit.secondary_window.map(codex_window),
     };
-    let primary = snapshots
-        .get(primary_id)
-        .ok_or("Codex usage snapshot is incomplete")?;
-    let rate_limits = RateLimitSnapshot {
-        limit_id: primary.limit_id.clone(),
-        limit_name: primary.limit_name.clone(),
-        plan_type: primary.plan_type.clone(),
-        primary: primary.primary.as_ref().map(clone_window),
-        secondary: primary.secondary.as_ref().map(clone_window),
-    };
+    let mut snapshots = HashMap::from([(
+        "codex".to_string(),
+        RateLimitSnapshot {
+            limit_id: primary.limit_id.clone(),
+            limit_name: primary.limit_name.clone(),
+            plan_type: primary.plan_type.clone(),
+            primary: primary.primary.as_ref().map(clone_window),
+            secondary: primary.secondary.as_ref().map(clone_window),
+        },
+    )]);
+    for additional in response.additional_rate_limits.unwrap_or_default() {
+        let id = additional.metered_feature;
+        snapshots.insert(
+            id.clone(),
+            RateLimitSnapshot {
+                limit_id: Some(id),
+                limit_name: additional.limit_name,
+                plan_type: plan.clone(),
+                primary: additional.rate_limit.primary_window.map(codex_window),
+                secondary: additional.rate_limit.secondary_window.map(codex_window),
+            },
+        );
+    }
 
     Ok(CodexUsage {
-        rate_limits,
+        rate_limits: primary,
         rate_limits_by_limit_id: snapshots,
     })
 }
 
 #[tauri::command]
 pub async fn get_codex_usage() -> Result<CodexUsage, String> {
-    let codex_home = dirs::home_dir()
+    let auth_path = dirs::home_dir()
         .ok_or("Home directory unavailable")?
-        .join(".codex");
-    read_usage_from(&codex_home)
+        .join(".codex/auth.json");
+    let auth: CodexAuth = fs::read_to_string(auth_path)
+        .map_err(|_| "Sign in to Codex to see usage".to_string())
+        .and_then(|value| {
+            serde_json::from_str(&value).map_err(|_| "Codex credentials are invalid".to_string())
+        })?;
+    let response = reqwest::Client::new()
+        .get(CODEX_USAGE_URL)
+        .bearer_auth(&auth.tokens.access_token)
+        .header("ChatGPT-Account-Id", &auth.tokens.account_id)
+        .header("user-agent", "autopilot/0.1.0")
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|error| format!("Could not read Codex usage: {error}"))?;
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        return Err("Codex sign-in expired. Sign in again and retry.".to_string());
+    }
+    if !response.status().is_success() {
+        return Err(format!(
+            "Codex usage request failed ({})",
+            response.status()
+        ));
+    }
+    let response = response
+        .json()
+        .await
+        .map_err(|_| "Codex returned an invalid usage response")?;
+    convert_codex_usage(response)
 }
 
 #[derive(Deserialize)]
@@ -345,17 +380,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reads_the_newest_local_quota_snapshot() {
-        let temp = tempfile::tempdir().unwrap();
-        let sessions = temp.path().join("sessions/2026/09/16");
-        fs::create_dir_all(&sessions).unwrap();
-        fs::write(
-            sessions.join("rollout.jsonl"),
-            r#"{"type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"codex","limit_name":null,"primary":{"used_percent":28.0,"window_minutes":10080,"resets_at":1789818655},"secondary":null,"plan_type":"pro"}}}"#,
+    fn converts_codex_api_usage() {
+        let response: CodexApiUsage = serde_json::from_str(
+            r#"{"plan_type":"pro","rate_limit":{"primary_window":{"used_percent":28.0,"limit_window_seconds":604800,"reset_at":1789818655},"secondary_window":null},"additional_rate_limits":null}"#,
         )
         .unwrap();
 
-        let usage = read_usage_from(temp.path()).unwrap();
+        let usage = convert_codex_usage(response).unwrap();
         let window = usage.rate_limits.primary.unwrap();
         assert_eq!(window.used_percent, 28.0);
         assert_eq!(window.window_duration_mins, Some(10_080));
