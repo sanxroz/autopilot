@@ -752,70 +752,70 @@ export function Sidebar({
         return;
       }
 
-      if (
-        currentDrop?.kind === "create-group" &&
-        currentDrop.worktreePath &&
-        currentDrag.repoPath === currentDrop.repoPath &&
-        currentDrag.worktreePath !== currentDrop.worktreePath
-      ) {
-        const createdGroupId = await createSidebarGroup(
-          currentDrop.repoPath,
-          currentDrag.worktreePath,
-          currentDrop.worktreePath
-        );
-        if (createdGroupId) {
-          const createdGroup = useAppStore
-            .getState()
-            .sidebarGroupsByRepo[currentDrop.repoPath]
-            ?.find((group) => group.id === createdGroupId);
+      try {
+        if (
+          currentDrop?.kind === "create-group" &&
+          currentDrop.worktreePath &&
+          currentDrag.repoPath === currentDrop.repoPath &&
+          currentDrag.worktreePath !== currentDrop.worktreePath
+        ) {
+          const createdGroupId = await createSidebarGroup(
+            currentDrop.repoPath,
+            currentDrag.worktreePath,
+            currentDrop.worktreePath
+          );
+          if (createdGroupId) {
+            const createdGroup = useAppStore
+              .getState()
+              .sidebarGroupsByRepo[currentDrop.repoPath]
+              ?.find((group) => group.id === createdGroupId);
 
-          if (createdGroup) {
-            setEditingGroup({
-              repoPath: currentDrop.repoPath,
-              groupId: createdGroupId,
-              value: createdGroup.name,
-            });
+            if (createdGroup) {
+              setEditingGroup({
+                repoPath: currentDrop.repoPath,
+                groupId: createdGroupId,
+                value: createdGroup.name,
+              });
+            }
           }
+          return;
         }
+
+        if (
+          !currentDrop ||
+          currentDrag.repoPath !== currentDrop.repoPath ||
+          (currentDrop.kind === "worktree" &&
+            currentDrag.worktreePath === currentDrop.worktreePath)
+        ) {
+          return;
+        }
+
+        if (currentDrop.kind === "group" && currentDrop.groupId) {
+          await moveWorktreeInSidebar(currentDrop.repoPath, {
+            sourceWorktreePath: currentDrag.worktreePath,
+            targetGroupId: currentDrop.groupId,
+            position: "inside",
+          });
+        } else if (currentDrop.kind === "ungroup") {
+          setError(null);
+          await moveWorktreeInSidebar(currentDrop.repoPath, {
+            sourceWorktreePath: currentDrag.worktreePath,
+            position: "auto",
+          });
+        } else if (
+          currentDrop.kind === "worktree" &&
+          currentDrop.worktreePath &&
+          currentDrop.position
+        ) {
+          await moveWorktreeInSidebar(currentDrop.repoPath, {
+            sourceWorktreePath: currentDrag.worktreePath,
+            targetWorktreePath: currentDrop.worktreePath,
+            position: currentDrop.position,
+          });
+        }
+      } finally {
         endWorktreeDrag();
-        return;
       }
-
-      if (
-        !currentDrop ||
-        currentDrag.repoPath !== currentDrop.repoPath ||
-        (currentDrop.kind === "worktree" &&
-          currentDrag.worktreePath === currentDrop.worktreePath)
-      ) {
-        endWorktreeDrag();
-        return;
-      }
-
-      if (currentDrop.kind === "group" && currentDrop.groupId) {
-        await moveWorktreeInSidebar(currentDrop.repoPath, {
-          sourceWorktreePath: currentDrag.worktreePath,
-          targetGroupId: currentDrop.groupId,
-          position: "inside",
-        });
-      } else if (currentDrop.kind === "ungroup") {
-        setError(null);
-        await moveWorktreeInSidebar(currentDrop.repoPath, {
-          sourceWorktreePath: currentDrag.worktreePath,
-          position: "auto",
-        });
-      } else if (
-        currentDrop.kind === "worktree" &&
-        currentDrop.worktreePath &&
-        currentDrop.position
-      ) {
-        await moveWorktreeInSidebar(currentDrop.repoPath, {
-          sourceWorktreePath: currentDrag.worktreePath,
-          targetWorktreePath: currentDrop.worktreePath,
-          position: currentDrop.position,
-        });
-      }
-
-      endWorktreeDrag();
     };
 
     window.addEventListener("pointermove", handlePointerMove);
