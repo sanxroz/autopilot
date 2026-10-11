@@ -31,6 +31,23 @@ interface CachedTerminalState {
 }
 
 const terminalStateCache = new Map<string, CachedTerminalState>();
+const cacheCloseListeners = new Map<string, Promise<() => void>>();
+
+// Saved screens outlive their component, so a tab closed while unmounted must still drop its entry.
+function saveTerminalState(terminalId: string, state: CachedTerminalState) {
+  terminalStateCache.set(terminalId, state);
+  if (cacheCloseListeners.has(terminalId)) return;
+  const listener = listen<void>(`terminal-closed-${terminalId}`, () => {
+    terminalStateCache.delete(terminalId);
+    void cacheCloseListeners.get(terminalId)?.then((unlisten) => unlisten());
+    cacheCloseListeners.delete(terminalId);
+  });
+  cacheCloseListeners.set(terminalId, listener);
+  listener.catch((error) => {
+    if (cacheCloseListeners.get(terminalId) === listener) cacheCloseListeners.delete(terminalId);
+    console.error(error);
+  });
+}
 
 interface Props {
   terminalId: string;
@@ -407,7 +424,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     return () => {
       disposed = true;
       if (!terminalClosed && replayLoaded) {
-        terminalStateCache.set(terminalId, {
+        saveTerminalState(terminalId, {
           data: serializeAddon.serialize({ scrollback: TERMINAL_SCROLLBACK_LINES }),
           sequence: renderedSequence,
           cols: term.cols,
