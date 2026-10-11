@@ -76,6 +76,7 @@ describe("worktree activity display", () => {
 
     for (const html of [render(null), render({ number: 7, state: "open", merged: false, draft: false, requested_reviewers: [] })]) {
       expect(html).toContain('aria-label="feature workspace, Waiting for input');
+      expect(html).toContain("text-semantic-warning");
       expect(html).not.toContain(">Waiting for input<");
     }
   });
