@@ -124,6 +124,9 @@ impl Default for AppState {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "macos")]
+    install_crash_log();
+
     #[cfg(unix)]
     if let Err(error) = raise_file_descriptor_limit() {
         eprintln!("[autopilot] warning: failed to raise file descriptor limit ({error})");
@@ -150,6 +153,28 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(move |app| {
+            let window_config = &app.config().app.windows[0];
+            let window_builder = tauri::WebviewWindowBuilder::from_config(app.handle(), window_config)?;
+
+            #[cfg(target_os = "macos")]
+            let window_builder = {
+                let main_thread = objc2_foundation::MainThreadMarker::new()
+                    .expect("webview setup must run on the main thread");
+                let configuration = unsafe { objc2_web_kit::WKWebViewConfiguration::new(main_thread) };
+                // Writing Tools' selection affordance asserts in AppKit on macOS 27.
+                let supports_writing_tools: bool = unsafe {
+                    objc2::msg_send![&*configuration, respondsToSelector: objc2::sel!(setWritingToolsBehavior:)]
+                };
+                if supports_writing_tools {
+                    unsafe {
+                        let _: () = objc2::msg_send![&*configuration, setWritingToolsBehavior: -1_isize];
+                    }
+                }
+                window_builder.with_webview_configuration(configuration)
+            };
+
+            let window = window_builder.build()?;
+
             let hook_runtime = terminal::initialize_agent_hook_runtime(
                 app.handle().clone(),
                 agent_terminals.clone(),
@@ -174,7 +199,7 @@ pub fn run() {
 
             #[cfg(target_os = "macos")]
             {
-                let window = app.get_webview_window("main").unwrap();
+                make_app_send_event_unwind_safe();
                 position_traffic_lights(&window, 12.0, 10.0);
 
                 let window_clone = window.clone();
@@ -269,6 +294,114 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// tao overrides `-[NSApplication sendEvent:]` with an `extern "C"` function, so an Objective-C
+/// exception that AppKit raises beneath it (macOS 27's text-selection affordance asserts there)
+/// aborts the app instead of reaching NSApplication's own handler. Swap in the same override with
+/// the `C-unwind` ABI. Drop once tao ships https://github.com/tauri-apps/tao/pull/1354.
+#[cfg(target_os = "macos")]
+fn make_app_send_event_unwind_safe() {
+    use objc2::runtime::{AnyClass, AnyObject, Imp, Sel};
+    use objc2::{class, msg_send, sel};
+
+    const NS_EVENT_TYPE_KEY_UP: usize = 11;
+    const NS_EVENT_MODIFIER_FLAG_COMMAND: usize = 1 << 20;
+
+    // Mirrors tao's override minus its device events, which Tauri never reads.
+    extern "C-unwind" fn send_event(this: &AnyObject, _sel: Sel, event: &AnyObject) {
+        unsafe {
+            let event_type: usize = msg_send![event, type];
+            let modifier_flags: usize = msg_send![event, modifierFlags];
+            // AppKit drops keyUp for Cmd-held keys unless it is forwarded to the key window.
+            if event_type == NS_EVENT_TYPE_KEY_UP && modifier_flags & NS_EVENT_MODIFIER_FLAG_COMMAND != 0 {
+                let key_window: *mut AnyObject = msg_send![this, keyWindow];
+                if let Some(key_window) = key_window.as_ref() {
+                    let _: () = msg_send![key_window, sendEvent: event];
+                }
+            } else {
+                let _: () = msg_send![super(this, class!(NSApplication)), sendEvent: event];
+            }
+        }
+    }
+
+    // NSApplication swallows exceptions from event handling after logging them; keep a copy.
+    extern "C-unwind" fn report_exception(this: &AnyObject, _sel: Sel, exception: &objc2_foundation::NSException) {
+        append_crash_log(&describe_exception("Objective-C exception (app kept running)", exception));
+        unsafe {
+            let _: () = msg_send![super(this, class!(NSApplication)), reportException: exception];
+        }
+    }
+
+    let Some(app_class) = AnyClass::get(c"TaoApp") else {
+        eprintln!("[autopilot] warning: TaoApp class not found; AppKit exceptions will abort");
+        return;
+    };
+    unsafe {
+        let imp: Imp = std::mem::transmute(send_event as extern "C-unwind" fn(&AnyObject, Sel, &AnyObject));
+        objc2::ffi::class_replaceMethod(
+            (app_class as *const AnyClass).cast_mut(),
+            sel!(sendEvent:),
+            imp,
+            c"v@:@".as_ptr(),
+        );
+        let imp: Imp = std::mem::transmute(
+            report_exception as extern "C-unwind" fn(&AnyObject, Sel, &objc2_foundation::NSException),
+        );
+        objc2::ffi::class_replaceMethod(
+            (app_class as *const AnyClass).cast_mut(),
+            sel!(reportException:),
+            imp,
+            c"v@:@".as_ptr(),
+        );
+    }
+}
+
+/// Rust panics and Objective-C exceptions both land in `~/Library/Logs/Autopilot/crash.log`, which
+/// Console.app also lists under Log Reports.
+#[cfg(target_os = "macos")]
+fn append_crash_log(entry: &str) {
+    use std::fs::{self, OpenOptions};
+    use std::io::Write;
+
+    let Some(log_dir) = dirs::home_dir().map(|home| home.join("Library/Logs/Autopilot")) else {
+        return;
+    };
+    if fs::create_dir_all(&log_dir).is_err() {
+        return;
+    }
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_dir.join("crash.log")) {
+        let _ = writeln!(file, "\n{} {entry}", chrono::Local::now().to_rfc3339());
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn describe_exception(kind: &str, exception: &objc2_foundation::NSException) -> String {
+    let reason = exception.reason().map(|reason| reason.to_string()).unwrap_or_default();
+    // `callStackSymbols` is nil for an exception that was never raised; objc2's typed getter panics on nil.
+    let stack: Option<objc2::rc::Retained<objc2_foundation::NSArray<objc2_foundation::NSString>>> =
+        unsafe { objc2::msg_send![exception, callStackSymbols] };
+    let stack: Vec<String> = stack.iter().flat_map(|stack| stack.iter()).map(|symbol| symbol.to_string()).collect();
+    format!("{kind} {}: {reason}\n{}", exception.name(), stack.join("\n"))
+}
+
+#[cfg(target_os = "macos")]
+fn install_crash_log() {
+    use std::backtrace::Backtrace;
+
+    // Catches exceptions that nothing else handles, on any thread, right before the process dies.
+    extern "C" fn log_uncaught_exception(exception: &objc2_foundation::NSException) {
+        append_crash_log(&describe_exception("uncaught Objective-C exception", exception));
+    }
+    unsafe {
+        objc2_foundation::NSSetUncaughtExceptionHandler(log_uncaught_exception as *mut std::ffi::c_void);
+    }
+
+    let previous_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        append_crash_log(&format!("panic {info}\n{}", Backtrace::force_capture()));
+        previous_hook(info);
+    }));
 }
 
 #[cfg(test)]

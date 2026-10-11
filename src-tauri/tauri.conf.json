@@ -13,6 +13,7 @@
     "macOSPrivateApi": true,
     "windows": [
        {
+           "create": false,
            "title": "Autopilot",
            "width": 1200,
            "height": 800,

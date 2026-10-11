@@ -21,6 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { toast } from "sonner";
 import * as CommandMenuUI from "./ui/command-menu";
 import { useThemeMode } from "../hooks/useTheme";
 import { useAppStore } from "../store";
@@ -93,6 +94,7 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
   const repositories = useAppStore((state) => state.repositories);
   const addRepository = useAppStore((state) => state.addRepository);
   const selectWorktree = useAppStore((state) => state.selectWorktree);
+  const createTerminalTab = useAppStore((state) => state.createTerminalTab);
   const setThemeMode = useAppStore((state) => state.setThemeMode);
   const selectedWorktree = useAppStore((state) => state.selectedWorktree);
   const createWorktreeAuto = useAppStore((state) => state.createWorktreeAuto);
@@ -193,6 +195,13 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
         await selectWorktree(created);
       }
     }
+  };
+
+  const handleResumeCodex = () => {
+    onOpenChange(false);
+    createTerminalTab("codex resume").catch((error) => {
+      toast.error(`Failed to resume Codex: ${String(error)}`);
+    });
   };
 
   const handleRunAction = (action: ShortcutAction) => {
@@ -402,6 +411,11 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
         )}
 
         {parsedSearch.commandQuery === null && !effectiveFilter ? <CommandMenuUI.Group heading="Actions">
+          {selectedWorktree ? <CommandMenuUI.Item onSelect={handleResumeCodex} className="text-primary">
+            <CommandMenuUI.ItemIcon as={Terminal} className="text-tertiary" />
+            <span className="shrink-0">Resume Codex conversation</span>
+            <span className="min-w-0 flex-1 truncate text-xs text-tertiary">Choose a saved session from this repository</span>
+          </CommandMenuUI.Item> : null}
           <CommandMenuUI.Item onSelect={handleAddRepository} className="text-primary">
             <CommandMenuUI.ItemIcon as={FolderPlus} className="text-tertiary" />
             <span className="shrink-0">Add repository</span>

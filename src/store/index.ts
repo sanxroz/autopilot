@@ -115,7 +115,7 @@ interface AppStore {
   updateWorktreeBranch: (worktreePath: string) => Promise<void>;
   selectWorktree: (worktree: WorktreeInfo) => Promise<void>;
   addTerminal: () => Promise<string | null>;
-  createTerminalTab: () => Promise<string | null>;
+  createTerminalTab: (command?: string) => Promise<string | null>;
   openBrowserTab: (url: string) => void;
   updateBrowserTabUrl: (tabId: string, url: string) => void;
   closeTerminalTab: (tabId: string) => void;
@@ -1018,13 +1018,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }));
   },
 
-  createTerminalTab: async () => {
+  createTerminalTab: async (command?: string) => {
     const state = get();
     const worktree = state.selectedWorktree;
     if (!worktree) return null;
 
-    const result = await invoke<{ terminal_id: string }>('spawn_terminal', {
+    const result = await invoke<{ terminal_id: string }>(command ? 'spawn_terminal_with_command' : 'spawn_terminal', {
       cwd: worktree.path,
+      ...(command ? { command, args: [] } : {}),
       cols: 80,
       rows: 24,
       isDarkMode: getThemeMode() === 'dark',
