@@ -33,14 +33,29 @@ interface CachedTerminalState {
 // Hidden terminals keep a serialized screen so switching back is instant; cap it so closed sessions can't pile up.
 const TERMINAL_STATE_CACHE_MAX_ENTRIES = 20;
 const terminalStateCache = new Map<string, CachedTerminalState>();
+const cacheCloseListeners = new Map<string, Promise<() => void>>();
 
+function forgetTerminalState(terminalId: string) {
+  terminalStateCache.delete(terminalId);
+  void cacheCloseListeners.get(terminalId)?.then((unlisten) => unlisten());
+  cacheCloseListeners.delete(terminalId);
+}
+
+// Saved screens outlive their component, so a tab closed while unmounted must still drop its entry.
 function cacheTerminalState(terminalId: string, state: CachedTerminalState) {
   terminalStateCache.delete(terminalId);
   terminalStateCache.set(terminalId, state);
   for (const oldestId of terminalStateCache.keys()) {
     if (terminalStateCache.size <= TERMINAL_STATE_CACHE_MAX_ENTRIES) break;
-    terminalStateCache.delete(oldestId);
+    forgetTerminalState(oldestId);
   }
+  if (cacheCloseListeners.has(terminalId)) return;
+  const listener = listen<void>(`terminal-closed-${terminalId}`, () => forgetTerminalState(terminalId));
+  cacheCloseListeners.set(terminalId, listener);
+  listener.catch((error) => {
+    if (cacheCloseListeners.get(terminalId) === listener) cacheCloseListeners.delete(terminalId);
+    console.error(error);
+  });
 }
 
 type AppTheme = ReturnType<typeof getTheme>;
