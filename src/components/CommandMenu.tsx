@@ -21,6 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { open } from "@tauri-apps/plugin-dialog";
+import { toast } from "sonner";
 import * as CommandMenuUI from "./ui/command-menu";
 import { useThemeMode } from "../hooks/useTheme";
 import { useAppStore } from "../store";
@@ -198,7 +199,9 @@ export function CommandMenu({ open: isOpen, onOpenChange, onRunAction }: Command
 
   const handleResumeCodex = () => {
     onOpenChange(false);
-    void createTerminalTab("codex resume");
+    createTerminalTab("codex resume").catch((error) => {
+      toast.error(`Failed to resume Codex: ${String(error)}`);
+    });
   };
 
   const handleRunAction = (action: ShortcutAction) => {
