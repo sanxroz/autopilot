@@ -9,11 +9,9 @@ import { Editor } from "@pierre/diffs/edit";
 import DiffsWorker from "@pierre/diffs/worker/worker.js?worker";
 import App from "./App";
 import "./index.css";
-import { preloadDiffHighlighter } from "./lib/diff-highlighter";
 import { initializeTheme } from "./theme";
 import { Provider as TooltipProvider } from "./components/ui/tooltip";
 
-preloadDiffHighlighter();
 initializeTheme("dark");
 document.title = import.meta.env.VITE_AUTOPILOT_DEVELOPMENT === "1"
   ? "Autopilot Development"

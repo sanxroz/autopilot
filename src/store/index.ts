@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { shallow } from 'zustand/shallow';
 import { invoke } from '@tauri-apps/api/core';
 import { LazyStore, load } from '@tauri-apps/plugin-store';
 import { toast } from 'sonner';
@@ -252,18 +253,34 @@ function orderWorktrees(
 async function loadPersistedState(): Promise<PersistedState & { themeMode?: ThemeMode; addressedComments?: AddressedCommentsMap }> {
   try {
     const store = await load(STORE_PATH, { autoSave: true, defaults: {} });
-    const paths = await store.get<string[]>('repositoryPaths');
-    const themeMode = await store.get<ThemeMode>('themeMode');
-    const defaultAIAgent = await store.get<AIAgent>('defaultAIAgent');
-    const repoAvatarCache = await store.get<Record<string, string>>('repoAvatarCache');
-    const worktreeOrdersByRepo = await store.get<Record<string, string[]>>('worktreeOrdersByRepo');
-    const sidebarGroupsByRepo = await store.get<Record<string, SidebarWorktreeGroup[]>>('sidebarGroupsByRepo');
-    const autoFetchSettings = await store.get<AutoFetchSettings>('autoFetchSettings');
-    const repoPostCreateCommandsByPath = await store.get<Record<string, string>>('repoPostCreateCommandsByPath');
-    const sidebarNotesByWorktreePath = await store.get<Record<string, string>>('sidebarNotesByWorktreePath');
-    const sidebarNotesMarkdown = await store.get<string>('sidebarNotesMarkdown');
-    const keyboardShortcuts = await store.get<Partial<KeyboardShortcutMap>>('keyboardShortcuts');
-    const rawAddressed = await store.get<Record<string, string[]>>('addressedComments');
+    // Independent IPC reads; issue them together instead of one round trip at a time.
+    const [
+      paths,
+      themeMode,
+      defaultAIAgent,
+      repoAvatarCache,
+      worktreeOrdersByRepo,
+      sidebarGroupsByRepo,
+      autoFetchSettings,
+      repoPostCreateCommandsByPath,
+      sidebarNotesByWorktreePath,
+      sidebarNotesMarkdown,
+      keyboardShortcuts,
+      rawAddressed,
+    ] = await Promise.all([
+      store.get<string[]>('repositoryPaths'),
+      store.get<ThemeMode>('themeMode'),
+      store.get<AIAgent>('defaultAIAgent'),
+      store.get<Record<string, string>>('repoAvatarCache'),
+      store.get<Record<string, string[]>>('worktreeOrdersByRepo'),
+      store.get<Record<string, SidebarWorktreeGroup[]>>('sidebarGroupsByRepo'),
+      store.get<AutoFetchSettings>('autoFetchSettings'),
+      store.get<Record<string, string>>('repoPostCreateCommandsByPath'),
+      store.get<Record<string, string>>('sidebarNotesByWorktreePath'),
+      store.get<string>('sidebarNotesMarkdown'),
+      store.get<Partial<KeyboardShortcutMap>>('keyboardShortcuts'),
+      store.get<Record<string, string[]>>('addressedComments'),
+    ]);
     let addressedComments: AddressedCommentsMap | undefined;
     if (rawAddressed) {
       addressedComments = {};
@@ -506,7 +523,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const repoAvatarCache = persisted.repoAvatarCache || {};
     const reposNeedingAvatar: string[] = [];
 
-    for (const path of persisted.repositoryPaths) {
+    // Load every repository in parallel, then apply them in persisted order.
+    const loadedRepositories = await Promise.all(persisted.repositoryPaths.map(async (path) => {
       try {
         const discovered = await invoke<RepoInfo>('discover_repository', { path });
         const cachedAvatarUrl = repoAvatarCache[discovered.path] || repoAvatarCache[path];
@@ -524,23 +542,30 @@ export const useAppStore = create<AppStore>((set, get) => ({
           branchWorktreePaths
         );
 
-        if (!cachedAvatarUrl) {
-          reposNeedingAvatar.push(info.path);
-        }
-
-        set((state) => ({
-          repositories: [
-            ...state.repositories.filter((r) => r.info.path !== info.path),
-            { info, worktrees, isExpanded: true },
-          ],
-          sidebarGroupsByRepo: {
-            ...state.sidebarGroupsByRepo,
-            [info.path]: normalizedSidebarGroups,
-          },
-        }));
+        return { info, worktrees, normalizedSidebarGroups, cachedAvatarUrl };
       } catch (e) {
         console.error(`Failed to load repository ${path}:`, e);
+        return null;
       }
+    }));
+
+    for (const loaded of loadedRepositories) {
+      if (!loaded) continue;
+      const { info, worktrees, normalizedSidebarGroups, cachedAvatarUrl } = loaded;
+      if (!cachedAvatarUrl) {
+        reposNeedingAvatar.push(info.path);
+      }
+
+      set((state) => ({
+        repositories: [
+          ...state.repositories.filter((r) => r.info.path !== info.path),
+          { info, worktrees, isExpanded: true },
+        ],
+        sidebarGroupsByRepo: {
+          ...state.sidebarGroupsByRepo,
+          [info.path]: normalizedSidebarGroups,
+        },
+      }));
     }
 
     void savePersistedState({
@@ -1641,10 +1666,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
           }
         }
 
-        return {
-          processStatusByPath: nextProcessStatus,
-          agentRunByWorktreePath: nextAgentRun,
-        };
+        // Polling runs every few seconds; keep the old references when nothing changed so subscribers don't re-render.
+        const processStatusByPath = shallow(current.processStatusByPath, nextProcessStatus)
+          ? current.processStatusByPath
+          : nextProcessStatus;
+        const agentRunByWorktreePath = shallow(current.agentRunByWorktreePath, nextAgentRun)
+          ? current.agentRunByWorktreePath
+          : nextAgentRun;
+        if (
+          processStatusByPath === current.processStatusByPath &&
+          agentRunByWorktreePath === current.agentRunByWorktreePath
+        ) {
+          return current;
+        }
+        return { processStatusByPath, agentRunByWorktreePath };
       });
     } catch (e) {
       console.error('Failed to refresh process statuses:', e);
@@ -1672,6 +1707,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           worktreePaths,
         );
       }
+      if (JSON.stringify(state.sidebarGroupsByRepo) === JSON.stringify(sidebarGroupsByRepo)) return state;
       return { sidebarGroupsByRepo };
     });
   },

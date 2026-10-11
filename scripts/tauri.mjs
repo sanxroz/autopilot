@@ -28,6 +28,7 @@ const developmentConfig = {
   app: {
     windows: [
       {
+        create: false,
         title: "Autopilot Development",
         width: 1200,
         height: 800,

@@ -62,7 +62,8 @@ export async function refreshPRStatuses(repoPath?: string): Promise<void> {
 }
 
 export function usePRStatusPolling() {
-  const repositories = useAppStore((state) => state.repositories);
+  // Only the repo count matters here; worktree refreshes replace `repositories` constantly and would restart polling.
+  const repositoryCount = useAppStore((state) => state.repositories.length);
   const githubSettings = useAppStore((state) => state.githubSettings);
   const collapsedRepos = useAppStore((state) => state.collapsedRepos);
   
@@ -70,7 +71,7 @@ export function usePRStatusPolling() {
   const isFetchingRef = useRef(false);
 
   const fetchAllPRs = useCallback(async () => {
-    if (!githubSettings.ghCliAvailable || isFetchingRef.current || repositories.length === 0) {
+    if (!githubSettings.ghCliAvailable || isFetchingRef.current || repositoryCount === 0) {
       return;
     }
 
@@ -83,7 +84,7 @@ export function usePRStatusPolling() {
     } finally {
       isFetchingRef.current = false;
     }
-  }, [repositories, githubSettings.ghCliAvailable, collapsedRepos]);
+  }, [repositoryCount, githubSettings.ghCliAvailable, collapsedRepos]);
 
   useEffect(() => {
     if (!githubSettings.ghCliAvailable) {

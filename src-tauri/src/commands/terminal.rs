@@ -288,6 +288,9 @@ const COMPLETED_TERMINAL_OUTPUT_MAX_BYTES: usize = 4 * 1024 * 1024;
 const COMPLETED_TERMINAL_OUTPUT_MAX_ENTRIES: usize = 64;
 
 const TERMINAL_WRITE_QUEUE_CAPACITY: usize = 256;
+
+/// Output chunks the PTY reader may emit ahead of the frontend's acknowledgements.
+const TERMINAL_OUTPUT_ACK_WINDOW: u64 = 4;
 #[derive(Default)]
 struct TerminalOutputFlowState {
     attached: bool,
@@ -534,7 +537,9 @@ fn emit_terminal_output(
     let output = replay.lock().push(data);
     if output_flow.is_attached() {
         let _ = app.emit(event_name, output.clone());
-        output_flow.wait_for_acknowledgement(output.sequence);
+        output_flow.wait_for_acknowledgement(
+            output.sequence.saturating_sub(TERMINAL_OUTPUT_ACK_WINDOW),
+        );
     }
 }
 
@@ -1470,7 +1475,7 @@ fn should_wrap_shell(shell: &str) -> bool {
     s.ends_with("/zsh") || s.ends_with("/bash")
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn spawn_terminal(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -1554,7 +1559,7 @@ pub fn spawn_terminal(
 
     thread::spawn(move || {
         let mut reader = reader;
-        let mut buf = [0u8; 4096];
+        let mut buf = [0u8; 16 * 1024];
         let mut utf8_decoder = Utf8StreamDecoder::new();
 
         loop {
@@ -2140,12 +2145,12 @@ pub async fn recover_terminal_process(
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn close_terminal(state: State<'_, AppState>, terminal_id: String) -> Result<(), String> {
     close_terminal_inner(&state, &terminal_id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn close_terminals_for_worktree(
     state: State<'_, AppState>,
     worktree_path: String,
@@ -2180,7 +2185,7 @@ pub fn close_terminals_for_worktree(
 
 /// Spawns a terminal that runs a specific command instead of a shell.
 /// The terminal stays open after the command completes so user can see output.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn spawn_terminal_with_command(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -2398,7 +2403,8 @@ pub fn spawn_terminal_with_command(
         info
     });
 
-    if let Some(ref ws) = watchdog_state {
+    // Hook-driven agents report their own status, so the inactivity watchdog would never fire.
+    if let Some(ws) = watchdog_state.as_ref().filter(|ws| !ws.hook_enabled.load(Ordering::Relaxed)) {
         let ws_clone = ws.clone();
         let app_wd = app.clone();
         let tid_wd = terminal_id.clone();
@@ -2446,7 +2452,7 @@ pub fn spawn_terminal_with_command(
 
     thread::spawn(move || {
         let mut reader = reader;
-        let mut buf = [0u8; 4096];
+        let mut buf = [0u8; 16 * 1024];
         let mut utf8_decoder = Utf8StreamDecoder::new();
         let mut has_emitted_initial = false;
         let mut has_emitted_error = false;
