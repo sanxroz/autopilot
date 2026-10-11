@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { getSidebarActivityLabel, getWorktreeActivityDisplay } from "../src/lib/worktree-status";
+import { getWorktreeActivityDisplay } from "../src/lib/worktree-status";
 import type { AgentRunState } from "../src/types";
 
 const run: AgentRunState = {
@@ -28,9 +28,20 @@ describe("worktree activity display", () => {
     });
   });
 
+  test("starting and running agents use the running color", () => {
+    for (const status of ["starting", "running"] as const) {
+      expect(getWorktreeActivityDisplay({ ...run, status }, "agent_running")).toMatchObject({
+        label: "Agent running",
+        colorClass: "text-semantic-success",
+        icon: "spinner",
+      });
+    }
+  });
+
   test("always labels a polled agent", () => {
     expect(getWorktreeActivityDisplay(undefined, "agent_running")).toMatchObject({
       label: "Agent open",
+      colorClass: "text-semantic-success",
       icon: "dot",
     });
     expect(getWorktreeActivityDisplay({
@@ -39,14 +50,10 @@ describe("worktree activity display", () => {
       label: "Agent process detected",
     }, "agent_running")).toMatchObject({
       label: "Agent open",
+      colorClass: "text-semantic-success",
       icon: "dot",
     });
     expect(getWorktreeActivityDisplay(undefined, "none")).toBeNull();
   });
 
-  test("hides activity text when pull request status already occupies the row", () => {
-    const activity = getWorktreeActivityDisplay(run, "agent_running", 60_000);
-    expect(getSidebarActivityLabel(activity, true)).toBeNull();
-    expect(getSidebarActivityLabel(activity, false)).toBe("Agent running");
-  });
 });
