@@ -3,7 +3,7 @@ import { CircleAlert, CircleCheck, GitBranch, Loader, Trash2 } from "lucide-reac
 import type { ProcessStatus, DiffStats, AgentRunState } from "../types";
 import type { PRStatus } from "../types/github";
 import { cn } from "../utils/cn";
-import { getSidebarActivityLabel, getWorktreeActivityDisplay } from "../lib/worktree-status";
+import { getWorktreeActivityDisplay } from "../lib/worktree-status";
 
 const PROCESS_STATUS_LABELS: Record<ProcessStatus, string> = {
   dev_server: "Dev server running",
@@ -13,7 +13,7 @@ const PROCESS_STATUS_LABELS: Record<ProcessStatus, string> = {
 
 const PROCESS_STATUS_COLORS: Record<ProcessStatus, string | null> = {
   dev_server: "bg-semantic-success",
-  agent_running: "bg-semantic-warning",
+  agent_running: "bg-semantic-success",
   none: null,
 };
 
@@ -160,9 +160,7 @@ export const WorktreeItem = memo(function WorktreeItem({
   const processStatusColorClass = getProcessStatusColor(processStatus);
   const processStatusLabel = PROCESS_STATUS_LABELS[processStatus];
   const agentStatus = getWorktreeActivityDisplay(agentRunState, processStatus);
-  const activityStatusLabel = getSidebarActivityLabel(agentStatus, !!prStatus) || (prStatus ? "" : processStatusLabel);
-  const secondaryStatusClass =
-    processStatus === "agent_running" ? "text-semantic-warning" : "text-secondary";
+  const indicatorLabel = agentStatus?.label || processStatusLabel;
 
   return (
     <div
@@ -177,7 +175,7 @@ export const WorktreeItem = memo(function WorktreeItem({
       role="button"
       tabIndex={0}
       aria-current={isActive ? "page" : undefined}
-      aria-label={`${branch || name} workspace${prStatus ? `, PR #${prStatus.number}` : ""}${isActive ? ", currently selected" : ""}`}
+      aria-label={`${branch || name} workspace${indicatorLabel ? `, ${indicatorLabel}` : ""}${prStatus ? `, PR #${prStatus.number}` : ""}${isActive ? ", currently selected" : ""}`}
       className={cn(
         "group relative w-full cursor-pointer rounded-lg py-1.5 pl-3 pr-1.5 text-primary transition-colors",
         isActive
@@ -192,18 +190,17 @@ export const WorktreeItem = memo(function WorktreeItem({
             <GitBranch className={cn("w-3.5 h-3.5", statusInfo?.colorClass || "text-tertiary")} />
           </div>
           {agentStatus ? (
-            <div className={cn("flex-shrink-0", agentStatus.colorClass)} title={agentStatus.title || agentStatus.label}>
+            <div className={cn("flex h-3 w-3 flex-shrink-0 items-center justify-center", agentStatus.colorClass)} title={agentStatus.title || agentStatus.label}>
               {agentStatus.icon === 'spinner' && <Loader className="w-3 h-3 animate-spin" />}
-              {agentStatus.icon === 'ready' && <div className="w-2 h-2 rounded-full bg-semantic-warning" />}
+              {agentStatus.icon === 'ready' && <div className="w-2 h-2 rounded-full bg-current" />}
               {agentStatus.icon === 'completed' && <CircleCheck className="w-3 h-3" />}
               {agentStatus.icon === 'error' && <CircleAlert className="w-3 h-3" />}
-              {agentStatus.icon === 'dot' && <div className="w-2 h-2 rounded-full bg-semantic-warning" />}
+              {agentStatus.icon === 'dot' && <div className="w-2 h-2 rounded-full bg-current" />}
             </div>
           ) : processStatusColorClass ? (
-            <div
-              className={cn("w-2 h-2 rounded-full flex-shrink-0", processStatusColorClass)}
-              title={processStatusLabel}
-            />
+            <div className="flex h-3 w-3 flex-shrink-0 items-center justify-center" title={processStatusLabel}>
+              <div className={cn("w-2 h-2 rounded-full", processStatusColorClass)} />
+            </div>
           ) : null}
           <div className="truncate min-w-0 font-medium text-sm flex-1 text-primary">
             {branch || name}
@@ -247,17 +244,6 @@ export const WorktreeItem = memo(function WorktreeItem({
               <span className={statusInfo?.colorClass}>{statusInfo?.label}</span>
               <span className="font-mono text-xs font-bold">·</span>
               <span>PR #{prStatus.number}</span>
-              <span className="font-mono text-xs font-bold">·</span>
-            </>
-          )}
-          {activityStatusLabel && (
-            <>
-              <span
-                className={cn("truncate", agentStatus?.colorClass || secondaryStatusClass)}
-                title={agentStatus?.title || activityStatusLabel}
-              >
-                {activityStatusLabel}
-              </span>
               <span className="font-mono text-xs font-bold">·</span>
             </>
           )}

@@ -7,13 +7,6 @@ export type WorktreeActivityDisplay = {
   title: string;
 };
 
-export function getSidebarActivityLabel(
-  activity: WorktreeActivityDisplay | null,
-  hasPullRequest: boolean,
-): string | null {
-  return hasPullRequest ? null : activity?.label ?? null;
-}
-
 function formatEventAge(timestamp: number, now: number): string {
   const minutes = Math.max(0, Math.floor((now - timestamp) / 60_000));
   if (minutes < 1) return "just now";
@@ -36,9 +29,9 @@ export function getWorktreeActivityDisplay(
       case "starting":
       case "running":
         if (isProcessOnly) {
-          return { label: "Agent open", colorClass: "text-semantic-warning", icon: "dot", title };
+          return { label: "Agent open", colorClass: "text-semantic-success", icon: "dot", title };
         }
-        return { label: "Agent running", colorClass: "text-semantic-warning", icon: "spinner", title };
+        return { label: "Agent running", colorClass: "text-semantic-success", icon: "spinner", title };
       case "waiting_input":
         return { label: "Waiting for input", colorClass: "text-semantic-warning", icon: "ready", title };
       case "completed":
@@ -53,7 +46,7 @@ export function getWorktreeActivityDisplay(
   if (processStatus === "agent_running") {
     return {
       label: "Agent open",
-      colorClass: "text-semantic-warning",
+      colorClass: "text-semantic-success",
       icon: "dot",
       title: "Agent process detected",
     };
