@@ -251,6 +251,26 @@ describe("terminal layout tabs", () => {
     ]);
   });
 
+  test("resuming Codex opens its picker in a separate terminal for the selected worktree", async () => {
+    invokeHandler = async (command) =>
+      command === "spawn_terminal_with_command"
+        ? { terminal_id: "resumed-terminal" }
+        : undefined;
+
+    await useAppStore.getState().createTerminalTab("codex resume");
+
+    expect(invokeMock).toHaveBeenCalledWith("spawn_terminal_with_command", {
+      cwd: worktree.path,
+      command: "codex resume",
+      args: [],
+      cols: 80,
+      rows: 24,
+      isDarkMode: expect.any(Boolean),
+    });
+    expect(useAppStore.getState().currentActiveTerminalId).toBe("resumed-terminal");
+    expect(useAppStore.getState().currentTerminalTabs.at(-1)?.terminals[0].id).toBe("resumed-terminal");
+  });
+
   test("a pending tab is closed when its worktree was deleted", async () => {
     let resolveSpawn!: (result: { terminal_id: string }) => void;
     invokeHandler = (command) =>

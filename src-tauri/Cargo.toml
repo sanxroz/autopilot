@@ -46,6 +46,9 @@ libc = "0.2"
 [target."cfg(target_os = \"macos\")".dependencies]
 cocoa = "0.26"
 objc = "0.2"
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-web-kit = "0.3"
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(feature, values(\"cargo-clippy\"))"] }

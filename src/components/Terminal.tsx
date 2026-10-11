@@ -254,7 +254,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     const updateMouseProtocolMode = (enabled: boolean) => (params: (number | number[])[]) => {
       const modes = params.flat().filter((mode) => MOUSE_PROTOCOL_MODES.has(mode));
       if (enabled && modes.length > 0) {
-        mouseProtocolMode = modes.at(-1) ?? null;
+        mouseProtocolMode = modes[modes.length - 1] ?? null;
       } else if (!enabled && mouseProtocolMode !== null && modes.includes(mouseProtocolMode)) {
         mouseProtocolMode = null;
       }
