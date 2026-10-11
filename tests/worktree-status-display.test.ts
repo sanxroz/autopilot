@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { WorktreeItem } from "../src/components/WorktreeItem";
 import { getWorktreeActivityDisplay } from "../src/lib/worktree-status";
 import type { AgentRunState } from "../src/types";
 
@@ -56,4 +59,24 @@ describe("worktree activity display", () => {
     expect(getWorktreeActivityDisplay(undefined, "none")).toBeNull();
   });
 
+
+  test("row shows agent status only through the indicator and its accessible label", () => {
+    // SAFETY: the row only reads number, state, merged, draft, and requested_reviewers from prStatus.
+    const render = (prStatus: unknown) => renderToStaticMarkup(createElement(WorktreeItem, {
+      name: "kingston",
+      branch: "feature",
+      lastModified: Date.now(),
+      prStatus,
+      processStatus: "agent_running",
+      agentRunState: { ...run, status: "waiting_input" },
+      isActive: false,
+      onSelect: () => {},
+      onDelete: () => {},
+    } as Parameters<typeof WorktreeItem>[0]));
+
+    for (const html of [render(null), render({ number: 7, state: "open", merged: false, draft: false, requested_reviewers: [] })]) {
+      expect(html).toContain('aria-label="feature workspace, Waiting for input');
+      expect(html).not.toContain(">Waiting for input<");
+    }
+  });
 });
