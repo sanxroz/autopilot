@@ -37,11 +37,16 @@ const cacheCloseListeners = new Map<string, Promise<() => void>>();
 function saveTerminalState(terminalId: string, state: CachedTerminalState) {
   terminalStateCache.set(terminalId, state);
   if (cacheCloseListeners.has(terminalId)) return;
-  cacheCloseListeners.set(terminalId, listen<void>(`terminal-closed-${terminalId}`, () => {
+  const listener = listen<void>(`terminal-closed-${terminalId}`, () => {
     terminalStateCache.delete(terminalId);
     void cacheCloseListeners.get(terminalId)?.then((unlisten) => unlisten());
     cacheCloseListeners.delete(terminalId);
-  }));
+  });
+  cacheCloseListeners.set(terminalId, listener);
+  listener.catch((error) => {
+    if (cacheCloseListeners.get(terminalId) === listener) cacheCloseListeners.delete(terminalId);
+    console.error(error);
+  });
 }
 
 interface Props {

@@ -121,6 +121,8 @@ beforeEach(async () => {
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  // Unmount saves screens in a module-level cache; close every terminal so the next test starts clean.
+  for (const id of backend.keys()) emitClosed(id);
 });
 
 test("only the active tab keeps a live terminal; hidden agents keep running and restore on return", async () => {
