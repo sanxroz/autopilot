@@ -31,6 +31,8 @@ let outputListener: OutputListener;
 const openBrowserTab = mock(() => {});
 const openUrl = mock(async () => {});
 const write = mock((_data: string, callback?: () => void) => callback?.());
+const terminalOutputRequests: unknown[] = [];
+let createdTerminals = 0;
 
 const theme = (await import("../src/theme")).getTheme();
 const tauriCore = await import("@tauri-apps/api/core");
@@ -38,9 +40,12 @@ mock.module("../src/hooks/useTheme", () => ({ useTheme: () => theme }));
 mock.module("@tauri-apps/plugin-opener", () => ({ openUrl }));
 mock.module("@tauri-apps/api/core", () => ({
   ...tauriCore,
-  invoke: async (command: string) => {
+  invoke: async (command: string, args?: { afterSequence?: number | null }) => {
     if (command === "attach_terminal_output") return 1;
-    if (command === "get_terminal_output") return { data: "", sequence: 0 };
+    if (command === "get_terminal_output") {
+      terminalOutputRequests.push(args);
+      return { data: "", sequence: args?.afterSequence ?? 0, truncated: false };
+    }
   },
 }));
 mock.module("@tauri-apps/api/event", () => ({
@@ -72,6 +77,7 @@ mock.module("@xterm/xterm", () => ({
     };
     constructor(options: { linkHandler: { activate: LinkHandler } }) {
       this.options = options;
+      createdTerminals += 1;
       activateLink = options.linkHandler.activate;
     }
     loadAddon() {}
@@ -81,6 +87,7 @@ mock.module("@xterm/xterm", () => ({
     refresh() {}
     scrollToBottom() {}
     focus() {}
+    blur() {}
     dispose() {}
   },
 }));
@@ -127,5 +134,22 @@ describe("terminal links", () => {
 
     expect(openBrowserTab).toHaveBeenCalledWith("http://localhost:5173/");
     expect(openUrl).toHaveBeenCalledWith("https://example.com/");
+  });
+
+  test("switching back to a session reuses its live terminal and replays only missed output", async () => {
+    await act(async () => {
+      outputListener({ payload: { data: "build ok", sequence: 7 } });
+    });
+    const terminalsBeforeSwitch = createdTerminals;
+    await act(async () => root.unmount());
+
+    terminalOutputRequests.length = 0;
+    root = createRoot(container);
+    await act(async () => {
+      root.render(<Terminal terminalId="terminal-1" isActive={false} onFocus={() => {}} />);
+    });
+
+    expect(createdTerminals).toBe(terminalsBeforeSwitch);
+    expect(terminalOutputRequests).toEqual([{ terminalId: "terminal-1", afterSequence: 7 }]);
   });
 });

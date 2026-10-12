@@ -471,12 +471,12 @@ fn resolve_worktree_path(worktree_path: &str) -> Result<PathBuf, String> {
     Ok(resolved_worktree_path)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_installed_ide_apps() -> Vec<InstalledIde> {
     collect_installed_ides()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn open_worktree_in_ide(worktree_path: String, ide_id: String) -> Result<(), String> {
     let resolved_worktree_path = resolve_worktree_path(&worktree_path)?;
 
