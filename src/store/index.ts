@@ -167,6 +167,7 @@ let storeOperationQueue = Promise.resolve();
 let repositoryReorderQueue = Promise.resolve();
 let sidebarGroupsRevision = 0;
 let pendingLegacySidebarNotesMarkdown: string | null = null;
+let latestSelectWorktreeRequest = 0;
 const DEFAULT_AUTO_FETCH_SETTINGS: AutoFetchSettings = {
   enabled: false,
   intervalMinutes: 5,
@@ -973,6 +974,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   selectWorktree: async (worktree: WorktreeInfo) => {
+    const requestId = ++latestSelectWorktreeRequest;
     const state = get();
     
     if (state.selectedWorktree?.path === worktree.path) return;
@@ -1014,7 +1016,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const worktreeStillExists = get().repositories.some((repository) =>
       repository.worktrees.some((candidate) => candidate.path === worktree.path)
     );
-    if (!worktreeStillExists) {
+    if (!worktreeStillExists || requestId !== latestSelectWorktreeRequest) {
       await invoke('close_terminal', { terminalId: result.terminal_id }).catch(console.error);
       return;
     }
@@ -1262,7 +1264,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const state = get();
     const worktree = state.selectedWorktree;
     if (!worktree) return null;
-    if (!state.currentActiveTerminalTabId) return null;
+    const activeTabId = state.currentActiveTerminalTabId;
+    if (!activeTabId) return null;
 
     const result = await invoke<{ terminal_id: string }>('spawn_terminal_with_command', {
       cwd: worktree.path,
@@ -1276,7 +1279,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const worktreeStillExists = get().repositories.some((repository) =>
       repository.worktrees.some((candidate) => candidate.path === worktree.path)
     );
-    if (!worktreeStillExists) {
+    const stillCurrent =
+      get().selectedWorktree?.path === worktree.path &&
+      get().currentActiveTerminalTabId === activeTabId;
+    if (!worktreeStillExists || !stillCurrent) {
       await invoke('close_terminal', { terminalId: result.terminal_id }).catch(console.error);
       return null;
     }
