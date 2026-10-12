@@ -1,13 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { WorkspaceHeader } from "./components/WorkspaceHeader";
 import type { RightPanelTabId } from "./components/RightPanelToolbar";
 import { Sidebar } from "./components/Sidebar";
 import { TerminalGrid } from "./components/TerminalGrid";
 import { CaptainTerminalGrid } from "./components/CaptainTerminalGrid";
-import { RightPanel } from "./components/RightPanel";
-import { GitFileDiffOverlay } from "./components/GitFileDiffOverlay";
-import { SettingsPanel } from "./components/SettingsPanel";
-import { CommandMenu } from "./components/CommandMenu";
 import { UpdateNotification } from "./components/UpdateNotification";
 import { Toaster } from "sonner";
 import { listen } from "@tauri-apps/api/event";
@@ -27,6 +23,14 @@ import {
   getNavigableSessions,
   orderSessionsByPath,
 } from "./lib/session-navigation";
+
+// Closed at startup: load on first use so their markdown/diff/editor code stays out of the boot bundle.
+const RightPanel = lazy(() => import("./components/RightPanel").then((m) => ({ default: m.RightPanel })));
+const GitFileDiffOverlay = lazy(() =>
+  import("./components/GitFileDiffOverlay").then((m) => ({ default: m.GitFileDiffOverlay })),
+);
+const SettingsPanel = lazy(() => import("./components/SettingsPanel").then((m) => ({ default: m.SettingsPanel })));
+const CommandMenu = lazy(() => import("./components/CommandMenu").then((m) => ({ default: m.CommandMenu })));
 
 function focusTerminal(terminalId: string | null) {
   if (!terminalId) return;
@@ -48,10 +52,17 @@ function App() {
   const flushSidebarNotesPersistence = useAppStore((state) => state.flushSidebarNotesPersistence);
   const agentSidebarLifecycleEnabled = useAppStore((state) => state.agentSidebarLifecycleEnabled);
   const repositories = useAppStore((state) => state.repositories);
+  const repositoryCount = repositories.length;
   const autoFetchSettings = useAppStore((state) => state.autoFetchSettings);
   const refreshWorktrees = useAppStore((state) => state.refreshWorktrees);
   const keyboardShortcuts = useAppStore((state) => state.keyboardShortcuts);
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
+  const diffPreviewOpen = useAppStore((state) => state.gitFileDiffPreview !== null);
+  // Mount lazily on first open, then keep mounted so close animations and pending autosaves still run.
+  const commandMenuMounted = useRef(false);
+  commandMenuMounted.current ||= commandMenuOpen;
+  const diffOverlayMounted = useRef(false);
+  diffOverlayMounted.current ||= diffPreviewOpen;
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTabId>("git");
   const [captainTerminalRepoPath, setCaptainTerminalRepoPath] = useState<string | null>(null);
@@ -243,21 +254,27 @@ function App() {
   }, [agentSidebarLifecycleEnabled, setAgentRunState]);
 
   useEffect(() => {
-    if (!autoFetchSettings.enabled || repositories.length === 0) {
+    if (!autoFetchSettings.enabled || repositoryCount === 0) {
       return;
     }
 
     const intervalMs = Math.max(autoFetchSettings.intervalMinutes, 1) * 60 * 1000;
+    let skippedWhileHidden = false;
     const fetchAllRepositories = async () => {
+      if (document.hidden) {
+        skippedWhileHidden = true;
+        return;
+      }
       if (autoFetchInFlightRef.current) {
         return;
       }
+      skippedWhileHidden = false;
 
       autoFetchInFlightRef.current = true;
 
       try {
         await Promise.allSettled(
-          repositories.map(async (repo) => {
+          useAppStore.getState().repositories.map(async (repo) => {
             await invoke("git_fetch", { repoPath: repo.info.path });
             await refreshWorktrees(repo.info.path);
           })
@@ -270,9 +287,18 @@ function App() {
     const intervalId = window.setInterval(() => {
       void fetchAllRepositories();
     }, intervalMs);
+    const handleVisibilityChange = () => {
+      if (!document.hidden && skippedWhileHidden) {
+        void fetchAllRepositories();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
-    return () => window.clearInterval(intervalId);
-  }, [autoFetchSettings, refreshWorktrees, repositories]);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [autoFetchSettings, refreshWorktrees, repositoryCount]);
 
   const {
     status: updateStatus,
@@ -334,25 +360,39 @@ function App() {
                   onClose={() => setCaptainTerminalRepoPath(null)}
                 />
               ))}
-              <GitFileDiffOverlay />
+              {diffOverlayMounted.current && (
+                <Suspense fallback={null}>
+                  <GitFileDiffOverlay />
+                </Suspense>
+              )}
             </main>
             {codeReviewOpen && (
-              <RightPanel
-                worktreePath={selectedWorktree?.path ?? null}
-                activeTab={rightPanelTab}
-              />
+              <Suspense fallback={null}>
+                <RightPanel
+                  worktreePath={selectedWorktree?.path ?? null}
+                  activeTab={rightPanelTab}
+                />
+              </Suspense>
             )}
           </div>
         </div>
       </div>
 
-      {settingsOpen && <SettingsPanel onClose={toggleSettings} />}
+      {settingsOpen && (
+        <Suspense fallback={null}>
+          <SettingsPanel onClose={toggleSettings} />
+        </Suspense>
+      )}
 
-      <CommandMenu
-        open={commandMenuOpen}
-        onOpenChange={setCommandMenuOpen}
-        onRunAction={runShortcutAction}
-      />
+      {commandMenuMounted.current && (
+        <Suspense fallback={null}>
+          <CommandMenu
+            open={commandMenuOpen}
+            onOpenChange={setCommandMenuOpen}
+            onRunAction={runShortcutAction}
+          />
+        </Suspense>
+      )}
 
       <UpdateNotification
         open={updateModalOpen}

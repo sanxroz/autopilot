@@ -416,7 +416,7 @@ pub async fn list_worktrees(repo_path: String) -> Result<Vec<WorktreeInfo>, Stri
     .map_err(|error| error.to_string())?
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_worktree_info(worktree_path: String) -> Result<WorktreeInfo, String> {
     let path = PathBuf::from(&worktree_path);
     let branch = get_worktree_branch(&path);
@@ -440,7 +440,7 @@ pub fn get_worktree_info(worktree_path: String) -> Result<WorktreeInfo, String> 
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_worktree_branch_name(worktree_path: String) -> Result<Option<String>, String> {
     let path = PathBuf::from(&worktree_path);
     Ok(get_worktree_branch(&path))
@@ -478,7 +478,7 @@ pub async fn get_worktrees_diff_stats(
     Ok(results)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_branches(repo_path: String) -> Result<Vec<BranchInfo>, String> {
     let repo = Repository::open(&repo_path).map_err(|e| e.message().to_string())?;
 

@@ -162,7 +162,7 @@ fn create_process_refresh_system() -> System {
     system
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_worktree_process_status(worktree_path: String) -> ProcessStatus {
     let system = create_process_refresh_system();
     let worktree_path = Path::new(&worktree_path);
@@ -203,7 +203,7 @@ pub fn get_worktree_process_status(worktree_path: String) -> ProcessStatus {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_all_worktrees_process_status(
     worktree_paths: Vec<String>,
 ) -> std::collections::HashMap<String, ProcessStatus> {

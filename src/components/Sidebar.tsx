@@ -15,6 +15,7 @@ import {
   ArrowUp,
   ArrowDown,
 } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "../store";
 import type { WorktreeInfo } from "../types";
 import { NewWorktreeDialog } from "./NewWorktreeDialog";
@@ -98,6 +99,7 @@ export function Sidebar({
   onToggleCaptainTerminal,
 }: SidebarProps) {
   const shouldReduceMotion = useReducedMotion();
+  // Pick only what the sidebar renders; subscribing to the whole store re-rendered it on every unrelated write.
   const {
     repositories,
     addRepository,
@@ -121,7 +123,32 @@ export function Sidebar({
     agentSidebarLifecycleEnabled,
     worktreeSetupByRepoPath,
     sidebarGroupsByRepo,
-  } = useAppStore();
+  } = useAppStore(
+    useShallow((state) => ({
+      repositories: state.repositories,
+      addRepository: state.addRepository,
+      removeRepository: state.removeRepository,
+      reorderRepositories: state.reorderRepositories,
+      selectWorktree: state.selectWorktree,
+      selectedWorktree: state.selectedWorktree,
+      createWorktreeAuto: state.createWorktreeAuto,
+      deleteWorktree: state.deleteWorktree,
+      createSidebarGroup: state.createSidebarGroup,
+      moveWorktreeInSidebar: state.moveWorktreeInSidebar,
+      renameSidebarGroup: state.renameSidebarGroup,
+      setThemeMode: state.setThemeMode,
+      toggleSettings: state.toggleSettings,
+      githubSettings: state.githubSettings,
+      prStatusByBranch: state.prStatusByBranch,
+      prStatusByWorktreePath: state.prStatusByWorktreePath,
+      processStatusByPath: state.processStatusByPath,
+      agentRunByWorktreePath: state.agentRunByWorktreePath,
+      clearAgentRunState: state.clearAgentRunState,
+      agentSidebarLifecycleEnabled: state.agentSidebarLifecycleEnabled,
+      worktreeSetupByRepoPath: state.worktreeSetupByRepoPath,
+      sidebarGroupsByRepo: state.sidebarGroupsByRepo,
+    })),
+  );
   const themeMode = useThemeMode();
   const [showWorktreeDialog, setShowWorktreeDialog] = useState<string | null>(
     null

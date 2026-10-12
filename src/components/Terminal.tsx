@@ -30,23 +30,250 @@ interface CachedTerminalState {
   readonly mouseProtocolMode: number | null;
 }
 
+// Hidden terminals keep a serialized screen so switching back is instant; cap it so closed sessions can't pile up.
+const TERMINAL_STATE_CACHE_MAX_ENTRIES = 20;
 const terminalStateCache = new Map<string, CachedTerminalState>();
 const cacheCloseListeners = new Map<string, Promise<() => void>>();
 
+function forgetTerminalState(terminalId: string) {
+  terminalStateCache.delete(terminalId);
+  void cacheCloseListeners.get(terminalId)?.then((unlisten) => unlisten());
+  cacheCloseListeners.delete(terminalId);
+}
+
 // Saved screens outlive their component, so a tab closed while unmounted must still drop its entry.
-function saveTerminalState(terminalId: string, state: CachedTerminalState) {
+function cacheTerminalState(terminalId: string, state: CachedTerminalState) {
+  terminalStateCache.delete(terminalId);
   terminalStateCache.set(terminalId, state);
+  for (const oldestId of terminalStateCache.keys()) {
+    if (terminalStateCache.size <= TERMINAL_STATE_CACHE_MAX_ENTRIES) break;
+    forgetTerminalState(oldestId);
+  }
   if (cacheCloseListeners.has(terminalId)) return;
-  const listener = listen<void>(`terminal-closed-${terminalId}`, () => {
-    terminalStateCache.delete(terminalId);
-    void cacheCloseListeners.get(terminalId)?.then((unlisten) => unlisten());
-    cacheCloseListeners.delete(terminalId);
-  });
+  const listener = listen<void>(`terminal-closed-${terminalId}`, () => forgetTerminalState(terminalId));
   cacheCloseListeners.set(terminalId, listener);
   listener.catch((error) => {
     if (cacheCloseListeners.get(terminalId) === listener) cacheCloseListeners.delete(terminalId);
     console.error(error);
   });
+}
+
+type AppTheme = ReturnType<typeof getTheme>;
+
+function buildXtermTheme(t: AppTheme) {
+  return {
+    background: t.terminal.background,
+    foreground: t.terminal.foreground,
+    cursor: t.terminal.cursor,
+    cursorAccent: t.terminal.cursorAccent,
+    selectionBackground: t.terminal.selectionBackground,
+    black: t.terminal.black,
+    red: t.terminal.red,
+    green: t.terminal.green,
+    yellow: t.terminal.yellow,
+    blue: t.terminal.blue,
+    magenta: t.terminal.magenta,
+    cyan: t.terminal.cyan,
+    white: t.terminal.white,
+    brightBlack: t.terminal.brightBlack,
+    brightRed: t.terminal.brightRed,
+    brightGreen: t.terminal.brightGreen,
+    brightYellow: t.terminal.brightYellow,
+    brightBlue: t.terminal.brightBlue,
+    brightMagenta: t.terminal.brightMagenta,
+    brightCyan: t.terminal.brightCyan,
+    brightWhite: t.terminal.brightWhite,
+  };
+}
+
+// Convert hex color to xterm RGB format: rgb:RRRR/GGGG/BBBB
+function hexToXtermRgb(hex: string): string {
+  const value = hex.startsWith("#") ? hex.slice(1) : hex;
+  const normalized = value.length === 3
+    ? value.split("").map((char) => `${char}${char}`).join("")
+    : value;
+  if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
+    console.error(`hexToXtermRgb: invalid hex color "${hex}"`);
+    return "rgb:0000/0000/0000";
+  }
+  const r = parseInt(normalized.slice(0, 2), 16);
+  const g = parseInt(normalized.slice(2, 4), 16);
+  const b = parseInt(normalized.slice(4, 6), 16);
+  // xterm uses 16-bit color values (0000-ffff)
+  const r16 = (r << 8 | r).toString(16).padStart(4, '0');
+  const g16 = (g << 8 | g).toString(16).padStart(4, '0');
+  const b16 = (b << 8 | b).toString(16).padStart(4, '0');
+  return `rgb:${r16}/${g16}/${b16}`;
+}
+
+function openTerminalLink(_event: MouseEvent, uri: string) {
+  if (isLocalWebUrl(uri)) {
+    useAppStore.getState().openBrowserTab(uri);
+    return;
+  }
+  void openUrl(uri).catch((error) => {
+    console.error(`Failed to open terminal link "${uri}":`, error);
+  });
+}
+
+interface TerminalDimensions {
+  readonly cols: number;
+  readonly rows: number;
+}
+
+/** A live xterm that outlives its React mount so switching sessions doesn't rebuild and replay it. */
+interface PooledTerminal {
+  readonly terminalId: string;
+  readonly term: XTerm;
+  readonly fitAddon: FitAddon;
+  readonly searchAddon: SearchAddon;
+  readonly serializeAddon: SerializeAddon;
+  /** Serialized screen still to be written into a freshly created xterm. */
+  restoreState: CachedTerminalState | undefined;
+  /** Highest output sequence handed to `term.write`; the next attach replays only what comes after it. */
+  writtenSequence: number;
+  /** Highest output sequence xterm has finished parsing. */
+  renderedSequence: number;
+  mouseProtocolMode: number | null;
+  dimensions: TerminalDimensions | null;
+  mounted: boolean;
+  closed: boolean;
+  readonly unlistenClosed: Promise<() => void>;
+}
+
+// Hidden terminals are detached from the DOM and from backend output, so they cost memory but no CPU.
+const HIDDEN_TERMINAL_POOL_MAX_ENTRIES = 8;
+const hiddenTerminals = new Map<string, PooledTerminal>();
+
+function disposePooledTerminal(entry: PooledTerminal) {
+  hiddenTerminals.delete(entry.terminalId);
+  void entry.unlistenClosed.then((unlisten) => unlisten());
+  entry.term.dispose();
+}
+
+function createPooledTerminal(terminalId: string): PooledTerminal {
+  const restoreState = terminalStateCache.get(terminalId);
+  const term = new XTerm({
+    ...(restoreState ? { cols: restoreState.cols, rows: restoreState.rows } : {}),
+    cursorBlink: true,
+    fontSize: 13,
+    fontFamily: '"SF Mono", ui-monospace, Menlo, Monaco, "Courier New", monospace',
+    scrollback: TERMINAL_SCROLLBACK_LINES,
+    allowTransparency: true,
+    linkHandler: { activate: openTerminalLink },
+    // Required for SearchAddon decorations — registerDecoration is experimental in xterm v6
+    allowProposedApi: true,
+    theme: buildXtermTheme(getTheme()),
+  });
+
+  const fitAddon = new FitAddon();
+  term.loadAddon(fitAddon);
+  const searchAddon = new SearchAddon();
+  term.loadAddon(searchAddon);
+  const serializeAddon = new SerializeAddon();
+  term.loadAddon(serializeAddon);
+  term.loadAddon(new WebLinksAddon(openTerminalLink));
+
+  const entry: PooledTerminal = {
+    terminalId,
+    term,
+    fitAddon,
+    searchAddon,
+    serializeAddon,
+    restoreState,
+    writtenSequence: 0,
+    renderedSequence: 0,
+    mouseProtocolMode: restoreState?.mouseProtocolMode ?? null,
+    dimensions: null,
+    mounted: false,
+    closed: false,
+    unlistenClosed: listen<void>(`terminal-closed-${terminalId}`, () => {
+      entry.closed = true;
+      terminalStateCache.delete(terminalId);
+      if (entry.mounted) {
+        term.write("\r\n\x1b[31m[Process exited]\x1b[0m\r\n");
+      } else {
+        disposePooledTerminal(entry);
+      }
+    }),
+  };
+
+  term.onData((data) => {
+    invoke("write_to_terminal", { terminalId, data }).catch(console.error);
+  });
+
+  // Handle OSC 10/11 queries for foreground/background color detection
+  // TUI apps like opencode send these to detect dark/light mode
+  term.parser.registerOscHandler(10, (data) => {
+    if (data === '?') {
+      const response = `\x1b]10;${hexToXtermRgb(getTheme().terminal.foreground)}\x1b\\`;
+      invoke("write_to_terminal", { terminalId, data: response }).catch(console.error);
+    }
+    return true;
+  });
+  term.parser.registerOscHandler(11, (data) => {
+    if (data === '?') {
+      const response = `\x1b]11;${hexToXtermRgb(getTheme().bg.primary)}\x1b\\`;
+      invoke("write_to_terminal", { terminalId, data: response }).catch(console.error);
+    }
+    return true;
+  });
+
+  // SerializeAddon restores mouse tracking, but not the negotiated mouse encoding Amp expects.
+  const updateMouseProtocolMode = (enabled: boolean) => (params: (number | number[])[]) => {
+    const modes = params.flat().filter((mode) => MOUSE_PROTOCOL_MODES.has(mode));
+    if (enabled && modes.length > 0) {
+      entry.mouseProtocolMode = modes[modes.length - 1] ?? null;
+    } else if (!enabled && entry.mouseProtocolMode !== null && modes.includes(entry.mouseProtocolMode)) {
+      entry.mouseProtocolMode = null;
+    }
+    return false;
+  };
+  term.parser.registerCsiHandler({ prefix: "?", final: "h" }, updateMouseProtocolMode(true));
+  term.parser.registerCsiHandler({ prefix: "?", final: "l" }, updateMouseProtocolMode(false));
+
+  return entry;
+}
+
+function acquirePooledTerminal(terminalId: string, container: HTMLElement): PooledTerminal {
+  const pooled = hiddenTerminals.get(terminalId);
+  hiddenTerminals.delete(terminalId);
+  const entry = pooled ?? createPooledTerminal(terminalId);
+  if (entry.term.element) {
+    container.appendChild(entry.term.element);
+    // The theme may have changed while it was hidden.
+    entry.term.options.theme = buildXtermTheme(getTheme());
+  } else {
+    entry.term.open(container);
+  }
+  entry.mounted = true;
+  return entry;
+}
+
+function releasePooledTerminal(entry: PooledTerminal) {
+  entry.mounted = false;
+  entry.term.blur();
+  entry.term.element?.remove();
+  if (entry.closed) {
+    disposePooledTerminal(entry);
+    return;
+  }
+  // The same session can be mounted twice (e.g. in two grids); keep only the latest copy.
+  const previous = hiddenTerminals.get(entry.terminalId);
+  if (previous && previous !== entry) disposePooledTerminal(previous);
+  hiddenTerminals.set(entry.terminalId, entry);
+  for (const oldest of hiddenTerminals.values()) {
+    if (hiddenTerminals.size <= HIDDEN_TERMINAL_POOL_MAX_ENTRIES) break;
+    // Fall back to the cheaper serialized snapshot for terminals that haven't been viewed recently.
+    cacheTerminalState(oldest.terminalId, oldest.restoreState ?? {
+      data: oldest.serializeAddon.serialize({ scrollback: TERMINAL_SCROLLBACK_LINES }),
+      sequence: oldest.renderedSequence,
+      cols: oldest.term.cols,
+      rows: oldest.term.rows,
+      mouseProtocolMode: oldest.mouseProtocolMode,
+    });
+    disposePooledTerminal(oldest);
+  }
 }
 
 interface Props {
@@ -70,11 +297,6 @@ interface TerminalOutput {
 
 interface TerminalOutputSnapshot extends TerminalOutput {
   readonly truncated: boolean;
-}
-
-interface TerminalDimensions {
-  readonly cols: number;
-  readonly rows: number;
 }
 
 export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ terminalId, isActive, onFocus }, ref) {
@@ -141,119 +363,12 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const cachedState = terminalStateCache.get(terminalId);
-
-    const openTerminalLink = (_event: MouseEvent, uri: string) => {
-      if (isLocalWebUrl(uri)) {
-        useAppStore.getState().openBrowserTab(uri);
-        return;
-      }
-      void openUrl(uri).catch((error) => {
-        console.error(`Failed to open terminal link "${uri}":`, error);
-      });
-    };
-
-    const term = new XTerm({
-      ...(cachedState ? { cols: cachedState.cols, rows: cachedState.rows } : {}),
-      cursorBlink: true,
-      fontSize: 13,
-      fontFamily: '"SF Mono", ui-monospace, Menlo, Monaco, "Courier New", monospace',
-      scrollback: TERMINAL_SCROLLBACK_LINES,
-      allowTransparency: true,
-      linkHandler: { activate: openTerminalLink },
-      // Required for SearchAddon decorations — registerDecoration is experimental in xterm v6
-      allowProposedApi: true,
-      theme: {
-        background: theme.terminal.background,
-        foreground: theme.terminal.foreground,
-        cursor: theme.terminal.cursor,
-        cursorAccent: theme.terminal.cursorAccent,
-        selectionBackground: theme.terminal.selectionBackground,
-        black: theme.terminal.black,
-        red: theme.terminal.red,
-        green: theme.terminal.green,
-        yellow: theme.terminal.yellow,
-        blue: theme.terminal.blue,
-        magenta: theme.terminal.magenta,
-        cyan: theme.terminal.cyan,
-        white: theme.terminal.white,
-        brightBlack: theme.terminal.brightBlack,
-        brightRed: theme.terminal.brightRed,
-        brightGreen: theme.terminal.brightGreen,
-        brightYellow: theme.terminal.brightYellow,
-        brightBlue: theme.terminal.brightBlue,
-        brightMagenta: theme.terminal.brightMagenta,
-        brightCyan: theme.terminal.brightCyan,
-        brightWhite: theme.terminal.brightWhite,
-      },
-    });
-
-    const fitAddon = new FitAddon();
-    term.loadAddon(fitAddon);
-
-    const searchAddon = new SearchAddon();
-    term.loadAddon(searchAddon);
-
-    const serializeAddon = new SerializeAddon();
-    term.loadAddon(serializeAddon);
-
-    const webLinksAddon = new WebLinksAddon(openTerminalLink);
-    term.loadAddon(webLinksAddon);
-
-    term.open(containerRef.current);
-
+    const entry = acquirePooledTerminal(terminalId, containerRef.current);
+    const { term } = entry;
     terminalRef.current = term;
-    fitAddonRef.current = fitAddon;
-    searchAddonRef.current = searchAddon;
-    terminalDimensionsRef.current = null;
-
-    term.onData((data) => {
-      invoke("write_to_terminal", { terminalId, data }).catch(console.error);
-    });
-
-    // Handle OSC 10/11 queries for foreground/background color detection
-    // TUI apps like opencode send these to detect dark/light mode
-    
-    // Convert hex color to xterm RGB format: rgb:RRRR/GGGG/BBBB
-    const hexToXtermRgb = (hex: string): string => {
-      const value = hex.startsWith("#") ? hex.slice(1) : hex;
-      const normalized = value.length === 3
-        ? value.split("").map((char) => `${char}${char}`).join("")
-        : value;
-      if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
-        console.error(`hexToXtermRgb: invalid hex color "${hex}"`);
-        return "rgb:0000/0000/0000";
-      }
-      const r = parseInt(normalized.slice(0, 2), 16);
-      const g = parseInt(normalized.slice(2, 4), 16);
-      const b = parseInt(normalized.slice(4, 6), 16);
-      // xterm uses 16-bit color values (0000-ffff)
-      const r16 = (r << 8 | r).toString(16).padStart(4, '0');
-      const g16 = (g << 8 | g).toString(16).padStart(4, '0');
-      const b16 = (b << 8 | b).toString(16).padStart(4, '0');
-      return `rgb:${r16}/${g16}/${b16}`;
-    };
-
-    // OSC 10: query/set foreground color
-    term.parser.registerOscHandler(10, (data) => {
-      if (data === '?') {
-        const t = getTheme();
-        const fgColor = t.terminal.foreground;
-        const response = `\x1b]10;${hexToXtermRgb(fgColor)}\x1b\\`;
-        invoke("write_to_terminal", { terminalId, data: response }).catch(console.error);
-      }
-      return true;
-    });
-
-    // OSC 11: query/set background color  
-    term.parser.registerOscHandler(11, (data) => {
-      if (data === '?') {
-        const bgColor = getTheme().bg.primary;
-        const response = `\x1b]11;${hexToXtermRgb(bgColor)}\x1b\\`;
-        invoke("write_to_terminal", { terminalId, data: response }).catch(console.error);
-      }
-      return true;
-    });
+    fitAddonRef.current = entry.fitAddon;
+    searchAddonRef.current = entry.searchAddon;
+    terminalDimensionsRef.current = entry.dimensions;
 
     let disposed = false;
     let replayLoaded = false;
@@ -263,36 +378,29 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     const replayEvents: TerminalOutput[] = [];
     const outputQueue: TerminalOutput[] = [];
     let isWritingOutput = false;
-    let renderedSequence = cachedState?.sequence ?? 0;
-    let mouseProtocolMode = cachedState?.mouseProtocolMode ?? null;
-    let terminalClosed = false;
 
-    // SerializeAddon restores mouse tracking, but not the negotiated mouse encoding Amp expects.
-    const updateMouseProtocolMode = (enabled: boolean) => (params: (number | number[])[]) => {
-      const modes = params.flat().filter((mode) => MOUSE_PROTOCOL_MODES.has(mode));
-      if (enabled && modes.length > 0) {
-        mouseProtocolMode = modes[modes.length - 1] ?? null;
-      } else if (!enabled && mouseProtocolMode !== null && modes.includes(mouseProtocolMode)) {
-        mouseProtocolMode = null;
-      }
-      return false;
+    const writeOutput = (data: string, sequence: number, onWritten?: () => void) => {
+      entry.writtenSequence = Math.max(entry.writtenSequence, sequence);
+      term.write(data, () => {
+        entry.renderedSequence = Math.max(entry.renderedSequence, sequence);
+        onWritten?.();
+      });
     };
 
-    term.parser.registerCsiHandler({ prefix: "?", final: "h" }, updateMouseProtocolMode(true));
-    term.parser.registerCsiHandler({ prefix: "?", final: "l" }, updateMouseProtocolMode(false));
     const flushOutputQueue = () => {
       if (isWritingOutput || disposed) return;
 
-      const output = outputQueue.shift();
-      if (!output) return;
+      // Write everything queued in one pass so bursts cost one parse and one acknowledgement.
+      const outputs = outputQueue.splice(0);
+      const sequence = outputs[outputs.length - 1]?.sequence;
+      if (sequence === undefined) return;
 
       isWritingOutput = true;
-      term.write(output.data, () => {
+      writeOutput(outputs.map((output) => output.data).join(""), sequence, () => {
         isWritingOutput = false;
-        renderedSequence = output.sequence;
         void invoke("acknowledge_terminal_output", {
           terminalId,
-          sequence: output.sequence,
+          sequence,
         }).catch(console.error);
         flushOutputQueue();
       });
@@ -303,6 +411,20 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       appliedSequence = output.sequence;
       outputQueue.push(output);
       flushOutputQueue();
+    };
+
+    const finishReplay = () => {
+      replayLoaded = true;
+      for (const output of replayEvents) {
+        appendOutput(output);
+      }
+      replayEvents.length = 0;
+      requestAnimationFrame(() => {
+        if (disposed) return;
+        fit();
+        term.refresh(0, term.rows - 1);
+        term.scrollToBottom();
+      });
     };
 
     void listen<TerminalOutput>(`terminal-output-${terminalId}`, (event) => {
@@ -336,78 +458,54 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
             }
             return;
           }
-          const afterSequence = cachedState?.sequence ?? null;
+          // A pooled terminal already shows everything up to writtenSequence; only fetch what it missed.
+          const restoreState = entry.restoreState;
+          const afterSequence = restoreState?.sequence ?? (entry.writtenSequence || null);
           let snapshot = await invoke<TerminalOutputSnapshot>(
             "get_terminal_output",
             { terminalId, afterSequence },
           );
-          const restoreCachedState = cachedState && !snapshot.truncated;
+          if (disposed) return;
           if (snapshot.truncated) {
             terminalStateCache.delete(terminalId);
+            entry.restoreState = undefined;
+            if (!restoreState) term.reset();
             snapshot = await invoke<TerminalOutputSnapshot>(
               "get_terminal_output",
               { terminalId, afterSequence: null },
             );
-          }
-          if (restoreCachedState) {
-            const mouseProtocol = cachedState.mouseProtocolMode === null
+            if (disposed) return;
+          } else if (restoreState) {
+            entry.restoreState = undefined;
+            const mouseProtocol = restoreState.mouseProtocolMode === null
               ? ""
-              : `\x1b[?${cachedState.mouseProtocolMode}h`;
-            await new Promise<void>((resolve) => term.write(cachedState.data + mouseProtocol, resolve));
+              : `\x1b[?${restoreState.mouseProtocolMode}h`;
+            writeOutput(restoreState.data + mouseProtocol, restoreState.sequence);
           }
-          if (disposed) return;
           await resizeTerminal();
           if (disposed) return;
           appliedSequence = snapshot.sequence;
-          term.write(snapshot.data, () => {
+          writeOutput(snapshot.data, snapshot.sequence, () => {
             if (disposed) return;
-            renderedSequence = snapshot.sequence;
             if (!terminalCompleted) {
               void invoke("acknowledge_terminal_output", {
                 terminalId,
                 sequence: snapshot.sequence,
               }).catch(console.error);
-            }
-            replayLoaded = true;
-            if (terminalCompleted) {
-              terminalClosed = true;
+            } else if (!entry.closed) {
+              entry.closed = true;
               terminalStateCache.delete(terminalId);
               term.write("\r\n\x1b[31m[Process exited]\x1b[0m\r\n");
             }
-            for (const output of replayEvents) {
-              appendOutput(output);
-            }
-            replayEvents.length = 0;
-            requestAnimationFrame(() => {
-              if (!terminalRef.current) return;
-              fit();
-              terminalRef.current.refresh(0, terminalRef.current.rows - 1);
-              terminalRef.current.scrollToBottom();
-            });
+            finishReplay();
           });
         } catch (error) {
           console.error("Failed to replay terminal output:", error);
           if (disposed) return;
-          replayLoaded = true;
-          for (const output of replayEvents) {
-            appendOutput(output);
-          }
-          replayEvents.length = 0;
-          requestAnimationFrame(() => {
-            if (!terminalRef.current) return;
-            fit();
-            terminalRef.current.refresh(0, terminalRef.current.rows - 1);
-            terminalRef.current.scrollToBottom();
-          });
+          finishReplay();
         }
       })
       .catch(console.error);
-
-    const unlistenClose = listen<void>(`terminal-closed-${terminalId}`, () => {
-      terminalClosed = true;
-      terminalStateCache.delete(terminalId);
-      term.write("\r\n\x1b[31m[Process exited]\x1b[0m\r\n");
-    });
 
     const scheduleResize = () => {
       if (resizeFrameRef.current !== null) return;
@@ -423,15 +521,6 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
 
     return () => {
       disposed = true;
-      if (!terminalClosed && replayLoaded) {
-        saveTerminalState(terminalId, {
-          data: serializeAddon.serialize({ scrollback: TERMINAL_SCROLLBACK_LINES }),
-          sequence: renderedSequence,
-          cols: term.cols,
-          rows: term.rows,
-          mouseProtocolMode,
-        });
-      }
       if (attachmentId !== null) {
         void invoke("detach_terminal_output", {
           terminalId,
@@ -439,7 +528,6 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
         }).catch(console.error);
       }
       unlistenOutput?.();
-      unlistenClose.then((fn) => fn());
       outputQueue.length = 0;
       unobserve();
       window.removeEventListener(PANEL_RESIZE_END_EVENT, scheduleResize);
@@ -447,7 +535,8 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
         cancelAnimationFrame(resizeFrameRef.current);
         resizeFrameRef.current = null;
       }
-      term.dispose();
+      entry.dimensions = terminalDimensionsRef.current;
+      releasePooledTerminal(entry);
       terminalRef.current = null;
       fitAddonRef.current = null;
       searchAddonRef.current = null;
@@ -465,29 +554,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     const updateTerminalTheme = () => {
       if (!terminalRef.current) return;
       const t = getTheme();
-      terminalRef.current.options.theme = {
-        background: t.terminal.background,
-        foreground: t.terminal.foreground,
-        cursor: t.terminal.cursor,
-        cursorAccent: t.terminal.cursorAccent,
-        selectionBackground: t.terminal.selectionBackground,
-        black: t.terminal.black,
-        red: t.terminal.red,
-        green: t.terminal.green,
-        yellow: t.terminal.yellow,
-        blue: t.terminal.blue,
-        magenta: t.terminal.magenta,
-        cyan: t.terminal.cyan,
-        white: t.terminal.white,
-        brightBlack: t.terminal.brightBlack,
-        brightRed: t.terminal.brightRed,
-        brightGreen: t.terminal.brightGreen,
-        brightYellow: t.terminal.brightYellow,
-        brightBlue: t.terminal.brightBlue,
-        brightMagenta: t.terminal.brightMagenta,
-        brightCyan: t.terminal.brightCyan,
-        brightWhite: t.terminal.brightWhite,
-      };
+      terminalRef.current.options.theme = buildXtermTheme(t);
       if (themeFrameRef.current !== null) {
         cancelAnimationFrame(themeFrameRef.current);
       }

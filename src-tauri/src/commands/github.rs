@@ -267,7 +267,7 @@ fn map_gh_pr_to_status(pr: GhPRResponse, repo_owner: Option<&str>) -> PRStatus {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn check_gh_cli() -> Result<bool, String> {
     let gh_path = match find_cli_tool("gh") {
         Ok(path) => path,
@@ -279,7 +279,7 @@ pub fn check_gh_cli() -> Result<bool, String> {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn check_gh_auth() -> Result<String, String> {
     let gh_path = find_cli_tool("gh")?;
     let output = Command::new(&gh_path)
