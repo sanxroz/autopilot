@@ -62,8 +62,11 @@ export async function refreshPRStatuses(repoPath?: string): Promise<void> {
 }
 
 export function usePRStatusPolling() {
-  // Only the repo count matters here; worktree refreshes replace `repositories` constantly and would restart polling.
+  // Track only worktree paths and branches; worktree refreshes replace `repositories` constantly and would restart polling.
   const repositoryCount = useAppStore((state) => state.repositories.length);
+  const worktreeBranchSignature = useAppStore((state) =>
+    JSON.stringify(state.repositories.map((repo) => repo.worktrees.map((wt) => [wt.path, wt.branch])))
+  );
   const githubSettings = useAppStore((state) => state.githubSettings);
   const collapsedRepos = useAppStore((state) => state.collapsedRepos);
   
@@ -84,7 +87,7 @@ export function usePRStatusPolling() {
     } finally {
       isFetchingRef.current = false;
     }
-  }, [repositoryCount, githubSettings.ghCliAvailable, collapsedRepos]);
+  }, [repositoryCount, worktreeBranchSignature, githubSettings.ghCliAvailable, collapsedRepos]);
 
   useEffect(() => {
     if (!githubSettings.ghCliAvailable) {

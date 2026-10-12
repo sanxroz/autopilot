@@ -259,10 +259,16 @@ function App() {
     }
 
     const intervalMs = Math.max(autoFetchSettings.intervalMinutes, 1) * 60 * 1000;
+    let skippedWhileHidden = false;
     const fetchAllRepositories = async () => {
-      if (autoFetchInFlightRef.current || document.hidden) {
+      if (document.hidden) {
+        skippedWhileHidden = true;
         return;
       }
+      if (autoFetchInFlightRef.current) {
+        return;
+      }
+      skippedWhileHidden = false;
 
       autoFetchInFlightRef.current = true;
 
@@ -281,8 +287,17 @@ function App() {
     const intervalId = window.setInterval(() => {
       void fetchAllRepositories();
     }, intervalMs);
+    const handleVisibilityChange = () => {
+      if (!document.hidden && skippedWhileHidden) {
+        void fetchAllRepositories();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
-    return () => window.clearInterval(intervalId);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [autoFetchSettings, refreshWorktrees, repositoryCount]);
 
   const {

@@ -523,8 +523,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const repoAvatarCache = persisted.repoAvatarCache || {};
     const reposNeedingAvatar: string[] = [];
 
-    // Load every repository in parallel, then apply them in persisted order.
-    const loadedRepositories = await Promise.all(persisted.repositoryPaths.map(async (path) => {
+    // Load every repository in parallel and show each one as soon as it is ready, in persisted order.
+    const persistedOrder = new Map<string, number>();
+    const orderOf = (repository: Repository) => persistedOrder.get(repository.info.path) ?? Number.MAX_SAFE_INTEGER;
+    await Promise.all(persisted.repositoryPaths.map(async (path, index) => {
       try {
         const discovered = await invoke<RepoInfo>('discover_repository', { path });
         const cachedAvatarUrl = repoAvatarCache[discovered.path] || repoAvatarCache[path];
@@ -542,31 +544,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
           branchWorktreePaths
         );
 
-        return { info, worktrees, normalizedSidebarGroups, cachedAvatarUrl };
+        if (!cachedAvatarUrl) {
+          reposNeedingAvatar.push(info.path);
+        }
+
+        persistedOrder.set(info.path, index);
+        set((state) => ({
+          repositories: [
+            ...state.repositories.filter((r) => r.info.path !== info.path),
+            { info, worktrees, isExpanded: true },
+          ].sort((a, b) => orderOf(a) - orderOf(b)),
+          sidebarGroupsByRepo: {
+            ...state.sidebarGroupsByRepo,
+            [info.path]: normalizedSidebarGroups,
+          },
+        }));
       } catch (e) {
         console.error(`Failed to load repository ${path}:`, e);
-        return null;
       }
     }));
-
-    for (const loaded of loadedRepositories) {
-      if (!loaded) continue;
-      const { info, worktrees, normalizedSidebarGroups, cachedAvatarUrl } = loaded;
-      if (!cachedAvatarUrl) {
-        reposNeedingAvatar.push(info.path);
-      }
-
-      set((state) => ({
-        repositories: [
-          ...state.repositories.filter((r) => r.info.path !== info.path),
-          { info, worktrees, isExpanded: true },
-        ],
-        sidebarGroupsByRepo: {
-          ...state.sidebarGroupsByRepo,
-          [info.path]: normalizedSidebarGroups,
-        },
-      }));
-    }
 
     void savePersistedState({
       repositoryPaths: get().repositories.map((repository) => repository.info.path),
@@ -1015,6 +1011,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
       isDarkMode: getThemeMode() === 'dark',
     });
 
+    const worktreeStillExists = get().repositories.some((repository) =>
+      repository.worktrees.some((candidate) => candidate.path === worktree.path)
+    );
+    if (!worktreeStillExists) {
+      await invoke('close_terminal', { terminalId: result.terminal_id }).catch(console.error);
+      return;
+    }
+
     const terminal: TerminalInstance = {
       id: result.terminal_id,
       worktreePath: worktree.path,
@@ -1268,6 +1272,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
       rows: 24,
       isDarkMode: getThemeMode() === 'dark',
     });
+
+    const worktreeStillExists = get().repositories.some((repository) =>
+      repository.worktrees.some((candidate) => candidate.path === worktree.path)
+    );
+    if (!worktreeStillExists) {
+      await invoke('close_terminal', { terminalId: result.terminal_id }).catch(console.error);
+      return null;
+    }
 
     const terminal: TerminalInstance = {
       id: result.terminal_id,

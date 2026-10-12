@@ -29,9 +29,7 @@ export function useGitWatcher() {
 
   // A string so the watcher effect only re-runs when the set of watched paths changes.
   const repoWorktreeSignature = useMemo(() => {
-    return repositories
-      .map(r => `${r.info.path}:${r.worktrees.map(wt => wt.path).sort().join(',')}`)
-      .join('|');
+    return JSON.stringify(repositories.map(r => [r.info.path, r.worktrees.map(wt => wt.path).sort()]));
   }, [repositories]);
 
   const debouncedBranchUpdate = useCallback((worktreePath: string) => {

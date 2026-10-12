@@ -20,11 +20,14 @@ Object.assign(globalThis, {
 });
 
 // Fake backend: each PTY keeps producing output whether or not a view is attached.
-const backend = new Map<string, { chunks: { data: string; sequence: number }[]; attached: boolean }>();
-const pty = (id: string) => backend.get(id) ?? backend.set(id, { chunks: [], attached: false }).get(id)!;
+// `dropped` is the highest sequence that fell out of the backend's replay buffer.
+const backend = new Map<string, { chunks: { data: string; sequence: number }[]; attached: boolean; dropped: number }>();
+const pty = (id: string) => backend.get(id) ?? backend.set(id, { chunks: [], attached: false, dropped: 0 }).get(id)!;
 const agentWrites = (id: string, data: string) => {
   const p = pty(id);
-  p.chunks.push({ data, sequence: p.chunks.length + 1 });
+  const chunk = { data, sequence: p.chunks.length + 1 };
+  p.chunks.push(chunk);
+  if (p.attached) listeners.get(`terminal-output-${id}`)?.forEach((fn) => fn({ payload: chunk }));
 };
 
 class FakeXTerm {
@@ -34,18 +37,30 @@ class FakeXTerm {
   cols = 80;
   scrolledToBottom = false;
   element?: HTMLElement;
+  // While true, writes stay queued like xterm data that hasn't been parsed yet.
+  holdWrites = false;
+  pendingWrites: { data: string; cb?: () => void }[] = [];
   options: Record<string, unknown> = {};
   parser = { registerOscHandler: () => ({ dispose() {} }), registerCsiHandler: () => ({ dispose() {} }) };
   constructor() { FakeXTerm.alive.add(this); }
   loadAddon(addon: { term?: FakeXTerm }) { addon.term = this; }
   open(parent: HTMLElement) { this.element = document.createElement("div"); parent.appendChild(this.element); }
   onData() { return { dispose() {} }; }
-  write(data: string, cb?: () => void) { this.screen += data; cb?.(); }
+  write(data: string, cb?: () => void) {
+    if (this.holdWrites) { this.pendingWrites.push({ data, cb }); return; }
+    this.screen += data;
+    cb?.();
+  }
+  flushWrites() {
+    this.holdWrites = false;
+    for (const { data, cb } of this.pendingWrites.splice(0)) { this.screen += data; cb?.(); }
+  }
+  reset() { this.screen = ""; }
   refresh() {}
   scrollToBottom() { this.scrolledToBottom = true; }
   focus() {}
   blur() {}
-  dispose() { FakeXTerm.alive.delete(this); }
+  dispose() { this.pendingWrites = []; FakeXTerm.alive.delete(this); }
 }
 // Hidden sessions stay alive but parked off-screen; only terminals in the DOM are visible.
 const visible = () => [...FakeXTerm.alive].filter((t) => t.element?.isConnected);
@@ -56,10 +71,10 @@ const tauriCore = await import("@tauri-apps/api/core");
 mock.module("../src/hooks/useTheme", () => ({ useTheme: () => theme }));
 mock.module("../src/components/TerminalAnimation", () => ({ TerminalAnimation: () => null }));
 mock.module("../src/components/BrowserPane", () => ({ BrowserPane: () => <div>Browser</div> }));
-const listeners = new Map<string, Set<() => void>>();
+const listeners = new Map<string, Set<(event?: unknown) => void>>();
 const emitClosed = (id: string) => listeners.get(`terminal-closed-${id}`)?.forEach((fn) => fn());
 mock.module("@tauri-apps/api/event", () => ({
-  listen: async (event: string, fn: () => void) => {
+  listen: async (event: string, fn: (event?: unknown) => void) => {
     const set = listeners.get(event) ?? listeners.set(event, new Set()).get(event)!;
     set.add(fn);
     return () => set.delete(fn);
@@ -73,8 +88,11 @@ mock.module("@tauri-apps/api/core", () => ({
     // Like the backend: the PTY dies and terminal-closed is emitted shortly after.
     if (command === "close_terminal") { setTimeout(() => emitClosed(args.terminalId), 0); return; }
     if (command === "get_terminal_output") {
-      const chunks = pty(args.terminalId).chunks.filter((c) => c.sequence > (args.afterSequence ?? 0));
-      return { data: chunks.map((c) => c.data).join(""), sequence: pty(args.terminalId).chunks.length, truncated: false };
+      const p = pty(args.terminalId);
+      const afterSequence = args.afterSequence ?? null;
+      if (afterSequence !== null && afterSequence < p.dropped) return { data: "", sequence: p.chunks.length, truncated: true };
+      const chunks = p.chunks.filter((c) => c.sequence > Math.max(afterSequence ?? 0, p.dropped));
+      return { data: chunks.map((c) => c.data).join(""), sequence: p.chunks.length, truncated: false };
     }
   },
 }));
@@ -94,11 +112,12 @@ const { useAppStore } = await import("../src/store");
 const { TerminalGrid } = await import("../src/components/TerminalGrid");
 
 const worktree: WorktreeInfo = { name: "repo", path: "/repo", branch: "main", last_modified: null };
-const tabs: TerminalPane[] = ["one", "two"].map((id) => ({
+const makeTab = (id: string): TerminalPane => ({
   id,
   terminals: [{ id: `terminal-${id}`, worktreePath: worktree.path, worktreeName: worktree.name }],
   activeTerminalId: `terminal-${id}`,
-}));
+});
+const tabs: TerminalPane[] = ["one", "two"].map(makeTab);
 const settle = () => act(async () => { await new Promise((r) => setTimeout(r, 5)); });
 let container: HTMLDivElement;
 let root: ReturnType<typeof createRoot>;
@@ -186,4 +205,57 @@ test("closing a hidden tab forgets its saved screen", async () => {
   }));
   await settle();
   expect(screens()).toEqual(["fresh|"]);
+});
+
+const showTab = async (id: string) => {
+  await act(async () => useAppStore.getState().setActiveTerminalTab(id));
+  await settle();
+};
+
+// Opens enough other tabs that terminal-one is the oldest of more than eight parked terminals.
+const evictTerminalOne = async () => {
+  const extraTabs = Array.from({ length: 8 }, (_, i) => makeTab(`extra-${i}`));
+  const allTabs = [...tabs, ...extraTabs];
+  await act(async () => useAppStore.setState((state) => ({
+    currentTerminalTabs: allTabs,
+    terminalsByWorktree: { [worktree.path]: { tabs: allTabs, activeTabId: state.currentActiveTerminalTabId } },
+  })));
+  for (const tab of [tabs[1], ...extraTabs]) await showTab(tab.id);
+};
+
+test("output still being parsed when a terminal is parked is shown once on return", async () => {
+  const [original] = visible();
+  original.holdWrites = true;
+  await act(async () => agentWrites("terminal-one", "live|"));
+  await showTab("two");
+  original.flushWrites();
+  agentWrites("terminal-one", "parked|");
+
+  await showTab("one");
+  expect(visible()).toEqual([original]);
+  expect(original.screen).toBe("one-start|live|parked|");
+});
+
+test("a terminal evicted while output is still being parsed neither repeats nor skips output", async () => {
+  const [original] = visible();
+  original.holdWrites = true;
+  await act(async () => agentWrites("terminal-one", "live|"));
+  await evictTerminalOne();
+  expect(FakeXTerm.alive.has(original)).toBe(false);
+  agentWrites("terminal-one", "parked|");
+
+  await showTab("one");
+  expect(screens()).toEqual(["one-start|live|parked|"]);
+});
+
+test("a truncated replay redraws the parked terminal from what the backend still has", async () => {
+  const [original] = visible();
+  await showTab("two");
+  agentWrites("terminal-one", "lost|");
+  agentWrites("terminal-one", "kept|");
+  pty("terminal-one").dropped = 2;
+
+  await showTab("one");
+  expect(visible()).toEqual([original]);
+  expect(original.screen).toBe("kept|");
 });
