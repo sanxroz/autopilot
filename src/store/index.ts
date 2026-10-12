@@ -68,7 +68,7 @@ interface TerminalAgentSession {
 }
 
 interface SavedWorktreeTerminals {
-  tabs: Array<{ browserUrl?: string; terminals: Array<TerminalAgentSession | null> }>;
+  tabs: Array<{ browserUrl?: string; terminals: Array<TerminalAgentSession | null>; activeTerminalIndex?: number }>;
   activeTabIndex: number;
 }
 
@@ -181,6 +181,7 @@ let sidebarGroupsRevision = 0;
 let pendingLegacySidebarNotesMarkdown: string | null = null;
 let restorableTerminalSessions: Record<string, SavedWorktreeTerminals> = {};
 let terminalSessionsSaveTimer: ReturnType<typeof setTimeout> | undefined;
+const terminalRestoresByWorktreePath = new Map<string, Promise<Awaited<ReturnType<typeof restoreWorktreeTerminals>>>>();
 const AGENT_SESSION_ID_PATTERN = /^[\w-]+$/;
 const AGENT_RESUME_COMMANDS: Record<AIAgent, (sessionId?: string) => string> = {
   claude: (sessionId) => (sessionId ? `claude --resume ${sessionId}` : 'claude --continue'),
@@ -430,6 +431,7 @@ async function saveSidebarNotesByWorktreePath(sidebarNotesByWorktreePath: Record
 }
 
 async function flushSidebarNotesPersistence(): Promise<void> {
+  if (terminalSessionsSaveTimer !== undefined) saveTerminalSessions();
   await storeOperationQueue;
 }
 
@@ -483,7 +485,8 @@ async function restoreWorktreeTerminals(worktree: WorktreeInfo, saved: SavedWork
     );
     const terminals = spawned.filter((terminal): terminal is TerminalInstance => terminal !== null);
     if (terminals.length > 0) {
-      tabs.push({ id: terminals[0].id, terminals, activeTerminalId: terminals[terminals.length - 1].id });
+      const activeTerminal = spawned[savedTab.activeTerminalIndex ?? -1] ?? terminals[terminals.length - 1];
+      tabs.push({ id: terminals[0].id, terminals, activeTerminalId: activeTerminal.id });
     }
   }
   return { tabs, agents };
@@ -499,12 +502,23 @@ function serializeTerminalSessions(state: AppStore): Record<string, SavedWorktre
       tabs: tabs.map((tab) =>
         tab.browserUrl
           ? { browserUrl: tab.browserUrl, terminals: [] }
-          : { terminals: tab.terminals.map((terminal) => state.terminalAgentById[terminal.id] ?? null) },
+          : {
+              terminals: tab.terminals.map((terminal) => state.terminalAgentById[terminal.id] ?? null),
+              activeTerminalIndex: Math.max(0, tab.terminals.findIndex((terminal) => terminal.id === tab.activeTerminalId)),
+            },
       ),
       activeTabIndex: Math.max(0, tabs.findIndex((tab) => tab.id === activeTabId)),
     };
   }
   return Object.fromEntries(Object.entries(sessions).filter(([path]) => knownWorktreePaths.has(path)));
+}
+
+function saveTerminalSessions() {
+  clearTimeout(terminalSessionsSaveTimer);
+  terminalSessionsSaveTimer = undefined;
+  saveStoreValue('terminalSessionsByWorktreePath', serializeTerminalSessions(useAppStore.getState())).catch(
+    console.error,
+  );
 }
 
 async function fetchRepoAvatarUrl(repoPath: string): Promise<string | null> {
@@ -1089,8 +1103,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     const saved = restorableTerminalSessions[worktree.path];
     if (saved) {
-      const restored = await restoreWorktreeTerminals(worktree, saved);
-      delete restorableTerminalSessions[worktree.path];
+      // Concurrent selections share one restore so resumed agents are never spawned twice.
+      let restore = terminalRestoresByWorktreePath.get(worktree.path);
+      if (!restore) {
+        restore = restoreWorktreeTerminals(worktree, saved).finally(() => {
+          delete restorableTerminalSessions[worktree.path];
+          terminalRestoresByWorktreePath.delete(worktree.path);
+        });
+        terminalRestoresByWorktreePath.set(worktree.path, restore);
+      }
+      const restored = await restore;
       if (restored.tabs.length > 0) {
         const activeTab = restored.tabs[saved.activeTabIndex] ?? restored.tabs[0];
         set((state) => ({
@@ -1573,6 +1595,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
 
       await invoke('delete_worktree', { repoPath, worktreeName, force: true });
+      delete restorableTerminalSessions[worktree.path];
+      saveTerminalSessions();
 
       set((s) => {
         const nextDeleting = new Set(s.deletingWorktreePaths);
@@ -2111,9 +2135,5 @@ useAppStore.subscribe((state, previous) => {
     return;
   }
   clearTimeout(terminalSessionsSaveTimer);
-  terminalSessionsSaveTimer = setTimeout(() => {
-    saveStoreValue('terminalSessionsByWorktreePath', serializeTerminalSessions(useAppStore.getState())).catch(
-      console.error,
-    );
-  }, 500);
+  terminalSessionsSaveTimer = setTimeout(saveTerminalSessions, 500);
 });

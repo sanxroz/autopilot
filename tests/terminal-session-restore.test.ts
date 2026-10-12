@@ -55,7 +55,7 @@ const worktree: WorktreeInfo = { name: "alpha", path: "/repo/alpha", branch: "al
 const repository: Repository = { info: { name: "repo", path: "/repo" }, worktrees: [worktree], isExpanded: true };
 const terminal = (id: string) => ({ id, worktreePath: worktree.path, worktreeName: worktree.name });
 const tabs: TerminalPane[] = [
-  { id: "claude", terminals: [terminal("claude"), terminal("shell")], activeTerminalId: "shell" },
+  { id: "claude", terminals: [terminal("claude"), terminal("shell")], activeTerminalId: "claude" },
   { id: "codex", terminals: [terminal("codex")], activeTerminalId: "codex" },
   { id: "browser", terminals: [], activeTerminalId: null, browserUrl: "http://localhost:3000/" },
 ];
@@ -70,13 +70,15 @@ test("terminal tabs and agent conversations are restored after a restart", async
   useAppStore.getState().setAgentRunState({ ...event, terminalId: "claude", agent: "claude", agentSessionId: "abc-123" });
   useAppStore.getState().setAgentRunState({ ...event, terminalId: "codex", agent: "codex" });
   useAppStore.getState().setAgentRunState({ ...event, terminalId: "claude", agent: "claude" });
-  await new Promise((resolve) => setTimeout(resolve, 700));
+  // Quitting right away must still persist the pending save.
+  await useAppStore.getState().flushSidebarNotesPersistence();
 
   // Simulate an app restart: in-memory terminals are gone, only disk remains.
   useAppStore.setState({ isInitialized: false, selectedWorktree: null, terminalsByWorktree: {}, terminalAgentById: {} });
   await useAppStore.getState().initialize();
   useAppStore.setState({ repositories: [repository] });
-  await useAppStore.getState().selectWorktree(worktree);
+  // A double click while restoring must not resume the agents twice.
+  await Promise.all([useAppStore.getState().selectWorktree(worktree), useAppStore.getState().selectWorktree(worktree)]);
 
   expect(spawnCalls.map(({ command, args }) => args?.command ?? command)).toEqual([
     "claude --resume abc-123",
@@ -87,6 +89,7 @@ test("terminal tabs and agent conversations are restored after a restart", async
   expect(state.currentTerminalTabs.map((tab) => tab.terminals.length)).toEqual([2, 1, 0]);
   expect(state.currentTerminalTabs[2].browserUrl).toBe("http://localhost:3000/");
   expect(state.currentActiveTerminalTabId).toBe(state.currentTerminalTabs[1].id);
+  expect(state.currentTerminalTabs[0].activeTerminalId).toBe("restored-1");
   expect(state.terminalAgentById["restored-1"]).toEqual({ agent: "claude", agentSessionId: "abc-123" });
 });
 

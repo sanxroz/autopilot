@@ -1124,7 +1124,10 @@ fn run_hook_server(
                     );
                     let was_waiting = info.is_waiting.swap(waiting, Ordering::Relaxed);
                     info.last_output_ms.store(now_ms(), Ordering::Relaxed);
-                    if should_emit_hook_transition(status, was_waiting) {
+                    // A new prompt can start a new conversation without leaving the running state.
+                    if should_emit_hook_transition(status, was_waiting)
+                        || (status == "running" && agent_session_id.is_some())
+                    {
                         let _ = app.emit(
                             "agent-status-changed",
                             AgentStatusEvent {
@@ -1996,6 +1999,8 @@ pub async fn get_terminal_diagnostics(
 
     #[cfg(not(unix))]
     {
+        // Foreground process detection is Unix-only; fall back to agents known from spawns and hooks.
+        let agent_terminals = state.agent_terminals.lock();
         Ok(sessions
             .into_iter()
             .map(
@@ -2005,7 +2010,9 @@ pub async fn get_terminal_diagnostics(
                     shell_pid,
                     foreground_pid: None,
                     foreground_process: None,
-                    agent: None,
+                    agent: agent_terminals
+                        .get(&terminal_id)
+                        .and_then(|info| detect_agent_from_command(&info.agent)),
                     queued_input_bytes: None,
                     write_blocked_ms: (write_started_ms > 0)
                         .then(|| now_ms().saturating_sub(write_started_ms)),
