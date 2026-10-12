@@ -1120,7 +1120,7 @@ function ProjectsSection({
       {repositories.map((repository) => {
         const path = repository.info.path;
         const commands = repoPostCreateCommandsByPath[path] ?? "";
-        const commandCount = commands.split("\n").filter((line) => line.trim()).length;
+        const lineCount = commands.split("\n").filter((line) => line.trim()).length;
         const isExpanded = expandedPath === path;
         const fieldId = `post-create-${path}`;
 
@@ -1140,7 +1140,7 @@ function ProjectsSection({
                 </div>
               </div>
               <span className="flex shrink-0 items-center gap-1.5 text-xs text-tertiary group-hover:text-primary">
-                {commandCount > 0 ? `${commandCount} command${commandCount === 1 ? "" : "s"}` : "None"}
+                {lineCount > 0 ? `${lineCount} line${lineCount === 1 ? "" : "s"}` : "None"}
                 <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-150", isExpanded && "rotate-180")} />
               </span>
             </button>

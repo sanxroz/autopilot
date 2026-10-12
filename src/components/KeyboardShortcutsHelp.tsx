@@ -17,7 +17,7 @@ export function ShortcutKeys({
   muted?: boolean;
 }) {
   return (
-    <kbd aria-label={formatShortcut(shortcut)} className="flex items-center gap-0.5 font-sans">
+    <kbd role="img" aria-label={formatShortcut(shortcut)} className="flex items-center gap-0.5 font-sans">
       {formatShortcutKeys(shortcut).map((key, index) => (
         <span
           key={`${key}-${index}`}
