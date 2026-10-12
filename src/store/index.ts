@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { invoke } from '@tauri-apps/api/core';
 import { LazyStore, load } from '@tauri-apps/plugin-store';
 import { toast } from 'sonner';
+import { AI_AGENTS } from '../types';
 import type {
   Repository,
   RepoInfo,
@@ -53,11 +54,22 @@ interface PersistedState {
   sidebarNotesByWorktreePath?: Record<string, string>;
   sidebarNotesMarkdown?: string;
   keyboardShortcuts?: Partial<KeyboardShortcutMap>;
+  terminalSessionsByWorktreePath?: Record<string, SavedWorktreeTerminals>;
 }
 
 interface WorktreeTerminals {
   tabs: TerminalPane[];
   activeTabId: string | null;
+}
+
+interface TerminalAgentSession {
+  agent: AIAgent;
+  agentSessionId?: string;
+}
+
+interface SavedWorktreeTerminals {
+  tabs: Array<{ browserUrl?: string; terminals: Array<TerminalAgentSession | null> }>;
+  activeTabIndex: number;
 }
 
 interface PRDataCache {
@@ -72,6 +84,7 @@ interface AppStore {
   repositories: Repository[];
   selectedWorktree: WorktreeInfo | null;
   terminalsByWorktree: Record<string, WorktreeTerminals>;
+  terminalAgentById: Record<string, TerminalAgentSession>;
   currentTerminalTabs: TerminalPane[];
   currentActiveTerminalTabId: string | null;
   currentTerminals: TerminalInstance[];
@@ -166,6 +179,17 @@ let storeOperationQueue = Promise.resolve();
 let repositoryReorderQueue = Promise.resolve();
 let sidebarGroupsRevision = 0;
 let pendingLegacySidebarNotesMarkdown: string | null = null;
+let restorableTerminalSessions: Record<string, SavedWorktreeTerminals> = {};
+let terminalSessionsSaveTimer: ReturnType<typeof setTimeout> | undefined;
+const AGENT_SESSION_ID_PATTERN = /^[\w-]+$/;
+const AGENT_RESUME_COMMANDS: Record<AIAgent, (sessionId?: string) => string> = {
+  claude: (sessionId) => (sessionId ? `claude --resume ${sessionId}` : 'claude --continue'),
+  codex: (sessionId) => (sessionId ? `codex resume ${sessionId}` : 'codex resume --last'),
+  opencode: () => 'opencode --continue',
+  droid: () => 'droid --resume --last',
+  amp: () => 'amp threads continue --last',
+  pi: () => 'pi --continue',
+};
 const DEFAULT_AUTO_FETCH_SETTINGS: AutoFetchSettings = {
   enabled: false,
   intervalMinutes: 5,
@@ -263,6 +287,8 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
     const sidebarNotesByWorktreePath = await store.get<Record<string, string>>('sidebarNotesByWorktreePath');
     const sidebarNotesMarkdown = await store.get<string>('sidebarNotesMarkdown');
     const keyboardShortcuts = await store.get<Partial<KeyboardShortcutMap>>('keyboardShortcuts');
+    const terminalSessionsByWorktreePath =
+      await store.get<Record<string, SavedWorktreeTerminals>>('terminalSessionsByWorktreePath');
     const rawAddressed = await store.get<Record<string, string[]>>('addressedComments');
     let addressedComments: AddressedCommentsMap | undefined;
     if (rawAddressed) {
@@ -284,6 +310,7 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
       sidebarNotesByWorktreePath: sidebarNotesByWorktreePath || {},
       sidebarNotesMarkdown: sidebarNotesMarkdown || "",
       keyboardShortcuts,
+      terminalSessionsByWorktreePath,
     };
   } catch {
     return {
@@ -406,6 +433,80 @@ async function flushSidebarNotesPersistence(): Promise<void> {
   await storeOperationQueue;
 }
 
+function isAIAgent(value: unknown): value is AIAgent {
+  return AI_AGENTS.some(({ id }) => id === value);
+}
+
+function getAgentResumeCommand(session: TerminalAgentSession | null): string | null {
+  if (!session || !isAIAgent(session.agent)) return null;
+  const sessionId =
+    session.agentSessionId && AGENT_SESSION_ID_PATTERN.test(session.agentSessionId)
+      ? session.agentSessionId
+      : undefined;
+  return AGENT_RESUME_COMMANDS[session.agent](sessionId);
+}
+
+async function restoreWorktreeTerminals(worktree: WorktreeInfo, saved: SavedWorktreeTerminals) {
+  const agents: Record<string, TerminalAgentSession> = {};
+  const tabs: TerminalPane[] = [];
+  for (const savedTab of Array.isArray(saved?.tabs) ? saved.tabs : []) {
+    if (savedTab.browserUrl) {
+      if (isLocalWebUrl(savedTab.browserUrl)) {
+        tabs.push({
+          id: `browser-${crypto.randomUUID()}`,
+          terminals: [],
+          activeTerminalId: null,
+          browserUrl: savedTab.browserUrl,
+        });
+      }
+      continue;
+    }
+
+    const spawned = await Promise.all(
+      (savedTab.terminals ?? []).map(async (session) => {
+        const command = getAgentResumeCommand(session);
+        try {
+          const result = await invoke<{ terminal_id: string }>(command ? 'spawn_terminal_with_command' : 'spawn_terminal', {
+            cwd: worktree.path,
+            ...(command ? { command, args: [] } : {}),
+            cols: 80,
+            rows: 24,
+            isDarkMode: getThemeMode() === 'dark',
+          });
+          if (command && session) agents[result.terminal_id] = session;
+          return { id: result.terminal_id, worktreePath: worktree.path, worktreeName: worktree.name };
+        } catch (e) {
+          console.error('Failed to restore terminal:', e);
+          return null;
+        }
+      }),
+    );
+    const terminals = spawned.filter((terminal): terminal is TerminalInstance => terminal !== null);
+    if (terminals.length > 0) {
+      tabs.push({ id: terminals[0].id, terminals, activeTerminalId: terminals[terminals.length - 1].id });
+    }
+  }
+  return { tabs, agents };
+}
+
+function serializeTerminalSessions(state: AppStore): Record<string, SavedWorktreeTerminals> {
+  const knownWorktreePaths = new Set(
+    state.repositories.flatMap((repository) => repository.worktrees.map((worktree) => worktree.path)),
+  );
+  const sessions = { ...restorableTerminalSessions };
+  for (const [path, { tabs, activeTabId }] of Object.entries(state.terminalsByWorktree)) {
+    sessions[path] = {
+      tabs: tabs.map((tab) =>
+        tab.browserUrl
+          ? { browserUrl: tab.browserUrl, terminals: [] }
+          : { terminals: tab.terminals.map((terminal) => state.terminalAgentById[terminal.id] ?? null) },
+      ),
+      activeTabIndex: Math.max(0, tabs.findIndex((tab) => tab.id === activeTabId)),
+    };
+  }
+  return Object.fromEntries(Object.entries(sessions).filter(([path]) => knownWorktreePaths.has(path)));
+}
+
 async function fetchRepoAvatarUrl(repoPath: string): Promise<string | null> {
   try {
     const nameWithOwner = await invoke<string | null>('get_repo_from_remote', { repoPath });
@@ -428,6 +529,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   repositories: [],
   selectedWorktree: null,
   terminalsByWorktree: {},
+  terminalAgentById: {},
   currentTerminalTabs: [],
   currentActiveTerminalTabId: null,
   currentTerminals: [],
@@ -467,6 +569,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (persisted.themeMode) {
       setGlobalThemeMode(persisted.themeMode);
     }
+
+    restorableTerminalSessions = persisted.terminalSessionsByWorktreePath ?? {};
 
     if (persisted.defaultAIAgent) {
       set({ defaultAIAgent: persisted.defaultAIAgent });
@@ -981,6 +1085,29 @@ export const useAppStore = create<AppStore>((set, get) => ({
         gitFileDiffPreview: null,
       });
       return;
+    }
+
+    const saved = restorableTerminalSessions[worktree.path];
+    if (saved) {
+      const restored = await restoreWorktreeTerminals(worktree, saved);
+      delete restorableTerminalSessions[worktree.path];
+      if (restored.tabs.length > 0) {
+        const activeTab = restored.tabs[saved.activeTabIndex] ?? restored.tabs[0];
+        set((state) => ({
+          selectedWorktree: worktree,
+          currentTerminalTabs: restored.tabs,
+          currentActiveTerminalTabId: activeTab.id,
+          currentTerminals: activeTab.terminals,
+          currentActiveTerminalId: activeTab.activeTerminalId,
+          gitFileDiffPreview: null,
+          terminalAgentById: { ...state.terminalAgentById, ...restored.agents },
+          terminalsByWorktree: {
+            ...state.terminalsByWorktree,
+            [worktree.path]: { tabs: restored.tabs, activeTabId: activeTab.id },
+          },
+        }));
+        return;
+      }
     }
 
     const result = await invoke<{ terminal_id: string }>('spawn_terminal', {
@@ -1649,6 +1776,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
     } catch (e) {
       console.error('Failed to refresh process statuses:', e);
     }
+
+    try {
+      const diagnostics = await invoke<Array<{ terminalId: string; agent: string | null }>>('get_terminal_diagnostics');
+      const previous = get().terminalAgentById;
+      const next: Record<string, TerminalAgentSession> = {};
+      for (const { terminalId, agent } of diagnostics) {
+        if (!isAIAgent(agent)) continue;
+        next[terminalId] = previous[terminalId]?.agent === agent ? previous[terminalId] : { agent };
+      }
+      const previousIds = Object.keys(previous);
+      if (previousIds.length !== Object.keys(next).length || previousIds.some((id) => next[id] !== previous[id])) {
+        set({ terminalAgentById: next });
+      }
+    } catch (e) {
+      console.error('Failed to detect terminal agents:', e);
+    }
   },
 
   refreshSidebarGroupsFromDisk: async () => {
@@ -1681,6 +1824,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   setAgentRunState: (event: AgentStatusEvent) => {
+    // Process polling decides which agent a terminal runs; hooks only add the conversation id.
+    const { terminalId, agent, agentSessionId } = event;
+    const previous = terminalId ? get().terminalAgentById[terminalId] : undefined;
+    if (
+      terminalId &&
+      isAIAgent(agent) &&
+      (!previous || (previous.agent === agent && agentSessionId && previous.agentSessionId !== agentSessionId))
+    ) {
+      set((state) => ({
+        terminalAgentById: {
+          ...state.terminalAgentById,
+          [terminalId]: { agent, agentSessionId: agentSessionId ?? previous?.agentSessionId },
+        },
+      }));
+    }
+
     set((state) => {
       const current = state.agentRunByWorktreePath[event.worktreePath];
       const nextState = applyAgentStatusEvent(current, event);
@@ -1943,3 +2102,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   flushSidebarNotesPersistence,
 }));
+
+useAppStore.subscribe((state, previous) => {
+  if (
+    state.terminalsByWorktree === previous.terminalsByWorktree &&
+    state.terminalAgentById === previous.terminalAgentById
+  ) {
+    return;
+  }
+  clearTimeout(terminalSessionsSaveTimer);
+  terminalSessionsSaveTimer = setTimeout(() => {
+    saveStoreValue('terminalSessionsByWorktreePath', serializeTerminalSessions(useAppStore.getState())).catch(
+      console.error,
+    );
+  }, 500);
+});

@@ -93,6 +93,7 @@ export interface AgentStatusEvent {
   timestamp: number;
   agent?: string;
   message?: string;
+  agentSessionId?: string;
 }
 
 export type FileStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'untracked';
