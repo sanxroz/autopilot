@@ -199,6 +199,7 @@ pub struct TerminalDiagnostic {
     shell_pid: Option<u32>,
     foreground_pid: Option<u32>,
     foreground_process: Option<String>,
+    agent: Option<&'static str>,
     queued_input_bytes: Option<u32>,
     write_blocked_ms: Option<i64>,
     recoverable: bool,
@@ -270,6 +271,7 @@ struct AgentStatusEvent {
     timestamp: i64,
     agent: Option<String>,
     message: Option<String>,
+    agent_session_id: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -635,6 +637,18 @@ fn detect_agent_from_command(command: &str) -> Option<&'static str> {
     None
 }
 
+/// Detects the agent behind a running process, including Node/Bun launchers like `node /opt/homebrew/bin/pi`.
+#[cfg(unix)]
+fn detect_agent_from_process(command: &str) -> Option<&'static str> {
+    let mut tokens = command.split_whitespace();
+    let executable = Path::new(tokens.next()?).file_name()?.to_str()?;
+    if !matches!(executable, "node" | "bun" | "deno") {
+        return detect_agent_from_command(executable);
+    }
+    let script = Path::new(tokens.next()?).file_stem()?.to_str()?;
+    detect_agent_from_command(script)
+}
+
 /// Detect OSC 133/633 "command start" (= shell/agent ready for user input).
 fn contains_osc_prompt_ready(data: &str) -> bool {
     data.contains("\x1b]133;B\x07")
@@ -668,6 +682,7 @@ fn emit_agent_status(
         timestamp: now_ms(),
         agent: agent.map(|v| v.to_string()),
         message,
+        agent_session_id: None,
     };
     let _ = app.emit("agent-status-changed", event);
 }
@@ -854,11 +869,15 @@ fi
 [ "$EVENT_TYPE" = "UserPromptSubmit" ] && EVENT_TYPE="Start"
 [ -z "$EVENT_TYPE" ] && exit 0
 
+# Claude sends session_id, Codex sends thread-id; used to resume after restart
+AGENT_SESSION_ID=$(echo "$INPUT" | grep -oE '"(session_id|thread-id)"[[:space:]]*:[[:space:]]*"[A-Za-z0-9_-]+"' | head -1 | grep -oE '"[^"]*"$' | tr -d '"')
+
 curl -sG "http://127.0.0.1:${AUTOPILOT_HOOK_PORT}/hook/complete" \
   --connect-timeout 1 --max-time 2 \
   --data-urlencode "terminalId=$AUTOPILOT_TERMINAL_ID" \
   --data-urlencode "eventType=$EVENT_TYPE" \
   --data-urlencode "agent=$AUTOPILOT_AGENT" \
+  --data-urlencode "agentSessionId=$AGENT_SESSION_ID" \
   > /dev/null 2>&1 &
 exit 0
 "#;
@@ -1066,6 +1085,8 @@ fn run_hook_server(
             let terminal_id = parse_query_param(&url, "terminalId");
             let event_type = parse_query_param(&url, "eventType");
             let agent = parse_query_param(&url, "agent");
+            let agent_session_id =
+                parse_query_param(&url, "agentSessionId").filter(|id| !id.is_empty());
 
             if let (Some(terminal_id), Some(event_type)) = (terminal_id, event_type) {
                 eprintln!(
@@ -1108,15 +1129,22 @@ fn run_hook_server(
                     );
                     let was_waiting = info.is_waiting.swap(waiting, Ordering::Relaxed);
                     info.last_output_ms.store(now_ms(), Ordering::Relaxed);
-                    if should_emit_hook_transition(status, was_waiting) {
-                        emit_agent_status(
-                            &app,
-                            &info.worktree_path,
-                            &info.session_id,
-                            &terminal_id,
-                            status,
-                            Some(&info.agent),
-                            Some(format!("Hook event: {event_type}")),
+                    // A new prompt can start a new conversation without leaving the running state.
+                    if should_emit_hook_transition(status, was_waiting)
+                        || (status == "running" && agent_session_id.is_some())
+                    {
+                        let _ = app.emit(
+                            "agent-status-changed",
+                            AgentStatusEvent {
+                                worktree_path: info.worktree_path.clone(),
+                                session_id: info.session_id.clone(),
+                                terminal_id: terminal_id.clone(),
+                                status: status.to_string(),
+                                timestamp: now_ms(),
+                                agent: Some(info.agent.clone()),
+                                message: Some(format!("Hook event: {event_type}")),
+                                agent_session_id,
+                            },
                         );
                     } else {
                         eprintln!(
@@ -1924,6 +1952,7 @@ fn terminal_diagnostic(
         shell_pid,
         foreground_pid: foreground.map(|process| process.pid as u32),
         foreground_process: foreground.map(|process| process_name(&process.command)),
+        agent: foreground.and_then(|process| detect_agent_from_process(&process.command)),
         queued_input_bytes: shell.and_then(|process| queued_input_bytes(&process.tty)),
         write_blocked_ms: blocked_ms,
         recoverable: foreground.is_some(),
@@ -1975,6 +2004,8 @@ pub async fn get_terminal_diagnostics(
 
     #[cfg(not(unix))]
     {
+        // Foreground process detection is Unix-only; fall back to agents known from spawns and hooks.
+        let agent_terminals = state.agent_terminals.lock();
         Ok(sessions
             .into_iter()
             .map(
@@ -1984,6 +2015,9 @@ pub async fn get_terminal_diagnostics(
                     shell_pid,
                     foreground_pid: None,
                     foreground_process: None,
+                    agent: agent_terminals
+                        .get(&terminal_id)
+                        .and_then(|info| detect_agent_from_command(&info.agent)),
                     queued_input_bytes: None,
                     write_blocked_ms: (write_started_ms > 0)
                         .then(|| now_ms().saturating_sub(write_started_ms)),
@@ -2800,6 +2834,18 @@ mod tests {
         assert_eq!(detect_agent_from_command("  codex  --flag"), Some("codex"));
         assert_eq!(detect_agent_from_command("pi"), Some("pi"));
         assert_eq!(detect_agent_from_command("  pi -p hello"), Some("pi"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn detect_agent_from_running_processes() {
+        assert_eq!(detect_agent_from_process("claude --resume abc"), Some("claude"));
+        assert_eq!(detect_agent_from_process("/Users/me/.local/bin/droid"), Some("droid"));
+        assert_eq!(detect_agent_from_process("node /opt/homebrew/bin/pi"), Some("pi"));
+        assert_eq!(detect_agent_from_process("node /usr/lib/node_modules/codex/bin/codex.js"), Some("codex"));
+        assert_eq!(detect_agent_from_process("vim pi"), None);
+        assert_eq!(detect_agent_from_process("node server.js"), None);
+        assert_eq!(detect_agent_from_process("-zsh"), None);
     }
 
     #[test]
