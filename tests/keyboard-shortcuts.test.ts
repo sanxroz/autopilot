@@ -2,6 +2,9 @@ import { describe, expect, test } from "bun:test";
 import {
   DEFAULT_KEYBOARD_SHORTCUTS,
   SHORTCUT_DEFINITIONS,
+  SHORTCUT_GROUPS,
+  formatShortcut,
+  formatShortcutKeys,
   getShortcutAction,
   getShortcutConflict,
   getShortcutsForAction,
@@ -92,5 +95,20 @@ describe("keyboard shortcuts", () => {
       ...DEFAULT_KEYBOARD_SHORTCUTS,
       showGit: "Mod+Shift+G",
     });
+  });
+});
+
+describe("shortcut formatting", () => {
+  test("splits a binding into one label per key", () => {
+    expect(formatShortcutKeys("Mod+Alt+Shift+[", true)).toEqual(["⌘", "⌥", "⇧", "["]);
+    expect(formatShortcutKeys("Mod+ArrowUp", false)).toEqual(["Ctrl", "ArrowUp"]);
+    expect(formatShortcutKeys("Mod++", true)).toEqual(["⌘", "+"]);
+    expect(formatShortcut("Mod+Shift+B", true)).toBe("⌘⇧B");
+    expect(formatShortcut("Mod+Shift+B", false)).toBe("Ctrl+Shift+B");
+  });
+
+  test("puts every action in exactly one group", () => {
+    const grouped = SHORTCUT_GROUPS.flatMap((group) => group.actions);
+    expect([...grouped].sort()).toEqual(SHORTCUT_DEFINITIONS.map(({ id }) => id).sort());
   });
 });

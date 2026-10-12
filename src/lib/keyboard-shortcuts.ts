@@ -45,6 +45,34 @@ export const SHORTCUT_DEFINITIONS: readonly ShortcutDefinition[] = [
   { id: "openWith", label: "Open With", description: "Open the application picker", defaultShortcut: "Mod+Shift+O" },
 ];
 
+export const SHORTCUT_GROUPS: readonly {
+  readonly title: string;
+  readonly actions: readonly ShortcutAction[];
+}[] = [
+  {
+    title: "Move around",
+    actions: [
+      "previousSpace",
+      "nextSpace",
+      "previousSession",
+      "nextSession",
+      "previousTerminal",
+      "nextTerminal",
+      "previousLayout",
+      "nextLayout",
+      "focusTerminal",
+    ],
+  },
+  {
+    title: "Panels and views",
+    actions: ["toggleSidebar", "toggleWorkspacePanel", "showGit", "showNotes", "openWith"],
+  },
+  {
+    title: "Application",
+    actions: ["commandMenu", "settings"],
+  },
+];
+
 export const DEFAULT_KEYBOARD_SHORTCUTS = Object.fromEntries(
   SHORTCUT_DEFINITIONS.map(({ id, defaultShortcut }) => [id, defaultShortcut]),
 ) as KeyboardShortcutMap;
@@ -114,18 +142,26 @@ export function getShortcutConflict(
   );
 }
 
-export function formatShortcut(shortcut: string): string {
-  const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
-  if (!isMac) return shortcut.replace("Mod", "Ctrl");
+const MAC_KEY_SYMBOLS: Record<string, string> = {
+  Mod: "⌘",
+  Ctrl: "⌃",
+  Alt: "⌥",
+  Shift: "⇧",
+  ArrowLeft: "←",
+  ArrowRight: "→",
+  ArrowUp: "↑",
+  ArrowDown: "↓",
+};
 
+const isMacPlatform = () =>
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+
+export function formatShortcutKeys(shortcut: string, isMac = isMacPlatform()): string[] {
   return shortcut
-    .replace("Mod", "⌘")
-    .replace("Ctrl", "⌃")
-    .replace("Alt", "⌥")
-    .replace("Shift", "⇧")
-    .replace("ArrowLeft", "←")
-    .replace("ArrowRight", "→")
-    .replace("ArrowUp", "↑")
-    .replace("ArrowDown", "↓")
-    .replace(/\+/g, "");
+    .split(/\+(?=.)/)
+    .map((key) => (isMac ? MAC_KEY_SYMBOLS[key] ?? key : key === "Mod" ? "Ctrl" : key));
+}
+
+export function formatShortcut(shortcut: string, isMac = isMacPlatform()): string {
+  return formatShortcutKeys(shortcut, isMac).join(isMac ? "" : "+");
 }

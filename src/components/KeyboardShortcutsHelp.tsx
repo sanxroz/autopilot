@@ -1,45 +1,40 @@
 import {
   SHORTCUT_DEFINITIONS,
+  SHORTCUT_GROUPS,
   formatShortcut,
+  formatShortcutKeys,
   getShortcutsForAction,
-  type ShortcutAction,
 } from "../lib/keyboard-shortcuts";
 import { useAppStore } from "../store";
+import { cn } from "../utils/cn";
 import * as Modal from "./ui/modal";
 
-const SECTIONS: readonly {
-  title: string;
-  actions: readonly ShortcutAction[];
-}[] = [
-  {
-    title: "Move around",
-    actions: [
-      "previousSpace",
-      "nextSpace",
-      "previousSession",
-      "nextSession",
-      "previousTerminal",
-      "nextTerminal",
-      "previousLayout",
-      "nextLayout",
-      "focusTerminal",
-    ],
-  },
-  {
-    title: "Panels and views",
-    actions: [
-      "toggleSidebar",
-      "toggleWorkspacePanel",
-      "showGit",
-      "showNotes",
-      "openWith",
-    ],
-  },
-  {
-    title: "Application",
-    actions: ["commandMenu", "settings"],
-  },
-];
+export function ShortcutKeys({
+  shortcut,
+  muted = false,
+}: {
+  shortcut: string;
+  muted?: boolean;
+}) {
+  return (
+    <kbd aria-label={formatShortcut(shortcut)} className="flex items-center gap-0.5 font-sans">
+      {formatShortcutKeys(shortcut).map((key, index) => (
+        <span
+          key={`${key}-${index}`}
+          aria-hidden="true"
+          className={cn(
+            "flex h-[22px] min-w-[22px] items-center justify-center rounded-[5px] border px-1.5 text-[12px] leading-none",
+            muted
+              ? "border-border-subtle text-tertiary"
+              : "border-border bg-secondary text-primary shadow-[0_1px_0_var(--color-border-default)]",
+          )}
+        >
+          {key}
+        </span>
+      ))}
+    </kbd>
+  );
+}
 
 export function KeyboardShortcutsHelp({
   open,
@@ -55,55 +50,52 @@ export function KeyboardShortcutsHelp({
 
   return (
     <Modal.Root open={open} onOpenChange={onOpenChange}>
-      <Modal.Content className="max-h-[80vh] max-w-[640px] overflow-hidden p-0">
-        <div className="border-b border-border px-5 py-4 pr-12">
+      <Modal.Content className="max-h-[85vh] max-w-[760px] overflow-hidden p-0">
+        <div className="px-5 pb-3 pt-4 pr-12">
           <Modal.Title>Keyboard shortcuts</Modal.Title>
-          <Modal.Description className="mt-1 leading-5">
-            Use brackets on a 60% keyboard or the arrow alternatives on a full keyboard.
+          <Modal.Description className="mt-1 text-tertiary">
+            Brackets work on a 60% keyboard; the faded keys are arrow-key alternatives.
           </Modal.Description>
         </div>
 
-        <div className="max-h-[calc(80vh-76px)] space-y-5 overflow-y-auto p-5">
-          {SECTIONS.map((section) => (
-            <section key={section.title} aria-label={section.title}>
-              <h3 className="mb-2 text-xs font-medium uppercase tracking-[0.04em] text-tertiary">
-                {section.title}
-              </h3>
-              <div className="overflow-hidden rounded-xl border border-border bg-primary">
-                {section.actions.map((action) => {
-                  const definition = definitions.get(action);
-                  if (!definition) return null;
-                  const bindings = getShortcutsForAction(action, shortcuts);
-                  return (
-                    <div
-                      key={action}
-                      className="flex min-h-12 items-center justify-between gap-4 border-b border-border px-4 py-2.5 last:border-b-0"
-                    >
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium text-primary">
+        <div className="max-h-[calc(85vh-72px)] overflow-y-auto px-5 pb-5">
+          <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
+            {SHORTCUT_GROUPS.map((group) => (
+              <section
+                key={group.title}
+                aria-label={group.title}
+                className={cn(group.actions.length > 5 && "sm:row-span-2")}
+              >
+                <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
+                  {group.title}
+                </h3>
+                <ul>
+                  {group.actions.map((action) => {
+                    const definition = definitions.get(action);
+                    if (!definition) return null;
+                    const [primary, ...alternates] = getShortcutsForAction(action, shortcuts);
+                    return (
+                      <li
+                        key={action}
+                        title={definition.description}
+                        className="flex h-9 items-center justify-between gap-3 border-b border-border-subtle last:border-b-0"
+                      >
+                        <span className="truncate text-[13px] text-secondary">
                           {definition.label}
-                        </div>
-                        <div className="mt-0.5 text-xs text-tertiary">
-                          {definition.description}
-                        </div>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        {bindings.map((binding, index) => (
-                          <kbd
-                            key={binding}
-                            title={index === 0 ? "60% keyboard" : "Arrow-key alternative"}
-                            className="rounded-md border border-border bg-secondary px-2 py-1 font-mono text-[11px] text-secondary shadow-sm"
-                          >
-                            {formatShortcut(binding)}
-                          </kbd>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
+                        </span>
+                        <span className="flex shrink-0 items-center gap-2">
+                          {alternates.map((binding) => (
+                            <ShortcutKeys key={binding} shortcut={binding} muted />
+                          ))}
+                          <ShortcutKeys shortcut={primary} />
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ))}
+          </div>
         </div>
       </Modal.Content>
     </Modal.Root>

@@ -5,7 +5,6 @@ import {
   X,
   Check,
   AlertCircle,
-  Terminal,
   User,
   Palette,
   SlidersHorizontal,
@@ -19,18 +18,26 @@ import {
   RefreshCw,
   Moon,
   Sun,
-  Github,
   Search,
+  RotateCcw,
 } from "lucide-react";
-import { Checkbox } from "./ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 import { useAppStore } from "../store";
 import { cn } from "../utils/cn";
 import { Tooltip } from "./ui/tooltip";
 import { AI_AGENTS, type AIAgent, type Repository } from "../types";
 import { useThemeMode } from "../hooks/useTheme";
+import { ShortcutKeys } from "./KeyboardShortcutsHelp";
 import {
   DEFAULT_KEYBOARD_SHORTCUTS,
   SHORTCUT_DEFINITIONS,
+  SHORTCUT_GROUPS,
   formatShortcut,
   getShortcutConflict,
   shortcutFromKeyboardEvent,
@@ -90,21 +97,45 @@ const AUTO_FETCH_INTERVAL_OPTIONS = [5, 10, 15, 30, 60] as const;
 function SectionHeading({
   title,
   description,
+  action,
 }: {
   title: string;
   description?: string;
+  action?: React.ReactNode;
 }) {
   return (
-    <div className="space-y-1">
-      <h4 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
-        {title}
-      </h4>
-      {description ? (
-        <p className="max-w-[56ch] text-[13px] leading-5 text-secondary">
-          {description}
-        </p>
-      ) : null}
+    <div className="flex items-end justify-between gap-4 pb-1">
+      <div className="space-y-1">
+        <h4 className="text-[11px] font-semibold uppercase tracking-[0.06em] text-tertiary">
+          {title}
+        </h4>
+        {description ? (
+          <p className="max-w-[56ch] text-xs leading-5 text-tertiary">
+            {description}
+          </p>
+        ) : null}
+      </div>
+      {action}
     </div>
+  );
+}
+
+function SettingsGroup({
+  title,
+  description,
+  action,
+  children,
+}: {
+  title: string;
+  description?: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section aria-label={title}>
+      <SectionHeading title={title} description={description} action={action} />
+      <SettingsCard>{children}</SettingsCard>
+    </section>
   );
 }
 
@@ -116,7 +147,7 @@ function SettingsCard({
   className?: string;
 }) {
   return (
-    <div className={className}>
+    <div className={cn("divide-y divide-border-subtle", className)}>
       {children}
     </div>
   );
@@ -132,7 +163,7 @@ function SettingsRow({
   return (
     <div
       className={cn(
-        "flex items-start justify-between gap-3 px-3 py-3",
+        "flex min-h-12 items-center justify-between gap-6 py-2.5",
         className
       )}
     >
@@ -149,14 +180,94 @@ function SettingsLabel({
   description?: string;
 }) {
   return (
-    <div className="space-y-1">
-      <div className="text-sm font-medium text-primary">{title}</div>
+    <div className="min-w-0 space-y-0.5">
+      <div className="text-[13px] text-primary">{title}</div>
       {description ? (
         <p className="max-w-[52ch] text-xs leading-4 text-tertiary">
           {description}
         </p>
       ) : null}
     </div>
+  );
+}
+
+function SettingsSwitch({
+  checked,
+  onCheckedChange,
+  label,
+}: {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onCheckedChange(!checked)}
+      className={cn(
+        "relative h-5 w-9 shrink-0 rounded-full transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-primary",
+        checked ? "bg-accent-primary" : "bg-active ring-1 ring-inset ring-border"
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          "absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-150 ease-out motion-reduce:transition-none",
+          checked && "translate-x-4"
+        )}
+      />
+    </button>
+  );
+}
+
+function SettingsSelect<T extends string | number>({
+  value,
+  options,
+  onChange,
+  label,
+  disabled = false,
+}: {
+  value: T;
+  options: readonly { value: T; label: string; detail?: string }[];
+  onChange: (value: T) => void;
+  label: string;
+  disabled?: boolean;
+}) {
+  const selected = options.find((option) => option.value === value) ?? options[0];
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        disabled={disabled}
+        aria-label={`${label}: ${selected.label}`}
+        className="flex h-8 w-44 shrink-0 items-center justify-between gap-2 rounded-md border border-border bg-secondary px-2.5 text-[13px] text-primary transition-colors hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary disabled:cursor-not-allowed disabled:text-muted disabled:hover:bg-secondary data-[state=open]:bg-hover"
+      >
+        <span className="truncate">{selected.label}</span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-tertiary" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-56">
+        <DropdownMenuRadioGroup
+          value={String(value)}
+          onValueChange={(next) => {
+            const option = options.find((candidate) => String(candidate.value) === next);
+            if (option) onChange(option.value);
+          }}
+        >
+          {options.map((option) => (
+            <DropdownMenuRadioItem key={option.value} value={String(option.value)} className="text-[13px]">
+              <span className="flex min-w-0 flex-1 items-center justify-between gap-3">
+                <span className="truncate">{option.label}</span>
+                {option.detail ? (
+                  <span className="font-mono text-[11px] opacity-60">{option.detail}</span>
+                ) : null}
+              </span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -462,7 +573,7 @@ function ResourcesSection({
             placeholder={`Filter ${copy.label}…`}
             spellCheck={false}
             autoComplete="off"
-            className="h-9 w-full rounded-md border border-border-subtle bg-primary pl-8 pr-3 text-sm text-primary outline-none placeholder:text-tertiary focus:ring-2 focus:ring-accent-primary"
+            className="h-8 w-full rounded-md border border-border bg-secondary pl-8 pr-3 text-[13px] text-primary outline-none placeholder:text-tertiary focus:ring-2 focus:ring-accent-primary"
           />
         </label>
         <button
@@ -470,9 +581,9 @@ function ResourcesSection({
           onClick={() => void refresh()}
           disabled={isLoading}
           aria-label={`Refresh ${copy.label}`}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border-subtle bg-primary text-secondary hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary disabled:opacity-60"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-secondary hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary disabled:opacity-60"
         >
-          <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin motion-reduce:animate-none")} />
+          <RefreshCw className={cn("h-3.5 w-3.5", isLoading && "animate-spin motion-reduce:animate-none")} />
         </button>
       </div>
 
@@ -491,7 +602,7 @@ function ResourcesSection({
               ? query ? "No matching results" : copy.empty
               : `${filtered.length} result${filtered.length === 1 ? "" : "s"} found`}
       </div>
-      <SettingsCard>
+      <SettingsCard className="border-t border-border-subtle">
         {isLoading && resources.length === 0 ? (
           <SettingsRow><SettingsLabel title="Scanning configuration…" /></SettingsRow>
         ) : null}
@@ -504,19 +615,17 @@ function ResourcesSection({
           </SettingsRow>
         ) : null}
         {filtered.map((resource) => (
-          <SettingsRow key={`${resource.kind}:${resource.path}:${resource.name}`} className="items-center">
+          <SettingsRow key={`${resource.kind}:${resource.path}:${resource.name}`}>
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-tertiary text-secondary">
-                <ResourceIcon className="h-3.5 w-3.5" />
-              </div>
+              <ResourceIcon className="h-3.5 w-3.5 shrink-0 text-tertiary" />
               <div className="min-w-0">
-                <div className="truncate text-sm font-medium text-primary">{resource.name}</div>
+                <div className="truncate text-[13px] text-primary">{resource.name}</div>
                 <div className="mt-0.5 truncate font-mono text-[11px] text-tertiary" title={resource.path}>
                   {resource.path}
                 </div>
               </div>
             </div>
-            <span className="shrink-0 rounded-md bg-tertiary px-2 py-1 text-[11px] font-medium text-secondary">
+            <span className="shrink-0 text-xs text-tertiary">
               {resource.scope}
             </span>
           </SettingsRow>
@@ -531,6 +640,9 @@ function KeyboardShortcutsSection() {
   const setKeyboardShortcut = useAppStore((state) => state.setKeyboardShortcut);
   const [recording, setRecording] = useState<ShortcutAction | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const definitions = new Map(
+    SHORTCUT_DEFINITIONS.map((definition) => [definition.id, definition]),
+  );
 
   const saveShortcut = (action: ShortcutAction, shortcut: string) => {
     const conflict = getShortcutConflict(action, shortcut, keyboardShortcuts);
@@ -566,54 +678,72 @@ function KeyboardShortcutsSection() {
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-6">
+      <p className="text-xs leading-5 text-tertiary">
+        Click a shortcut, then press the new keys. Faded keys are fixed arrow-key alternatives.
+      </p>
       {error ? (
         <p role="alert" className="rounded-lg bg-semantic-error/10 px-3 py-2 text-xs text-semantic-error">
           {error}
         </p>
       ) : null}
 
-      <SettingsCard>
-        {SHORTCUT_DEFINITIONS.map((definition) => {
-          const shortcut = keyboardShortcuts[definition.id];
-          const isRecording = recording === definition.id;
-          const isDefault = shortcut === DEFAULT_KEYBOARD_SHORTCUTS[definition.id];
-          return (
-            <SettingsRow key={definition.id} className="items-center py-3">
-              <SettingsLabel title={definition.label} description={definition.description} />
-              <div className="flex shrink-0 items-center gap-2">
-                {!isDefault ? (
-                  <button
-                    type="button"
-                    onClick={() => saveShortcut(definition.id, DEFAULT_KEYBOARD_SHORTCUTS[definition.id])}
-                    className="h-9 rounded-md px-2 text-xs text-tertiary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
-                  >
-                    Reset
-                  </button>
-                ) : null}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRecording(definition.id);
-                    setError(null);
-                  }}
-                  onBlur={() => setRecording((current) => current === definition.id ? null : current)}
-                  onKeyDown={(event) => recordShortcut(definition.id, event)}
-                  aria-label={`Change ${definition.label} shortcut`}
-                  className={cn(
-                    "h-9 min-w-24 rounded-md border px-2.5 font-mono text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary",
-                    isRecording
-                      ? "border-accent-primary bg-active text-primary"
-                      : "border-border bg-secondary text-secondary hover:bg-hover",
-                  )}
-                >
-                  {isRecording ? "Press keys…" : formatShortcut(shortcut)}
-                </button>
-              </div>
-            </SettingsRow>
-          );
-        })}
-      </SettingsCard>
+      {SHORTCUT_GROUPS.map((group) => (
+        <section key={group.title} aria-label={group.title} className="space-y-2">
+          <SectionHeading title={group.title} />
+          <SettingsCard className="rounded-lg border border-border-subtle bg-tertiary">
+            {group.actions.map((action) => {
+              const definition = definitions.get(action);
+              if (!definition) return null;
+              const shortcut = keyboardShortcuts[action];
+              const isRecording = recording === action;
+              const isDefault = shortcut === DEFAULT_KEYBOARD_SHORTCUTS[action];
+              return (
+                <SettingsRow key={action} className="min-h-11 gap-4 px-4 py-1.5">
+                  <span className="truncate text-[13px] text-primary" title={definition.description}>
+                    {definition.label}
+                  </span>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {definition.alternateShortcuts?.map((binding) => (
+                      <ShortcutKeys key={binding} shortcut={binding} muted />
+                    ))}
+                    {!isDefault ? (
+                      <Tooltip content="Reset to default">
+                        <button
+                          type="button"
+                          onClick={() => saveShortcut(action, DEFAULT_KEYBOARD_SHORTCUTS[action])}
+                          aria-label={`Reset ${definition.label} shortcut`}
+                          className="flex h-7 w-7 items-center justify-center rounded-md text-tertiary transition-colors hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                        </button>
+                      </Tooltip>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRecording(action);
+                        setError(null);
+                      }}
+                      onBlur={() => setRecording((current) => current === action ? null : current)}
+                      onKeyDown={(event) => recordShortcut(action, event)}
+                      aria-label={`Change ${definition.label} shortcut, currently ${formatShortcut(shortcut)}`}
+                      className={cn(
+                        "flex h-8 min-w-[88px] items-center justify-end rounded-md px-1.5 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary",
+                        isRecording
+                          ? "justify-center bg-active text-xs text-primary ring-1 ring-accent-primary"
+                          : "hover:bg-hover",
+                      )}
+                    >
+                      {isRecording ? "Press keys…" : <ShortcutKeys shortcut={shortcut} />}
+                    </button>
+                  </div>
+                </SettingsRow>
+              );
+            })}
+          </SettingsCard>
+        </section>
+      ))}
     </div>
   );
 }
@@ -623,77 +753,59 @@ function AccountSection({
 }: {
   githubSettings: { ghCliAvailable: boolean; ghAuthUser: string | null };
 }) {
+  const user = githubSettings.ghCliAvailable ? githubSettings.ghAuthUser : null;
+
   return (
-    <div className="space-y-3">
-      <SectionHeading title="GitHub connection" />
-      <SettingsCard>
-        {githubSettings.ghCliAvailable && githubSettings.ghAuthUser ? (
-          <>
-            <SettingsRow className="items-center rounded-lg bg-tertiary">
-              <SettingsLabel title="Profile" />
-              <div className="flex min-w-0 items-center gap-3">
-                <img
-                  src={`https://github.com/${githubSettings.ghAuthUser}.png?size=128`}
-                  alt=""
-                  className="h-10 w-10 rounded-md"
-                />
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium text-primary">
-                    {githubSettings.ghAuthUser}
-                  </div>
-                  <div className="text-xs text-tertiary">@{githubSettings.ghAuthUser}</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void openUrl(`https://github.com/${githubSettings.ghAuthUser}`)}
-                  className="ml-3 flex h-9 shrink-0 items-center rounded-md px-2.5 text-xs font-medium text-secondary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
-                >
-                  View profile
-                </button>
-              </div>
-            </SettingsRow>
-            <SettingsRow className="mt-2 items-center rounded-lg bg-tertiary">
-              <SettingsLabel title="GitHub CLI" />
-              <div className="flex items-center gap-1.5 text-xs text-secondary">
-                <Check className="h-3.5 w-3.5 text-semantic-success" />
-                Authenticated
-              </div>
-            </SettingsRow>
-          </>
-        ) : (
-          <SettingsRow className="rounded-lg bg-tertiary p-4">
-            <div className="flex min-w-0 items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-tertiary">
-                <Github className="h-5 w-5 text-secondary" />
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-primary">
-                    GitHub CLI
-                  </span>
-                  <AlertCircle className="h-3.5 w-3.5 text-semantic-error" />
-                </div>
-                <p className="max-w-[48ch] text-[13px] leading-5 text-secondary">
-                  {githubSettings.ghCliAvailable
-                    ? "Installed, but not authenticated. Run `gh auth login` to finish setup."
-                    : "GitHub CLI is not installed yet. Run `brew install gh` before connecting your account."}
-                </p>
-                {!githubSettings.ghCliAvailable ? (
-                  <a
-                    href="https://cli.github.com"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex h-9 items-center text-xs font-medium text-accent-primary transition-colors hover:text-accent-hover"
-                  >
-                    GitHub CLI docs
-                  </a>
-                ) : null}
+    <SettingsGroup title="GitHub">
+      {user ? (
+        <SettingsRow>
+          <div className="flex min-w-0 items-center gap-3">
+            <img
+              src={`https://github.com/${user}.png?size=128`}
+              alt=""
+              className="h-8 w-8 rounded-full"
+            />
+            <div className="min-w-0">
+              <div className="truncate text-[13px] text-primary">@{user}</div>
+              <div className="flex items-center gap-1 text-xs text-tertiary">
+                <Check className="h-3 w-3 text-semantic-success" />
+                Signed in with GitHub CLI
               </div>
             </div>
-          </SettingsRow>
-        )}
-      </SettingsCard>
-    </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void openUrl(`https://github.com/${user}`)}
+            className="h-8 shrink-0 rounded-md border border-border bg-secondary px-2.5 text-xs text-secondary transition-colors hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
+          >
+            View profile
+          </button>
+        </SettingsRow>
+      ) : (
+        <SettingsRow className="items-start">
+          <div className="flex min-w-0 items-start gap-3">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-semantic-error" />
+            <SettingsLabel
+              title={githubSettings.ghCliAvailable ? "GitHub CLI is not signed in" : "GitHub CLI is not installed"}
+              description={
+                githubSettings.ghCliAvailable
+                  ? "Run `gh auth login` to finish setup."
+                  : "Run `brew install gh`, then `gh auth login`."
+              }
+            />
+          </div>
+          {!githubSettings.ghCliAvailable ? (
+            <button
+              type="button"
+              onClick={() => void openUrl("https://cli.github.com")}
+              className="h-8 shrink-0 rounded-md border border-border bg-secondary px-2.5 text-xs text-secondary transition-colors hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
+            >
+              GitHub CLI docs
+            </button>
+          ) : null}
+        </SettingsRow>
+      )}
+    </SettingsGroup>
   );
 }
 
@@ -763,25 +875,25 @@ function DebugSection({
   };
 
   return (
-    <div className="space-y-5">
-      <div className="space-y-3">
-        <div className="flex items-start justify-between gap-4">
-          <SectionHeading
-            title="Terminal recovery"
-            description="Inspect the foreground process in every worktree. Recovery ends only that process and keeps its terminal shell open."
-          />
+    <div className="space-y-8">
+      <div className="space-y-2">
+        <SectionHeading
+          title="Terminal recovery"
+          description="Recovery ends only the foreground process and keeps its terminal shell open."
+          action={
           <Tooltip content="Refresh diagnostics">
             <button
               type="button"
               onClick={() => void refreshDiagnostics()}
               disabled={isLoading}
               aria-label="Refresh terminal diagnostics"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-secondary hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary disabled:opacity-60"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-secondary hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary disabled:opacity-60"
             >
-              <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin motion-reduce:animate-none")} />
+              <RefreshCw className={cn("h-3.5 w-3.5", isLoading && "animate-spin motion-reduce:animate-none")} />
             </button>
           </Tooltip>
-        </div>
+          }
+        />
 
         {error ? (
           <p role="alert" className="rounded-lg bg-semantic-error/10 px-3 py-2 text-xs leading-5 text-semantic-error">
@@ -822,10 +934,10 @@ function DebugSection({
             const isConfirming = confirmingId === terminal.terminalId;
 
             return (
-              <SettingsRow key={terminal.terminalId} className="items-center">
-                <div className="min-w-0 space-y-1.5">
+              <SettingsRow key={terminal.terminalId}>
+                <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate text-sm font-medium text-primary">
+                    <span className="truncate text-[13px] text-primary">
                       {worktreeName}
                     </span>
                     <span
@@ -839,10 +951,10 @@ function DebugSection({
                       {blocked ? "Input blocked" : "Responsive"}
                     </span>
                   </div>
-                  <p className="truncate text-xs text-tertiary" title={terminal.worktreePath}>
+                  <p className="truncate font-mono text-[11px] text-tertiary" title={terminal.worktreePath}>
                     {terminal.worktreePath}
                   </p>
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs tabular-nums text-secondary">
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] tabular-nums text-secondary">
                     <span>
                       {terminal.foregroundProcess ?? "Shell"} PID {terminal.foregroundPid ?? terminal.shellPid ?? "—"}
                     </span>
@@ -863,7 +975,7 @@ function DebugSection({
                           type="button"
                           onClick={() => setConfirmingId(null)}
                           disabled={isRecovering}
-                          className="h-9 rounded-md px-2.5 text-xs text-secondary hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary disabled:opacity-60"
+                          className="h-8 rounded-md px-2.5 text-xs text-secondary hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary disabled:opacity-60"
                         >
                           Cancel
                         </button>
@@ -872,7 +984,7 @@ function DebugSection({
                           autoFocus
                           onClick={() => void recoverTerminal(terminal)}
                           disabled={isRecovering}
-                          className="h-9 rounded-md bg-semantic-error px-2.5 text-xs font-medium text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-semantic-error disabled:opacity-60"
+                          className="h-8 rounded-md bg-semantic-error px-2.5 text-xs font-medium text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-semantic-error disabled:opacity-60"
                         >
                           {isRecovering ? "Recovering…" : "End process"}
                         </button>
@@ -885,7 +997,7 @@ function DebugSection({
                           setMessage(null);
                         }}
                         aria-label={`Recover terminal for ${worktreeName}`}
-                        className="h-9 rounded-md border border-border bg-secondary px-2.5 text-xs font-medium text-secondary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
+                        className="h-8 rounded-md border border-border bg-secondary px-2.5 text-xs font-medium text-secondary hover:bg-hover hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
                       >
                         Recover
                       </button>
@@ -898,49 +1010,31 @@ function DebugSection({
         </SettingsCard>
       </div>
 
-      <SectionHeading
-        title="GitHub integration"
-        description="Use this view to confirm the local GitHub CLI is available before debugging review or PR actions."
-      />
-
-      <SettingsCard>
+      <SettingsGroup title="GitHub integration">
         <SettingsRow>
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="rounded-md bg-tertiary p-2">
-              <Terminal className="h-3.5 w-3.5 text-secondary" />
-            </div>
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium text-primary">
-                  GitHub CLI
-                </span>
-                {githubSettings.ghCliAvailable ? (
-                  <Check className="h-3.5 w-3.5 text-semantic-success" />
-                ) : (
-                  <AlertCircle className="h-3.5 w-3.5 text-semantic-error" />
-                )}
-              </div>
-              <p className="text-xs leading-5 text-tertiary">
-                {githubSettings.ghCliAvailable
-                  ? githubSettings.ghAuthUser
-                    ? `Authenticated as @${githubSettings.ghAuthUser}.`
-                    : "Installed, but not authenticated."
-                  : "Not installed. Run `brew install gh` to enable GitHub-backed actions."}
-              </p>
-              {!githubSettings.ghCliAvailable ? (
-                <a
-                  href="https://cli.github.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex text-xs font-medium text-accent-primary transition-colors hover:text-accent-hover"
-                >
-                  GitHub CLI docs
-                </a>
-              ) : null}
-            </div>
-          </div>
+          <SettingsLabel
+            title="GitHub CLI"
+            description={
+              githubSettings.ghCliAvailable
+                ? githubSettings.ghAuthUser
+                  ? `Authenticated as @${githubSettings.ghAuthUser}`
+                  : "Installed, but not authenticated. Run `gh auth login`."
+                : "Not installed. Run `brew install gh` to enable GitHub-backed actions."
+            }
+          />
+          {githubSettings.ghCliAvailable ? (
+            <span className="flex shrink-0 items-center gap-1.5 text-xs text-secondary">
+              <Check className="h-3.5 w-3.5 text-semantic-success" />
+              Available
+            </span>
+          ) : (
+            <span className="flex shrink-0 items-center gap-1.5 text-xs text-semantic-error">
+              <AlertCircle className="h-3.5 w-3.5" />
+              Missing
+            </span>
+          )}
         </SettingsRow>
-      </SettingsCard>
+      </SettingsGroup>
     </div>
   );
 }
@@ -960,102 +1054,41 @@ function PreferencesSection({
   setAutoFetchEnabled: (enabled: boolean) => Promise<void>;
   setAutoFetchIntervalMinutes: (intervalMinutes: number) => Promise<void>;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const selectedAgent =
-    AI_AGENTS.find((agent) => agent.id === defaultAIAgent) ?? AI_AGENTS[0];
-
   return (
-    <SettingsCard>
-      <SettingsRow className="items-center">
-            <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-tertiary text-secondary">
-                <Bot className="h-3.5 w-3.5" />
-              </div>
-              <SettingsLabel title="Default AI agent" description="Used for assistant actions." />
-            </div>
-            <div className="relative w-56 shrink-0">
-              <button
-                type="button"
-                onClick={() => setIsOpen((open) => !open)}
-                aria-expanded={isOpen}
-                className="flex h-9 w-full items-center justify-between rounded-md border border-border bg-secondary px-2.5 text-sm text-primary transition-colors hover:bg-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
-              >
-                <span>{selectedAgent.name}</span>
-                <ChevronDown
-                  className={cn(
-                    "h-4 w-4 text-tertiary transition-transform",
-                    isOpen && "rotate-180"
-                  )}
-                />
-              </button>
-              {isOpen ? (
-                <div className="absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden rounded-lg bg-solid py-1 shadow-xl ring-1 ring-border">
-                  {AI_AGENTS.map((agent) => (
-                    <button
-                      key={agent.id}
-                      type="button"
-                      onClick={() => {
-                        void setDefaultAIAgent(agent.id);
-                        setIsOpen(false);
-                      }}
-                      className={cn(
-                        "flex h-10 w-full items-center justify-between px-3 text-sm transition-colors",
-                        agent.id === defaultAIAgent
-                          ? "bg-active text-primary"
-                          : "text-secondary hover:bg-hover"
-                      )}
-                    >
-                      <span className="flex flex-col items-start">
-                        <span>{agent.name}</span>
-                        <span className="text-xs text-muted">{agent.command}</span>
-                      </span>
-                      {agent.id === defaultAIAgent ? (
-                        <Check className="h-4 w-4 text-semantic-success" />
-                      ) : null}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-      </SettingsRow>
-      <SettingsRow className="items-center">
-        <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-tertiary text-secondary">
-            <RefreshCw className="h-3.5 w-3.5" />
-          </div>
-          <SettingsLabel title="Auto-fetch remotes" description="Keep remote branches current." />
-        </div>
-        <Checkbox
-          checked={autoFetchEnabled}
-          onCheckedChange={(checked) => {
-            void setAutoFetchEnabled(checked === true);
-          }}
-          aria-label="Enable auto-fetch"
-        />
-      </SettingsRow>
-      <SettingsRow className="items-center">
-        <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-tertiary text-secondary">
-            <Terminal className="h-3.5 w-3.5" />
-          </div>
+    <div className="space-y-8">
+      <SettingsGroup title="Agents">
+        <SettingsRow>
+          <SettingsLabel title="Default agent" description="Writes commit messages in the Git panel." />
+          <SettingsSelect
+            label="Default agent"
+            value={defaultAIAgent}
+            options={AI_AGENTS.map((agent) => ({ value: agent.id, label: agent.name, detail: agent.command }))}
+            onChange={(agent) => void setDefaultAIAgent(agent)}
+          />
+        </SettingsRow>
+      </SettingsGroup>
+
+      <SettingsGroup title="Repository sync">
+        <SettingsRow>
+          <SettingsLabel title="Auto-fetch remotes" description="Keep remote branches current in the background." />
+          <SettingsSwitch
+            label="Auto-fetch remotes"
+            checked={autoFetchEnabled}
+            onCheckedChange={(checked) => void setAutoFetchEnabled(checked)}
+          />
+        </SettingsRow>
+        <SettingsRow className={cn(!autoFetchEnabled && "opacity-60")}>
           <SettingsLabel title="Fetch interval" />
-        </div>
-        <select
-          value={String(autoFetchIntervalMinutes)}
-          onChange={(event) => {
-            void setAutoFetchIntervalMinutes(Number(event.target.value));
-          }}
-          disabled={!autoFetchEnabled}
-          className="h-9 w-56 shrink-0 rounded-md border border-border bg-secondary px-2.5 text-sm text-primary outline-none focus:ring-2 focus:ring-accent-primary disabled:cursor-not-allowed disabled:text-muted"
-        >
-          {AUTO_FETCH_INTERVAL_OPTIONS.map((minutes) => (
-            <option key={minutes} value={minutes}>
-              Every {minutes} minutes
-            </option>
-          ))}
-        </select>
-      </SettingsRow>
-    </SettingsCard>
+          <SettingsSelect
+            label="Fetch interval"
+            value={autoFetchIntervalMinutes}
+            disabled={!autoFetchEnabled}
+            options={AUTO_FETCH_INTERVAL_OPTIONS.map((minutes) => ({ value: minutes, label: `Every ${minutes} minutes` }))}
+            onChange={(minutes) => void setAutoFetchIntervalMinutes(minutes)}
+          />
+        </SettingsRow>
+      </SettingsGroup>
+    </div>
   );
 }
 
@@ -1068,6 +1101,8 @@ function ProjectsSection({
   repoPostCreateCommandsByPath: Record<string, string>;
   setRepoPostCreateCommands: (repoPath: string, commands: string) => Promise<void>;
 }) {
+  const [expandedPath, setExpandedPath] = useState<string | null>(null);
+
   if (repositories.length === 0) {
     return (
       <PlaceholderSection
@@ -1078,50 +1113,68 @@ function ProjectsSection({
   }
 
   return (
-    <div className="space-y-3">
+    <SettingsGroup
+      title="Post-create commands"
+      description="Shell commands that run inside every new worktree of a project."
+    >
       {repositories.map((repository) => {
-          const commands = repoPostCreateCommandsByPath[repository.info.path] ?? "";
+        const path = repository.info.path;
+        const commands = repoPostCreateCommandsByPath[path] ?? "";
+        const commandCount = commands.split("\n").filter((line) => line.trim()).length;
+        const isExpanded = expandedPath === path;
+        const fieldId = `post-create-${path}`;
 
-          return (
-            <SettingsCard key={repository.info.path}>
-              <div className="flex items-center gap-3 px-3 py-2.5">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-tertiary text-secondary">
-                  <FolderOpen className="h-3.5 w-3.5" />
+        return (
+          <div key={path}>
+            <button
+              type="button"
+              onClick={() => setExpandedPath(isExpanded ? null : path)}
+              aria-expanded={isExpanded}
+              aria-controls={fieldId}
+              className="group flex min-h-12 w-full items-center justify-between gap-6 py-2.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary"
+            >
+              <div className="min-w-0">
+                <div className="text-[13px] text-primary">{repository.info.name}</div>
+                <div className="truncate font-mono text-[11px] text-tertiary" title={path}>
+                  {path}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold text-primary">
-                    {repository.info.name}
-                  </div>
-                  <div className="mt-0.5 truncate font-mono text-[11px] text-tertiary" title={repository.info.path}>
-                    {repository.info.path}
-                  </div>
-                </div>
-                <span className="text-[11px] font-medium text-tertiary">
-                  {commands.trim() ? "Configured" : "Optional"}
-                </span>
               </div>
-              <div className="space-y-2 p-3">
-                <label htmlFor={`post-create-${repository.info.path}`} className="text-[13px] font-medium text-primary">
-                  Post-create commands
+              <span className="flex shrink-0 items-center gap-1.5 text-xs text-tertiary group-hover:text-primary">
+                {commandCount > 0 ? `${commandCount} command${commandCount === 1 ? "" : "s"}` : "None"}
+                <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-150", isExpanded && "rotate-180")} />
+              </span>
+            </button>
+            {isExpanded ? (
+              <div className="space-y-2 pb-3">
+                <label htmlFor={fieldId} className="sr-only">
+                  Post-create commands for {repository.info.name}
                 </label>
                 <textarea
-                  id={`post-create-${repository.info.path}`}
+                  id={fieldId}
+                  autoFocus
                   value={commands}
                   onChange={(event) => {
-                    void setRepoPostCreateCommands(repository.info.path, event.target.value);
+                    void setRepoPostCreateCommands(path, event.target.value);
                   }}
                   spellCheck={false}
                   placeholder={`cp "$AUTOPILOT_MAIN_WORKTREE_PATH/.env" .env\nnpm install`}
-                  className="min-h-[88px] w-full resize-y rounded-md border border-border bg-secondary px-2.5 py-2 font-mono text-sm leading-5 text-primary outline-none placeholder:text-tertiary focus:ring-2 focus:ring-accent-primary"
+                  className="min-h-[88px] w-full resize-y rounded-md border border-border bg-tertiary px-2.5 py-2 font-mono text-[13px] leading-5 text-primary outline-none placeholder:text-muted focus:ring-2 focus:ring-accent-primary"
                 />
                 <p className="text-xs leading-5 text-tertiary">
-                  Runs from the new worktree. Available variables: `AUTOPILOT_REPO_PATH`, `AUTOPILOT_MAIN_WORKTREE_PATH`, `AUTOPILOT_WORKTREE_PATH`, and `AUTOPILOT_WORKTREE_NAME`.
+                  Variables:{" "}
+                  {["AUTOPILOT_REPO_PATH", "AUTOPILOT_MAIN_WORKTREE_PATH", "AUTOPILOT_WORKTREE_PATH", "AUTOPILOT_WORKTREE_NAME"].map((name, index) => (
+                    <span key={name}>
+                      {index > 0 ? ", " : null}
+                      <code className="font-mono text-[11px] text-secondary">${name}</code>
+                    </span>
+                  ))}
                 </p>
               </div>
-            </SettingsCard>
-          );
+            ) : null}
+          </div>
+        );
       })}
-    </div>
+    </SettingsGroup>
   );
 }
 
