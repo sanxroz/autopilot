@@ -5,6 +5,7 @@ import type { Repository, TerminalPane, WorktreeInfo } from "../src/types";
 let diskValues = new Map<string, unknown>();
 let cacheValues = new Map<string, unknown>();
 const spawnCalls: Array<{ command: string; args?: Record<string, unknown> }> = [];
+const closeCalls: unknown[] = [];
 let nextTerminalId = 0;
 let terminalDiagnostics: Array<{ terminalId: string; agent: string | null }> = [];
 
@@ -15,6 +16,9 @@ mock.module("@tauri-apps/api/core", () => ({
       spawnCalls.push({ command, args });
       return { terminal_id: `restored-${++nextTerminalId}` };
     }
+    if (command === "close_terminals_for_worktree") closeCalls.push(args);
+    if (command === "discover_repository") return { ...repository.info, avatar_url: null };
+    if (command === "list_worktrees") return repository.worktrees;
     if (command === "get_terminal_diagnostics") return terminalDiagnostics;
     if (command === "get_all_worktrees_process_status") return {};
     return undefined;
@@ -91,6 +95,28 @@ test("terminal tabs and agent conversations are restored after a restart", async
   expect(state.currentActiveTerminalTabId).toBe(state.currentTerminalTabs[1].id);
   expect(state.currentTerminalTabs[0].activeTerminalId).toBe("restored-1");
   expect(state.terminalAgentById["restored-1"]).toEqual({ agent: "claude", agentSessionId: "abc-123" });
+});
+
+test("a worktree deleted mid-restore does not get reselected and its restored terminals are closed", async () => {
+  useAppStore.setState({
+    repositories: [repository],
+    selectedWorktree: worktree,
+    terminalsByWorktree: { [worktree.path]: { tabs, activeTabId: "codex" } },
+  });
+  const event = { worktreePath: worktree.path, sessionId: "s", status: "running" as const, timestamp: 1 };
+  useAppStore.getState().setAgentRunState({ ...event, terminalId: "claude", agent: "claude", agentSessionId: "abc-123" });
+  await useAppStore.getState().flushSidebarNotesPersistence();
+
+  useAppStore.setState({ isInitialized: false, installedIdes: [], selectedWorktree: null, terminalsByWorktree: {}, terminalAgentById: {} });
+  await useAppStore.getState().initialize();
+  useAppStore.setState({ repositories: [repository], deletingWorktreePaths: new Set([worktree.path]) });
+  closeCalls.length = 0;
+  await useAppStore.getState().selectWorktree(worktree);
+
+  expect(closeCalls).toEqual([{ worktreePath: worktree.path }]);
+  expect(useAppStore.getState().selectedWorktree).toBeNull();
+  expect(useAppStore.getState().terminalsByWorktree[worktree.path]).toBeUndefined();
+  useAppStore.setState({ deletingWorktreePaths: new Set() });
 });
 
 test("process polling decides each terminal's agent and keeps hook conversation ids", async () => {

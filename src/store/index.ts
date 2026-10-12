@@ -1113,6 +1113,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
         terminalRestoresByWorktreePath.set(worktree.path, restore);
       }
       const restored = await restore;
+      if (get().deletingWorktreePaths.has(worktree.path)) {
+        // The worktree was deleted mid-restore: its spawns finished after the delete closed terminals.
+        await invoke('close_terminals_for_worktree', { worktreePath: worktree.path }).catch((e) =>
+          console.error('Failed to close terminals restored for deleted worktree:', e),
+        );
+        return;
+      }
       if (restored.tabs.length > 0) {
         const activeTab = restored.tabs[saved.activeTabIndex] ?? restored.tabs[0];
         set((state) => ({
