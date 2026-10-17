@@ -17,6 +17,7 @@ import { useUpdater } from "./hooks/useUpdater";
 import { useDiffStatsLoader } from "./hooks/useDiffStats";
 import { useProcessStatusPolling } from "./hooks/useProcessStatus";
 import type { AgentStatusEvent } from "./types";
+import { getAgentNotification, sendAgentNotification } from "./lib/agent-notifications";
 import { getShortcutAction, type ShortcutAction } from "./lib/keyboard-shortcuts";
 import {
   cycleItems,
@@ -232,7 +233,12 @@ function App() {
     listen<AgentStatusEvent>("agent-status-changed", (event) => {
       if (!isMounted) return;
       console.log('[autopilot:event]', event.payload.status, event.payload.agent, event.payload.worktreePath, event.payload.message);
+      const state = useAppStore.getState();
+      const notification = state.notificationsEnabled
+        ? getAgentNotification(state.agentRunByWorktreePath[event.payload.worktreePath]?.status, event.payload, document.hasFocus())
+        : null;
       setAgentRunState(event.payload);
+      if (notification) void sendAgentNotification(notification).catch(console.error);
     })
       .then((fn) => {
         if (isMounted) {
