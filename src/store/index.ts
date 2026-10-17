@@ -35,7 +35,7 @@ import {
   type SidebarWorktreeDrop,
   type SidebarWorktreeGroup,
 } from '../lib/sidebar-groups';
-import { applyAgentStatusEvent, reconcileAgentRunState } from './agentRunState';
+import { applyAgentStatusEvent, isAgentActiveStatus, reconcileAgentRunState } from './agentRunState';
 import { isLocalWebUrl } from '../lib/local-web-url';
 import {
   DEFAULT_KEYBOARD_SHORTCUTS,
@@ -51,6 +51,7 @@ interface PersistedState {
   worktreeOrdersByRepo?: Record<string, string[]>;
   sidebarGroupsByRepo?: Record<string, SidebarWorktreeGroup[]>;
   autoFetchSettings?: AutoFetchSettings;
+  notificationsEnabled?: boolean;
   repoPostCreateCommandsByPath?: Record<string, string>;
   sidebarNotesByWorktreePath?: Record<string, string>;
   sidebarNotesMarkdown?: string;
@@ -110,6 +111,7 @@ interface AppStore {
   defaultAIAgent: AIAgent;
   addressedComments: AddressedCommentsMap;
   autoFetchSettings: AutoFetchSettings;
+  notificationsEnabled: boolean;
   repoPostCreateCommandsByPath: Record<string, string>;
   worktreeSetupByRepoPath: Record<string, string[]>;
   sidebarNotesByWorktreePath: Record<string, string>;
@@ -159,6 +161,7 @@ interface AppStore {
   reconcileAgentRunWithProcessPolling: (worktreePath: string, processStatus: ProcessStatus) => void;
   setDefaultAIAgent: (agent: AIAgent) => Promise<void>;
   setAutoFetchEnabled: (enabled: boolean) => Promise<void>;
+  setNotificationsEnabled: (enabled: boolean) => Promise<void>;
   setAutoFetchIntervalMinutes: (intervalMinutes: number) => Promise<void>;
   setKeyboardShortcut: (action: ShortcutAction, shortcut: string) => Promise<void>;
   setRepoPostCreateCommands: (repoPath: string, commands: string) => Promise<void>;
@@ -288,6 +291,7 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
       worktreeOrdersByRepo,
       sidebarGroupsByRepo,
       autoFetchSettings,
+      notificationsEnabled,
       repoPostCreateCommandsByPath,
       sidebarNotesByWorktreePath,
       sidebarNotesMarkdown,
@@ -302,6 +306,7 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
       store.get<Record<string, string[]>>('worktreeOrdersByRepo'),
       store.get<Record<string, SidebarWorktreeGroup[]>>('sidebarGroupsByRepo'),
       store.get<AutoFetchSettings>('autoFetchSettings'),
+      store.get<boolean>('notificationsEnabled'),
       store.get<Record<string, string>>('repoPostCreateCommandsByPath'),
       store.get<Record<string, string>>('sidebarNotesByWorktreePath'),
       store.get<string>('sidebarNotesMarkdown'),
@@ -325,6 +330,7 @@ async function loadPersistedState(): Promise<PersistedState & { themeMode?: Them
       worktreeOrdersByRepo: worktreeOrdersByRepo || {},
       sidebarGroupsByRepo: sidebarGroupsByRepo || {},
       autoFetchSettings: autoFetchSettings || DEFAULT_AUTO_FETCH_SETTINGS,
+      notificationsEnabled,
       repoPostCreateCommandsByPath: repoPostCreateCommandsByPath || {},
       sidebarNotesByWorktreePath: sidebarNotesByWorktreePath || {},
       sidebarNotesMarkdown: sidebarNotesMarkdown || "",
@@ -586,6 +592,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   defaultAIAgent: 'opencode',
   addressedComments: {},
   autoFetchSettings: DEFAULT_AUTO_FETCH_SETTINGS,
+  notificationsEnabled: true,
   repoPostCreateCommandsByPath: {},
   worktreeSetupByRepoPath: {},
   sidebarNotesByWorktreePath: {},
@@ -622,6 +629,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     if (persisted.autoFetchSettings) {
       set({ autoFetchSettings: persisted.autoFetchSettings });
+    }
+
+    if (persisted.notificationsEnabled !== undefined) {
+      set({ notificationsEnabled: persisted.notificationsEnabled });
     }
 
     if (persisted.repoPostCreateCommandsByPath) {
@@ -1862,13 +1873,26 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
 
     try {
-      const diagnostics = await invoke<Array<{ terminalId: string; agent: string | null }>>('get_terminal_diagnostics');
+      const diagnostics = await invoke<Array<{ terminalId: string; worktreePath: string; agent: string | null }>>('get_terminal_diagnostics');
       const previous = get().terminalAgentById;
       const next: Record<string, TerminalAgentSession> = {};
-      for (const { terminalId, agent } of diagnostics) {
+      const agentByWorktreePath: Record<string, AIAgent> = {};
+      for (const { terminalId, worktreePath, agent } of diagnostics) {
         if (!isAIAgent(agent)) continue;
         next[terminalId] = previous[terminalId]?.agent === agent ? previous[terminalId] : { agent };
+        agentByWorktreePath[worktreePath] = agent;
       }
+      // Process-detected runs carry no agent; record it while the process lives so the finish notification can name it.
+      set((state) => {
+        let runs = state.agentRunByWorktreePath;
+        for (const [path, agent] of Object.entries(agentByWorktreePath)) {
+          const run = runs[path];
+          if (run && !run.agent && isAgentActiveStatus(run.status)) {
+            runs = { ...runs, [path]: { ...run, agent } };
+          }
+        }
+        return runs === state.agentRunByWorktreePath ? state : { agentRunByWorktreePath: runs };
+      });
       const previousIds = Object.keys(previous);
       if (previousIds.length !== Object.keys(next).length || previousIds.some((id) => next[id] !== previous[id])) {
         set({ terminalAgentById: next });
@@ -2025,6 +2049,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
     };
     set({ autoFetchSettings });
     await saveStoreValue('autoFetchSettings', autoFetchSettings);
+  },
+
+  setNotificationsEnabled: async (enabled: boolean) => {
+    set({ notificationsEnabled: enabled });
+    await saveStoreValue('notificationsEnabled', enabled);
   },
 
   setAutoFetchIntervalMinutes: async (intervalMinutes: number) => {
