@@ -99,23 +99,6 @@ describe("terminal layout tabs", () => {
     expect(useAppStore.getState().currentTerminalTabs).toHaveLength(1);
   });
 
-  test("opening a browser tab preserves the terminal layout", () => {
-    useAppStore.getState().openBrowserTab("http://localhost:3000");
-
-    const state = useAppStore.getState();
-    expect(state.currentTerminalTabs).toHaveLength(3);
-    expect(state.currentTerminalTabs[2].browserUrl).toBe("http://localhost:3000/");
-    expect(state.currentTerminals).toEqual([]);
-    expect(state.terminalsByWorktree[worktree.path].activeTabId).toBe(
-      state.currentTerminalTabs[2].id,
-    );
-
-    useAppStore.getState().setActiveTerminalTab("layout-1");
-    expect(
-      useAppStore.getState().currentTerminals.map((terminal) => terminal.id),
-    ).toEqual(["terminal-1", "terminal-2"]);
-  });
-
   test("a pending terminal stays with its originating layout", async () => {
     let resolveSpawn!: (result: { terminal_id: string }) => void;
     invokeHandler = (command) =>
@@ -126,17 +109,12 @@ describe("terminal layout tabs", () => {
         : Promise.resolve(undefined);
 
     const addTerminal = useAppStore.getState().addTerminal();
-    useAppStore.getState().openBrowserTab("http://localhost:3000");
-    const browserTabId = useAppStore.getState().currentActiveTerminalTabId;
+    useAppStore.getState().setActiveTerminalTab("layout-2");
     resolveSpawn({ terminal_id: "terminal-4" });
     await addTerminal;
 
     const state = useAppStore.getState();
-    expect(state.currentActiveTerminalTabId).toBe(browserTabId);
-    expect(state.currentTerminals).toEqual([]);
-    expect(
-      state.currentTerminalTabs.find((tab) => tab.id === browserTabId)?.terminals,
-    ).toEqual([]);
+    expect(state.currentActiveTerminalTabId).toBe("layout-2");
     expect(state.currentTerminalTabs[0].terminals.map((terminal) => terminal.id)).toEqual([
       "terminal-1",
       "terminal-2",
@@ -162,34 +140,6 @@ describe("terminal layout tabs", () => {
       terminalId: "orphan-terminal",
     });
     expect(useAppStore.getState().terminalsByWorktree[worktree.path].tabs).toEqual(tabs);
-  });
-
-  test("opening the same URL focuses its existing browser tab", () => {
-    useAppStore.getState().openBrowserTab("http://localhost:3000");
-    const browserTabId = useAppStore.getState().currentActiveTerminalTabId;
-    useAppStore.getState().setActiveTerminalTab("layout-1");
-
-    useAppStore.getState().openBrowserTab("http://localhost:3000");
-
-    expect(useAppStore.getState().currentActiveTerminalTabId).toBe(browserTabId);
-    expect(useAppStore.getState().currentTerminalTabs).toHaveLength(3);
-  });
-
-  test("rejects external browser tabs", () => {
-    useAppStore.getState().openBrowserTab("https://example.com");
-
-    expect(useAppStore.getState().currentTerminalTabs).toEqual(tabs);
-  });
-
-  test("persists browser navigation in its tab", () => {
-    useAppStore.getState().openBrowserTab("http://localhost:3000");
-    const browserTabId = useAppStore.getState().currentActiveTerminalTabId!;
-
-    useAppStore.getState().updateBrowserTabUrl(browserTabId, "http://localhost:5173/app");
-
-    expect(useAppStore.getState().currentTerminalTabs[2].browserUrl).toBe(
-      "http://localhost:5173/app",
-    );
   });
 
   test("a pending new tab stays with its originating worktree", async () => {

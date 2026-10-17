@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import React from "react";
 import { Window } from "happy-dom";
 
@@ -28,7 +28,6 @@ type OutputListener = (event: { payload: { data: string; sequence: number } }) =
 
 let activateLink: LinkHandler;
 let outputListener: OutputListener;
-const openBrowserTab = mock(() => {});
 const openUrl = mock(async () => {});
 const write = mock((_data: string, callback?: () => void) => callback?.());
 const terminalOutputRequests: unknown[] = [];
@@ -94,17 +93,13 @@ mock.module("@xterm/xterm", () => ({
 
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
-const { useAppStore } = await import("../src/store");
 const { Terminal } = await import("../src/components/Terminal");
-const originalOpenBrowserTab = useAppStore.getState().openBrowserTab;
-useAppStore.setState({ openBrowserTab });
 
 describe("terminal links", () => {
   let container: HTMLDivElement;
   let root: ReturnType<typeof createRoot>;
 
   beforeEach(async () => {
-    openBrowserTab.mockClear();
     openUrl.mockClear();
     write.mockClear();
     container = document.createElement("div");
@@ -120,19 +115,16 @@ describe("terminal links", () => {
     container.remove();
   });
 
-  afterAll(() => useAppStore.setState({ openBrowserTab: originalOpenBrowserTab }));
-
-  test("output stays in the terminal while clicked links use the correct route", async () => {
+  test("output stays in the terminal while clicked links open externally", async () => {
     await act(async () => {
       outputListener({ payload: { data: "http://localhost:5173/", sequence: 1 } });
     });
     expect(write).toHaveBeenCalledWith("http://localhost:5173/", expect.any(Function));
-    expect(openBrowserTab).not.toHaveBeenCalled();
 
     activateLink(new MouseEvent("click"), "http://localhost:5173/");
     activateLink(new MouseEvent("click"), "https://example.com/");
 
-    expect(openBrowserTab).toHaveBeenCalledWith("http://localhost:5173/");
+    expect(openUrl).toHaveBeenCalledWith("http://localhost:5173/");
     expect(openUrl).toHaveBeenCalledWith("https://example.com/");
   });
 
