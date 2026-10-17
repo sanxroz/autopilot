@@ -27,7 +27,7 @@
          }
       ],
     "security": {
-      "csp": "frame-src http://localhost:* https://localhost:* http://127.0.0.1:* https://127.0.0.1:* http://[::1]:* https://[::1]:*"
+      "csp": "frame-src 'none'"
     }
   },
   "bundle": {

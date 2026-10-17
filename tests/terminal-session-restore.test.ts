@@ -60,8 +60,9 @@ const repository: Repository = { info: { name: "repo", path: "/repo" }, worktree
 const terminal = (id: string) => ({ id, worktreePath: worktree.path, worktreeName: worktree.name });
 const tabs: TerminalPane[] = [
   { id: "claude", terminals: [terminal("claude"), terminal("shell")], activeTerminalId: "claude" },
+  // A removed browser tab is persisted as an empty tab; restore drops it without shifting the active tab.
+  { id: "legacy-browser", terminals: [], activeTerminalId: null },
   { id: "codex", terminals: [terminal("codex")], activeTerminalId: "codex" },
-  { id: "browser", terminals: [], activeTerminalId: null, browserUrl: "http://localhost:3000/" },
 ];
 
 test("terminal tabs and agent conversations are restored after a restart", async () => {
@@ -90,8 +91,7 @@ test("terminal tabs and agent conversations are restored after a restart", async
     "codex resume --last",
   ]);
   const state = useAppStore.getState();
-  expect(state.currentTerminalTabs.map((tab) => tab.terminals.length)).toEqual([2, 1, 0]);
-  expect(state.currentTerminalTabs[2].browserUrl).toBe("http://localhost:3000/");
+  expect(state.currentTerminalTabs.map((tab) => tab.terminals.length)).toEqual([2, 1]);
   expect(state.currentActiveTerminalTabId).toBe(state.currentTerminalTabs[1].id);
   expect(state.currentTerminalTabs[0].activeTerminalId).toBe("restored-1");
   expect(state.terminalAgentById["restored-1"]).toEqual({ agent: "claude", agentSessionId: "abc-123" });

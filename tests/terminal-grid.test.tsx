@@ -70,7 +70,6 @@ const theme = (await import("../src/theme")).getTheme();
 const tauriCore = await import("@tauri-apps/api/core");
 mock.module("../src/hooks/useTheme", () => ({ useTheme: () => theme }));
 mock.module("../src/components/TerminalAnimation", () => ({ TerminalAnimation: () => null }));
-mock.module("../src/components/BrowserPane", () => ({ BrowserPane: () => <div>Browser</div> }));
 const listeners = new Map<string, Set<(event?: unknown) => void>>();
 const emitClosed = (id: string) => listeners.get(`terminal-closed-${id}`)?.forEach((fn) => fn());
 mock.module("@tauri-apps/api/event", () => ({
