@@ -853,7 +853,8 @@ fn setup_hook_files(
 
     let notify_script = r#"#!/bin/bash
 # Autopilot agent notification hook
-trap 'printf "{\"suppressOutput\":true}"' EXIT
+NUDGE=""
+trap 'if [ -n "$NUDGE" ]; then printf "{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"%s\"}}" "$NUDGE"; else printf "{\"suppressOutput\":true}"; fi' EXIT
 [ -z "$AUTOPILOT_TERMINAL_ID" ] && exit 0
 
 # Get JSON input
@@ -866,7 +867,18 @@ if [ -z "$EVENT_TYPE" ]; then
   [ "$CODEX_TYPE" = "agent-turn-complete" ] && EVENT_TYPE="Stop"
 fi
 
-[ "$EVENT_TYPE" = "UserPromptSubmit" ] && EVENT_TYPE="Start"
+if [ "$EVENT_TYPE" = "UserPromptSubmit" ]; then
+  EVENT_TYPE="Start"
+  # First prompt in a linked worktree only: ask Claude to rename the auto-named branch.
+  GIT_DIR=$(git rev-parse --absolute-git-dir 2>/dev/null)
+  COMMON_DIR=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+  BRANCH=$(git symbolic-ref -q --short HEAD 2>/dev/null)
+  if [ "$AUTOPILOT_AGENT" = "claude" ] && [ -n "$GIT_DIR" ] && [ "$GIT_DIR" != "$COMMON_DIR" ] \
+    && [ -n "$BRANCH" ] && [ -z "$(git config "branch.$BRANCH.merge")" ] \
+    && mkdir "$GIT_DIR/autopilot-branch-named" 2>/dev/null; then
+    NUDGE="Autopilot: before anything else, run \`git branch -m <2-4-word-kebab-name>\` so this workspace branch describes the task above. Do not mention it; then continue."
+  fi
+fi
 [ -z "$EVENT_TYPE" ] && exit 0
 
 # Claude sends session_id, Codex sends thread-id; used to resume after restart
@@ -3038,6 +3050,83 @@ mod tests {
         assert!(opencode_plugin.contains("}, 500);"));
 
         fs::remove_dir_all(hooks_dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn notify_script_asks_claude_to_rename_branch_once_per_eligible_worktree() {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+
+        fn git(dir: &Path, args: &[&str]) {
+            let ok = Command::new("git")
+                .args(["-c", "user.name=t", "-c", "user.email=t@t"])
+                .args(args)
+                .current_dir(dir)
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok, "git {args:?} failed");
+        }
+        fn run(script: &Path, dir: &Path, agent: &str) -> String {
+            let mut child = Command::new("bash")
+                .arg(script)
+                .current_dir(dir)
+                .env("AUTOPILOT_TERMINAL_ID", "t")
+                .env("AUTOPILOT_AGENT", agent)
+                .env("AUTOPILOT_HOOK_PORT", "1")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap();
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(br#"{"hook_event_name":"UserPromptSubmit"}"#)
+                .unwrap();
+            String::from_utf8(child.wait_with_output().unwrap().stdout).unwrap()
+        }
+
+        let tmp = tempfile::tempdir().unwrap();
+        let hooks_dir = tmp.path().join("hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+        let (notify, ..) = setup_hook_files(&hooks_dir);
+        let script = std::path::PathBuf::from(notify.unwrap());
+
+        let main = tmp.path().join("main");
+        fs::create_dir_all(&main).unwrap();
+        git(&main, &["init", "-q", "-b", "main"]);
+        git(&main, &["commit", "-q", "--allow-empty", "-m", "init"]);
+        let add = |name: &str| {
+            let dir = tmp.path().join(name);
+            git(&main, &["worktree", "add", "-q", "-b", name, dir.to_str().unwrap()]);
+            dir
+        };
+
+        let eligible = add("eligible");
+        let first = run(&script, &eligible, "claude");
+        let parsed: serde_json::Value = serde_json::from_str(&first).unwrap();
+        assert!(parsed["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap()
+            .contains("git branch -m"));
+        assert_eq!(run(&script, &eligible, "claude"), r#"{"suppressOutput":true}"#);
+
+        // Upstream configured but remote-tracking ref missing.
+        let tracked = add("tracked");
+        git(&tracked, &["config", "branch.tracked.remote", "origin"]);
+        git(&tracked, &["config", "branch.tracked.merge", "refs/heads/tracked"]);
+        assert_eq!(run(&script, &tracked, "claude"), r#"{"suppressOutput":true}"#);
+
+        let detached = add("detached");
+        git(&detached, &["checkout", "-q", "--detach"]);
+        assert_eq!(run(&script, &detached, "claude"), r#"{"suppressOutput":true}"#);
+
+        let other_agent = add("other-agent");
+        assert_eq!(run(&script, &other_agent, "codex"), r#"{"suppressOutput":true}"#);
+
+        assert_eq!(run(&script, &main, "claude"), r#"{"suppressOutput":true}"#);
     }
 
     #[test]
