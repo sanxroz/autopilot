@@ -35,7 +35,7 @@ import {
   type SidebarWorktreeDrop,
   type SidebarWorktreeGroup,
 } from '../lib/sidebar-groups';
-import { applyAgentStatusEvent, reconcileAgentRunState } from './agentRunState';
+import { applyAgentStatusEvent, isAgentActiveStatus, reconcileAgentRunState } from './agentRunState';
 import { isLocalWebUrl } from '../lib/local-web-url';
 import {
   DEFAULT_KEYBOARD_SHORTCUTS,
@@ -1873,13 +1873,26 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
 
     try {
-      const diagnostics = await invoke<Array<{ terminalId: string; agent: string | null }>>('get_terminal_diagnostics');
+      const diagnostics = await invoke<Array<{ terminalId: string; worktreePath: string; agent: string | null }>>('get_terminal_diagnostics');
       const previous = get().terminalAgentById;
       const next: Record<string, TerminalAgentSession> = {};
-      for (const { terminalId, agent } of diagnostics) {
+      const agentByWorktreePath: Record<string, AIAgent> = {};
+      for (const { terminalId, worktreePath, agent } of diagnostics) {
         if (!isAIAgent(agent)) continue;
         next[terminalId] = previous[terminalId]?.agent === agent ? previous[terminalId] : { agent };
+        agentByWorktreePath[worktreePath] = agent;
       }
+      // Process-detected runs carry no agent; record it while the process lives so the finish notification can name it.
+      set((state) => {
+        let runs = state.agentRunByWorktreePath;
+        for (const [path, agent] of Object.entries(agentByWorktreePath)) {
+          const run = runs[path];
+          if (run && !run.agent && isAgentActiveStatus(run.status)) {
+            runs = { ...runs, [path]: { ...run, agent } };
+          }
+        }
+        return runs === state.agentRunByWorktreePath ? state : { agentRunByWorktreePath: runs };
+      });
       const previousIds = Object.keys(previous);
       if (previousIds.length !== Object.keys(next).length || previousIds.some((id) => next[id] !== previous[id])) {
         set({ terminalAgentById: next });
