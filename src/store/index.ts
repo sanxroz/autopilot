@@ -466,7 +466,8 @@ function getAgentResumeCommand(session: TerminalAgentSession | null): string | n
 async function restoreWorktreeTerminals(worktree: WorktreeInfo, saved: SavedWorktreeTerminals) {
   const agents: Record<string, TerminalAgentSession> = {};
   const tabs: TerminalPane[] = [];
-  for (const savedTab of Array.isArray(saved?.tabs) ? saved.tabs : []) {
+  let activeTabId: string | undefined;
+  for (const [savedIndex, savedTab] of (Array.isArray(saved?.tabs) ? saved.tabs : []).entries()) {
     const spawned = await Promise.all(
       (savedTab.terminals ?? []).map(async (session) => {
         const command = getAgentResumeCommand(session);
@@ -490,9 +491,10 @@ async function restoreWorktreeTerminals(worktree: WorktreeInfo, saved: SavedWork
     if (terminals.length > 0) {
       const activeTerminal = spawned[savedTab.activeTerminalIndex ?? -1] ?? terminals[terminals.length - 1];
       tabs.push({ id: terminals[0].id, terminals, activeTerminalId: activeTerminal.id });
+      if (savedIndex === saved.activeTabIndex) activeTabId = terminals[0].id;
     }
   }
-  return { tabs, agents };
+  return { tabs, agents, activeTabId };
 }
 
 function serializeTerminalSessions(state: AppStore): Record<string, SavedWorktreeTerminals> {
@@ -1125,7 +1127,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         return;
       }
       if (restored.tabs.length > 0) {
-        const activeTab = restored.tabs[saved.activeTabIndex] ?? restored.tabs[0];
+        const activeTab = restored.tabs.find((tab) => tab.id === restored.activeTabId) ?? restored.tabs[0];
         set((state) => ({
           selectedWorktree: worktree,
           currentTerminalTabs: restored.tabs,

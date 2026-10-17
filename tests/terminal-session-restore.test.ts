@@ -60,6 +60,8 @@ const repository: Repository = { info: { name: "repo", path: "/repo" }, worktree
 const terminal = (id: string) => ({ id, worktreePath: worktree.path, worktreeName: worktree.name });
 const tabs: TerminalPane[] = [
   { id: "claude", terminals: [terminal("claude"), terminal("shell")], activeTerminalId: "claude" },
+  // A removed browser tab is persisted as an empty tab; restore drops it without shifting the active tab.
+  { id: "legacy-browser", terminals: [], activeTerminalId: null },
   { id: "codex", terminals: [terminal("codex")], activeTerminalId: "codex" },
 ];
 
