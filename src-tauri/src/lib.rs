@@ -152,6 +152,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(move |app| {
             let window_config = &app.config().app.windows[0];
             let window_builder = tauri::WebviewWindowBuilder::from_config(app.handle(), window_config)?;

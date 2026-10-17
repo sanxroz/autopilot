@@ -280,6 +280,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
     autoFetchSettings,
     setAutoFetchEnabled,
     setAutoFetchIntervalMinutes,
+    notificationsEnabled,
+    setNotificationsEnabled,
     repoPostCreateCommandsByPath,
     setRepoPostCreateCommands,
   } = useAppStore();
@@ -430,6 +432,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 autoFetchIntervalMinutes={autoFetchSettings.intervalMinutes}
                 setAutoFetchEnabled={setAutoFetchEnabled}
                 setAutoFetchIntervalMinutes={setAutoFetchIntervalMinutes}
+                notificationsEnabled={notificationsEnabled}
+                setNotificationsEnabled={setNotificationsEnabled}
               />
             ) : null}
             {activeSection === "shortcuts" ? <KeyboardShortcutsSection /> : null}
@@ -1046,6 +1050,8 @@ function PreferencesSection({
   autoFetchIntervalMinutes,
   setAutoFetchEnabled,
   setAutoFetchIntervalMinutes,
+  notificationsEnabled,
+  setNotificationsEnabled,
 }: {
   defaultAIAgent: AIAgent;
   setDefaultAIAgent: (agent: AIAgent) => Promise<void>;
@@ -1053,6 +1059,8 @@ function PreferencesSection({
   autoFetchIntervalMinutes: number;
   setAutoFetchEnabled: (enabled: boolean) => Promise<void>;
   setAutoFetchIntervalMinutes: (intervalMinutes: number) => Promise<void>;
+  notificationsEnabled: boolean;
+  setNotificationsEnabled: (enabled: boolean) => Promise<void>;
 }) {
   return (
     <div className="space-y-8">
@@ -1064,6 +1072,14 @@ function PreferencesSection({
             value={defaultAIAgent}
             options={AI_AGENTS.map((agent) => ({ value: agent.id, label: agent.name, detail: agent.command }))}
             onChange={(agent) => void setDefaultAIAgent(agent)}
+          />
+        </SettingsRow>
+        <SettingsRow>
+          <SettingsLabel title="Notifications" description="Play a sound and notify when an agent finishes, errors, or needs input while the app is in the background." />
+          <SettingsSwitch
+            label="Notifications"
+            checked={notificationsEnabled}
+            onCheckedChange={(checked) => void setNotificationsEnabled(checked)}
           />
         </SettingsRow>
       </SettingsGroup>
