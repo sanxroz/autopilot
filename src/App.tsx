@@ -230,15 +230,29 @@ function App() {
     let isMounted = true;
     let unlisten: (() => void) | null = null;
 
+    // Notify from accepted store changes so polling-detected finishes are covered and rejected stale events stay silent.
+    const unsubscribeNotifications = useAppStore.subscribe((state, previous) => {
+      if (state.agentRunByWorktreePath === previous.agentRunByWorktreePath || !state.notificationsEnabled) return;
+      for (const [worktreePath, run] of Object.entries(state.agentRunByWorktreePath)) {
+        if (!run) continue;
+        const notification = getAgentNotification(
+          previous.agentRunByWorktreePath[worktreePath]?.status,
+          { status: run.status, agent: run.agent, worktreePath },
+          document.hasFocus(),
+        );
+        if (notification) {
+          void sendAgentNotification(
+            notification,
+            () => useAppStore.getState().notificationsEnabled && !document.hasFocus(),
+          ).catch(console.error);
+        }
+      }
+    });
+
     listen<AgentStatusEvent>("agent-status-changed", (event) => {
       if (!isMounted) return;
       console.log('[autopilot:event]', event.payload.status, event.payload.agent, event.payload.worktreePath, event.payload.message);
-      const state = useAppStore.getState();
-      const notification = state.notificationsEnabled
-        ? getAgentNotification(state.agentRunByWorktreePath[event.payload.worktreePath]?.status, event.payload, document.hasFocus())
-        : null;
       setAgentRunState(event.payload);
-      if (notification) void sendAgentNotification(notification).catch(console.error);
     })
       .then((fn) => {
         if (isMounted) {
@@ -253,6 +267,7 @@ function App() {
 
     return () => {
       isMounted = false;
+      unsubscribeNotifications();
       if (unlisten) {
         unlisten();
       }

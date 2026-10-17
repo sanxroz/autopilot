@@ -11,7 +11,7 @@ function agentName(agent: string | undefined): string {
 }
 
 function sessionName(worktreePath: string): string {
-  return worktreePath.split("/").filter(Boolean).pop() ?? worktreePath;
+  return worktreePath.split(/[\\/]/).filter(Boolean).pop() ?? worktreePath;
 }
 
 export function getAgentNotification(
@@ -34,8 +34,13 @@ export function getAgentNotification(
   }
 }
 
-export async function sendAgentNotification({ title, body }: AgentNotification): Promise<void> {
+export async function sendAgentNotification(
+  { title, body }: AgentNotification,
+  stillWanted: () => boolean = () => true,
+): Promise<void> {
   const { isPermissionGranted, requestPermission, sendNotification } = await import("@tauri-apps/plugin-notification");
   if (!(await isPermissionGranted()) && (await requestPermission()) !== "granted") return;
+  // Permission checks can take a while; the user may have returned or disabled alerts since.
+  if (!stillWanted()) return;
   sendNotification({ title, body, sound: "default" });
 }

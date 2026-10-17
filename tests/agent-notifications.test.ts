@@ -19,6 +19,10 @@ describe("getAgentNotification", () => {
   test("falls back when the agent is unknown", () => {
     expect(getAgentNotification("running", { ...event("completed"), agent: undefined }, false)?.title).toBe("Your agent finished");
   });
+  test("shows only the session name for Windows paths", () => {
+    const windows = { ...event("completed"), worktreePath: "C:\\repos\\app\\.worktrees\\922-lisbon" };
+    expect(getAgentNotification("running", windows, false)?.body).toBe("922-lisbon is ready to review");
+  });
   test("stays silent when focused, repeated, or not a notifiable state", () => {
     expect(getAgentNotification("running", event("completed"), true)).toBeNull();
     expect(getAgentNotification("completed", event("completed"), false)).toBeNull();
