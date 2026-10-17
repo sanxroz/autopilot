@@ -853,7 +853,8 @@ fn setup_hook_files(
 
     let notify_script = r#"#!/bin/bash
 # Autopilot agent notification hook
-trap 'printf "{\"suppressOutput\":true}"' EXIT
+NUDGE=""
+trap 'if [ -n "$NUDGE" ]; then printf "{\"hookSpecificOutput\":{\"hookEventName\":\"UserPromptSubmit\",\"additionalContext\":\"%s\"}}" "$NUDGE"; else printf "{\"suppressOutput\":true}"; fi' EXIT
 [ -z "$AUTOPILOT_TERMINAL_ID" ] && exit 0
 
 # Get JSON input
@@ -866,7 +867,17 @@ if [ -z "$EVENT_TYPE" ]; then
   [ "$CODEX_TYPE" = "agent-turn-complete" ] && EVENT_TYPE="Stop"
 fi
 
-[ "$EVENT_TYPE" = "UserPromptSubmit" ] && EVENT_TYPE="Start"
+if [ "$EVENT_TYPE" = "UserPromptSubmit" ]; then
+  EVENT_TYPE="Start"
+  # First prompt in a linked worktree only: ask Claude to rename the auto-named branch.
+  GIT_DIR=$(git rev-parse --absolute-git-dir 2>/dev/null)
+  COMMON_DIR=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)
+  if [ "$AUTOPILOT_AGENT" = "claude" ] && [ -n "$GIT_DIR" ] && [ "$GIT_DIR" != "$COMMON_DIR" ] \
+    && ! git rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1 \
+    && mkdir "$GIT_DIR/autopilot-branch-named" 2>/dev/null; then
+    NUDGE="Autopilot: before anything else, run \`git branch -m <2-4-word-kebab-name>\` so this workspace branch describes the task above. Do not mention it; then continue."
+  fi
+fi
 [ -z "$EVENT_TYPE" ] && exit 0
 
 # Claude sends session_id, Codex sends thread-id; used to resume after restart
