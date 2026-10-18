@@ -36,7 +36,6 @@ import {
   type SidebarWorktreeGroup,
 } from '../lib/sidebar-groups';
 import { applyAgentStatusEvent, isAgentActiveStatus, reconcileAgentRunState } from './agentRunState';
-import { isLocalWebUrl } from '../lib/local-web-url';
 import {
   DEFAULT_KEYBOARD_SHORTCUTS,
   mergeKeyboardShortcuts,
@@ -70,7 +69,7 @@ interface TerminalAgentSession {
 }
 
 interface SavedWorktreeTerminals {
-  tabs: Array<{ browserUrl?: string; terminals: Array<TerminalAgentSession | null>; activeTerminalIndex?: number }>;
+  tabs: Array<{ terminals: Array<TerminalAgentSession | null>; activeTerminalIndex?: number }>;
   activeTabIndex: number;
 }
 
@@ -132,8 +131,6 @@ interface AppStore {
   selectWorktree: (worktree: WorktreeInfo) => Promise<void>;
   addTerminal: () => Promise<string | null>;
   createTerminalTab: (command?: string) => Promise<string | null>;
-  openBrowserTab: (url: string) => void;
-  updateBrowserTabUrl: (tabId: string, url: string) => void;
   closeTerminalTab: (tabId: string) => void;
   addTerminalWithCommand: (command: string) => Promise<string | null>;
   removeTerminal: (terminalId: string) => void;
@@ -475,19 +472,8 @@ function getAgentResumeCommand(session: TerminalAgentSession | null): string | n
 async function restoreWorktreeTerminals(worktree: WorktreeInfo, saved: SavedWorktreeTerminals) {
   const agents: Record<string, TerminalAgentSession> = {};
   const tabs: TerminalPane[] = [];
-  for (const savedTab of Array.isArray(saved?.tabs) ? saved.tabs : []) {
-    if (savedTab.browserUrl) {
-      if (isLocalWebUrl(savedTab.browserUrl)) {
-        tabs.push({
-          id: `browser-${crypto.randomUUID()}`,
-          terminals: [],
-          activeTerminalId: null,
-          browserUrl: savedTab.browserUrl,
-        });
-      }
-      continue;
-    }
-
+  let activeTabId: string | undefined;
+  for (const [savedIndex, savedTab] of (Array.isArray(saved?.tabs) ? saved.tabs : []).entries()) {
     const spawned = await Promise.all(
       (savedTab.terminals ?? []).map(async (session) => {
         const command = getAgentResumeCommand(session);
@@ -511,9 +497,10 @@ async function restoreWorktreeTerminals(worktree: WorktreeInfo, saved: SavedWork
     if (terminals.length > 0) {
       const activeTerminal = spawned[savedTab.activeTerminalIndex ?? -1] ?? terminals[terminals.length - 1];
       tabs.push({ id: terminals[0].id, terminals, activeTerminalId: activeTerminal.id });
+      if (savedIndex === saved.activeTabIndex) activeTabId = terminals[0].id;
     }
   }
-  return { tabs, agents };
+  return { tabs, agents, activeTabId };
 }
 
 function serializeTerminalSessions(state: AppStore): Record<string, SavedWorktreeTerminals> {
@@ -523,14 +510,10 @@ function serializeTerminalSessions(state: AppStore): Record<string, SavedWorktre
   const sessions = { ...restorableTerminalSessions };
   for (const [path, { tabs, activeTabId }] of Object.entries(state.terminalsByWorktree)) {
     sessions[path] = {
-      tabs: tabs.map((tab) =>
-        tab.browserUrl
-          ? { browserUrl: tab.browserUrl, terminals: [] }
-          : {
-              terminals: tab.terminals.map((terminal) => state.terminalAgentById[terminal.id] ?? null),
-              activeTerminalIndex: Math.max(0, tab.terminals.findIndex((terminal) => terminal.id === tab.activeTerminalId)),
-            },
-      ),
+      tabs: tabs.map((tab) => ({
+        terminals: tab.terminals.map((terminal) => state.terminalAgentById[terminal.id] ?? null),
+        activeTerminalIndex: Math.max(0, tab.terminals.findIndex((terminal) => terminal.id === tab.activeTerminalId)),
+      })),
       activeTabIndex: Math.max(0, tabs.findIndex((tab) => tab.id === activeTabId)),
     };
   }
@@ -1155,7 +1138,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         return;
       }
       if (restored.tabs.length > 0) {
-        const activeTab = restored.tabs[saved.activeTabIndex] ?? restored.tabs[0];
+        const activeTab = restored.tabs.find((tab) => tab.id === restored.activeTabId) ?? restored.tabs[0];
         set((state) => ({
           selectedWorktree: worktree,
           currentTerminalTabs: restored.tabs,
@@ -1271,55 +1254,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return tab.id;
   },
 
-  openBrowserTab: (url: string) => {
-    const state = get();
-    const worktree = state.selectedWorktree;
-    if (!worktree || !isLocalWebUrl(url)) return;
-    const normalizedUrl = new URL(url).href;
-
-    const existing = state.currentTerminalTabs.find((tab) => tab.browserUrl === normalizedUrl);
-    if (existing) {
-      get().setActiveTerminalTab(existing.id);
-      return;
-    }
-
-    const tab: TerminalPane = {
-      id: `browser-${crypto.randomUUID()}`,
-      terminals: [],
-      activeTerminalId: null,
-      browserUrl: normalizedUrl,
-    };
-    const tabs = [...state.currentTerminalTabs, tab];
-
-    set((current) => ({
-      currentTerminalTabs: tabs,
-      currentActiveTerminalTabId: tab.id,
-      currentTerminals: [],
-      currentActiveTerminalId: null,
-      terminalsByWorktree: {
-        ...current.terminalsByWorktree,
-        [worktree.path]: { tabs, activeTabId: tab.id },
-      },
-    }));
-  },
-
-  updateBrowserTabUrl: (tabId: string, url: string) => {
-    const state = get();
-    const worktree = state.selectedWorktree;
-    if (!worktree || !isLocalWebUrl(url)) return;
-
-    const tabs = state.currentTerminalTabs.map((tab) =>
-      tab.id === tabId ? { ...tab, browserUrl: new URL(url).href } : tab,
-    );
-    set((current) => ({
-      currentTerminalTabs: tabs,
-      terminalsByWorktree: {
-        ...current.terminalsByWorktree,
-        [worktree.path]: { tabs, activeTabId: current.currentActiveTerminalTabId },
-      },
-    }));
-  },
-
   closeTerminalTab: (tabId: string) => {
     const state = get();
     const worktree = state.selectedWorktree;
@@ -1361,7 +1295,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const activeTab = state.currentTerminalTabs.find(
       (tab) => tab.id === state.currentActiveTerminalTabId,
     );
-    if (!activeTab || activeTab.browserUrl) {
+    if (!activeTab) {
       return get().createTerminalTab();
     }
     const activeTabId = activeTab.id;

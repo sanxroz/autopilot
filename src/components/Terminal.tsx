@@ -12,8 +12,6 @@ import "@xterm/xterm/css/xterm.css";
 import { useTheme } from "../hooks/useTheme";
 import { getTheme, subscribeTheme } from "../theme";
 import { observeResize } from "../utils/sharedResizeObserver";
-import { useAppStore } from "../store";
-import { isLocalWebUrl } from "../lib/local-web-url";
 import {
   isPanelResizing,
   PANEL_RESIZE_END_EVENT,
@@ -107,10 +105,6 @@ function hexToXtermRgb(hex: string): string {
 }
 
 function openTerminalLink(_event: MouseEvent, uri: string) {
-  if (isLocalWebUrl(uri)) {
-    useAppStore.getState().openBrowserTab(uri);
-    return;
-  }
   void openUrl(uri).catch((error) => {
     console.error(`Failed to open terminal link "${uri}":`, error);
   });
