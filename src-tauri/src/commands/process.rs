@@ -89,6 +89,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn status_scan_stays_fast_with_hundreds_of_worktrees() {
+        let paths: Vec<String> = (0..300).map(|i| format!("/nonexistent/worktrees/wt-{i}")).collect();
+        let started = std::time::Instant::now();
+        for _ in 0..5 {
+            let statuses = get_all_worktrees_process_status(paths.clone());
+            assert_eq!(statuses.len(), paths.len());
+            assert!(statuses.values().all(|status| *status == ProcessStatus::None));
+        }
+        let per_scan = started.elapsed() / 5;
+        println!("process scan, 300 worktrees: {per_scan:?} per scan");
+        assert!(per_scan < std::time::Duration::from_millis(500));
+    }
+
+    #[test]
     fn detects_codex_as_ai_agent_process() {
         let cmd = vec!["/Users/santiago/.local/bin/codex".to_string()];
 
@@ -224,6 +238,14 @@ pub fn get_all_worktrees_process_status(
             Some(cwd) => cwd,
             None => continue,
         };
+
+        // Most processes live outside every worktree; skip the command-string work for them.
+        if !worktree_paths_parsed
+            .iter()
+            .any(|(_, path)| process_cwd.starts_with(path))
+        {
+            continue;
+        }
 
         let cmd: Vec<String> = process
             .cmd()

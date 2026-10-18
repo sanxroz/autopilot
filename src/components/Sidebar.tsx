@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "../store";
-import type { WorktreeInfo } from "../types";
+import type { Repository, WorktreeInfo } from "../types";
 import { NewWorktreeDialog } from "./NewWorktreeDialog";
 import { WorktreeItem } from "./WorktreeItem";
 import { StackGroup } from "./StackGroup";
@@ -99,6 +99,20 @@ export function Sidebar({
   onToggleCaptainTerminal,
 }: SidebarProps) {
   const shouldReduceMotion = useReducedMotion();
+  // Rows are memoized, so they get stable callbacks that read the latest handlers when clicked.
+  const worktreeActionsRef = useRef<{
+    repositories: Repository[];
+    select: (worktree: WorktreeInfo) => Promise<void>;
+    remove: (repoPath: string, worktreeName: string) => void;
+  } | null>(null);
+  const selectWorktreeByPath = useCallback((path: string) => {
+    const actions = worktreeActionsRef.current;
+    const worktree = actions?.repositories.flatMap((repo) => repo.worktrees).find((wt) => wt.path === path);
+    if (actions && worktree) void actions.select(worktree);
+  }, []);
+  const requestDeleteWorktree = useCallback((repoPath: string, worktreeName: string) => {
+    worktreeActionsRef.current?.remove(repoPath, worktreeName);
+  }, []);
   // Pick only what the sidebar renders; subscribing to the whole store re-rendered it on every unrelated write.
   const {
     repositories,
@@ -582,6 +596,9 @@ export function Sidebar({
   ) => {
     setPendingWorkspaceDeletion({ repoPath, worktreeName });
   };
+
+  worktreeActionsRef.current = { repositories, select: handleWorktreeClick, remove: handleDeleteWorktree };
+  const nowMinute = Math.floor(Date.now() / 60000);
 
   const closeDeleteWorkspaceDialog = () => {
     setPendingWorkspaceDeletion(null);
@@ -1285,6 +1302,9 @@ export function Sidebar({
                              )}
                              <WorktreeItem
                                name={wt.name}
+                               path={wt.path}
+                               repoPath={group.repoPath}
+                               nowMinute={nowMinute}
                                branch={wt.branch}
                                lastModified={wt.last_modified}
                                diffStats={wt.diff_stats}
@@ -1293,8 +1313,8 @@ export function Sidebar({
                                agentRunState={agentRunState}
                                isSettingUp={isWorktreeSettingUp(worktreeSetupByRepoPath, group.repoPath, wt.name)}
                                isActive={!captainTerminalRepoPath && selectedWorktree?.path === wt.path}
-                               onSelect={() => handleWorktreeClick(wt)}
-                               onDelete={() => handleDeleteWorktree(group.repoPath, wt.name)}
+                               onSelect={selectWorktreeByPath}
+                               onDelete={requestDeleteWorktree}
                                className={cn(
                                  draggedWorktree ? "cursor-grabbing" : "cursor-pointer",
                                  isDragSource && "opacity-60"

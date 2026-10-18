@@ -29,6 +29,7 @@ import {
   subscribeToGitFileDiffInvalidation,
 } from "../lib/git-file-diff-cache";
 import type { FileDiffData } from "../types";
+import { DiffProviders } from "./DiffProviders";
 
 function getFileName(path: string): string {
   const parts = path.split("/");
@@ -41,6 +42,14 @@ function isMarkdownFile(filePath: string): boolean {
 }
 
 export function GitFileDiffOverlay() {
+  return (
+    <DiffProviders>
+      <GitFileDiffOverlayContent />
+    </DiffProviders>
+  );
+}
+
+function GitFileDiffOverlayContent() {
   const themeMode = useThemeMode();
   const preview = useAppStore((state) => state.gitFileDiffPreview);
   const setPreview = useAppStore((state) => state.setGitFileDiffPreview);

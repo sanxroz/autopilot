@@ -67,6 +67,10 @@ function getStatusInfo(prStatus: PRStatus | null): StatusInfo {
 
 interface WorktreeItemProps {
   name: string;
+  path: string;
+  repoPath: string;
+  /** Minute bucket of the render time; lets the memoized row refresh its relative time. */
+  nowMinute: number;
   branch: string | null;
   lastModified: string | null;
   diffStats: DiffStats | undefined;
@@ -75,8 +79,8 @@ interface WorktreeItemProps {
   agentRunState?: AgentRunState;
   isSettingUp?: boolean;
   isActive: boolean;
-  onSelect: () => void;
-  onDelete: () => void;
+  onSelect: (path: string) => void;
+  onDelete: (repoPath: string, name: string) => void;
   className?: string;
 }
 
@@ -139,6 +143,8 @@ function ReviewerAvatars({ reviewers }: { readonly reviewers: readonly string[] 
 
 export const WorktreeItem = memo(function WorktreeItem({
   name,
+  path,
+  repoPath,
   branch,
   lastModified,
   diffStats,
@@ -164,12 +170,12 @@ export const WorktreeItem = memo(function WorktreeItem({
 
   return (
     <div
-      onClick={onSelect}
+      onClick={() => onSelect(path)}
       onKeyDown={(e) => {
         if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
-          onSelect();
+          onSelect(path);
         }
       }}
       role="button"
@@ -225,7 +231,7 @@ export const WorktreeItem = memo(function WorktreeItem({
               type="button"
               onClick={(event) => {
                 event.stopPropagation();
-                onDelete();
+                onDelete(repoPath, name);
               }}
               className={cn(
                 "invisible absolute -inset-y-1 right-0 z-10 flex h-7 w-7 items-center justify-center rounded-md text-tertiary transition-colors hover:bg-semantic-error/10 hover:text-semantic-error focus-visible:visible focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-1 focus-visible:text-semantic-error group-hover:visible group-focus-within:visible",
