@@ -301,6 +301,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
   const terminalDimensionsRef = useRef<TerminalDimensions | null>(null);
   const themeFrameRef = useRef<number | null>(null);
   const resizeFrameRef = useRef<number | null>(null);
+  const resizeQueueRef = useRef<Promise<void>>(Promise.resolve());
   const theme = useTheme();
 
   useImperativeHandle(ref, () => ({
@@ -334,7 +335,14 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     }
   }, []);
 
-  const resizeTerminal = useCallback(async () => {
+  // Serializes backend resizes so a redraw can't interleave with a normal resize.
+  const enqueueResize = useCallback((operation: () => Promise<void>) => {
+    const queued = resizeQueueRef.current.then(operation);
+    resizeQueueRef.current = queued.catch(() => {});
+    return queued;
+  }, []);
+
+  const resizeTerminal = useCallback(() => enqueueResize(async () => {
     if (!fitAddonRef.current) return;
     const dimensions = fitAddonRef.current.proposeDimensions();
     if (!dimensions) return;
@@ -352,7 +360,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     } catch (error) {
       console.error("Terminal resize failed:", error);
     }
-  }, [terminalId]);
+  }), [enqueueResize, terminalId]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -413,10 +421,21 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       replayLoaded = true;
       if (needsAppRedraw) {
         // A size change makes the running app (Claude Code, opencode, ...) repaint its whole UI.
-        const { cols, rows } = term;
-        void invoke("resize_terminal", { terminalId, cols: Math.max(1, cols - 1), rows })
-          .then(() => invoke("resize_terminal", { terminalId, cols, rows }))
-          .catch(console.error);
+        void enqueueResize(async () => {
+          const { cols, rows } = fitAddonRef.current?.proposeDimensions() ?? term;
+          try {
+            await invoke("resize_terminal", { terminalId, cols: Math.max(1, cols - 1), rows });
+          } catch (error) {
+            console.error(error);
+          }
+          try {
+            await invoke("resize_terminal", { terminalId, cols, rows });
+            terminalDimensionsRef.current = { cols, rows };
+          } catch (error) {
+            console.error(error);
+            terminalDimensionsRef.current = null;
+          }
+        });
       }
       for (const output of replayEvents) {
         appendOutput(output);
@@ -546,7 +565,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       searchAddonRef.current = null;
       terminalDimensionsRef.current = null;
     };
-  }, [terminalId, resizeTerminal, fit]);
+  }, [terminalId, resizeTerminal, enqueueResize, fit]);
 
   useEffect(() => {
     if (isActive && terminalRef.current) {
