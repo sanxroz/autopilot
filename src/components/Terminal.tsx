@@ -372,6 +372,8 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     const replayEvents: TerminalOutput[] = [];
     const outputQueue: TerminalOutput[] = [];
     let isWritingOutput = false;
+    // The replay buffer dropped output we never saw, so the tail alone can't repaint the screen.
+    let needsAppRedraw = false;
 
     const writeOutput = (data: string, sequence: number, onWritten?: () => void) => {
       entry.writtenSequence = Math.max(entry.writtenSequence, sequence);
@@ -409,6 +411,13 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
 
     const finishReplay = () => {
       replayLoaded = true;
+      if (needsAppRedraw) {
+        // A size change makes the running app (Claude Code, opencode, ...) repaint its whole UI.
+        const { cols, rows } = term;
+        void invoke("resize_terminal", { terminalId, cols: Math.max(1, cols - 1), rows })
+          .then(() => invoke("resize_terminal", { terminalId, cols, rows }))
+          .catch(console.error);
+      }
       for (const output of replayEvents) {
         appendOutput(output);
       }
@@ -463,7 +472,8 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
           if (snapshot.truncated) {
             terminalStateCache.delete(terminalId);
             entry.restoreState = undefined;
-            if (!restoreState) term.reset();
+            needsAppRedraw = true;
+            term.reset();
             snapshot = await invoke<TerminalOutputSnapshot>(
               "get_terminal_output",
               { terminalId, afterSequence: null },

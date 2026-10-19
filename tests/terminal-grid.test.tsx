@@ -70,6 +70,7 @@ const theme = (await import("../src/theme")).getTheme();
 const tauriCore = await import("@tauri-apps/api/core");
 mock.module("../src/hooks/useTheme", () => ({ useTheme: () => theme }));
 mock.module("../src/components/TerminalAnimation", () => ({ TerminalAnimation: () => null }));
+const resizes: { cols: number; rows: number }[] = [];
 const listeners = new Map<string, Set<(event?: unknown) => void>>();
 const emitClosed = (id: string) => listeners.get(`terminal-closed-${id}`)?.forEach((fn) => fn());
 mock.module("@tauri-apps/api/event", () => ({
@@ -81,7 +82,8 @@ mock.module("@tauri-apps/api/event", () => ({
 }));
 mock.module("@tauri-apps/api/core", () => ({
   ...tauriCore,
-  invoke: async (command: string, args: { terminalId: string; afterSequence?: number | null }) => {
+  invoke: async (command: string, args: { terminalId: string; afterSequence?: number | null; cols?: number; rows?: number }) => {
+    if (command === "resize_terminal") resizes.push({ cols: args.cols!, rows: args.rows! });
     if (command === "attach_terminal_output") { pty(args.terminalId).attached = true; return 1; }
     if (command === "detach_terminal_output") { pty(args.terminalId).attached = false; return; }
     // Like the backend: the PTY dies and terminal-closed is emitted shortly after.
@@ -253,8 +255,11 @@ test("a truncated replay redraws the parked terminal from what the backend still
   agentWrites("terminal-one", "lost|");
   agentWrites("terminal-one", "kept|");
   pty("terminal-one").dropped = 2;
+  resizes.length = 0;
 
   await showTab("one");
   expect(visible()).toEqual([original]);
   expect(original.screen).toBe("kept|");
+  // The tail can't repaint a TUI, so the app is nudged to redraw: one column narrower, then back.
+  expect(resizes.slice(-2)).toEqual([{ cols: 79, rows: 24 }, { cols: 80, rows: 24 }]);
 });
