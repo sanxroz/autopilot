@@ -166,7 +166,7 @@ pub fn account_env(dir: &str) -> Vec<(&'static str, String)> {
     if resolved.explicit {
         env.push(("GH_TOKEN", resolved.gh_token().to_string()));
     }
-    if let Some(id) = resolved.identity {
+    if let Some(id) = resolved.identity.filter(|_| resolved.explicit) {
         env.push(("GIT_AUTHOR_NAME", id.name.clone()));
         env.push(("GIT_COMMITTER_NAME", id.name));
         env.push(("GIT_AUTHOR_EMAIL", id.email.clone()));
