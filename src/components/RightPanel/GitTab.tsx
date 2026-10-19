@@ -61,6 +61,7 @@ function getFileDirectory(path: string): string {
   return parts.slice(0, -1).join("/");
 }
 
+const GIT_STATUS_CACHE_LIMIT = 20;
 const gitStatusCache = new Map<string, GitStatus>();
 
 export function GitTab({ worktreePath }: GitTabProps) {
@@ -112,7 +113,11 @@ export function GitTab({ worktreePath }: GitTabProps) {
       ) {
         return;
       }
+      gitStatusCache.delete(requestedWorktreePath);
       gitStatusCache.set(requestedWorktreePath, status);
+      if (gitStatusCache.size > GIT_STATUS_CACHE_LIMIT) {
+        gitStatusCache.delete(gitStatusCache.keys().next().value!);
+      }
       setGitStatus(status);
     } catch (e) {
       if (
