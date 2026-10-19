@@ -183,6 +183,43 @@ let pendingLegacySidebarNotesMarkdown: string | null = null;
 let restorableTerminalSessions: Record<string, SavedWorktreeTerminals> = {};
 let terminalSessionsSaveTimer: ReturnType<typeof setTimeout> | undefined;
 const terminalRestoresByWorktreePath = new Map<string, Promise<Awaited<ReturnType<typeof restoreWorktreeTerminals>>>>();
+
+const PR_DATA_CACHE_TTL_MS = 5 * 60 * 1000;
+const PR_DATA_CACHE_MAX_ENTRIES = 30;
+
+// Per-worktree runtime state is keyed by path, so it must be dropped when the worktree goes away or it grows forever.
+function withoutWorktreeRuntimeState(state: AppStore, worktreePaths: readonly string[]): Partial<AppStore> {
+  const paths = new Set(worktreePaths);
+  const terminalIds = new Set(
+    worktreePaths.flatMap((path) =>
+      (state.terminalsByWorktree[path]?.tabs ?? []).flatMap((tab) => tab.terminals.map((terminal) => terminal.id)),
+    ),
+  );
+  const omitPaths = <T,>(record: Record<string, T>): Record<string, T> => {
+    const next: Record<string, T> = {};
+    for (const [path, value] of Object.entries(record)) {
+      if (!paths.has(path)) next[path] = value;
+    }
+    return next;
+  };
+  const selectedRemoved = state.selectedWorktree !== null && paths.has(state.selectedWorktree.path);
+  return {
+    ...(selectedRemoved && {
+      selectedWorktree: null,
+      currentTerminalTabs: [],
+      currentActiveTerminalTabId: null,
+      currentTerminals: [],
+      currentActiveTerminalId: null,
+    }),
+    terminalsByWorktree: omitPaths(state.terminalsByWorktree),
+    terminalAgentById: Object.fromEntries(
+      Object.entries(state.terminalAgentById).filter(([id]) => !terminalIds.has(id)),
+    ),
+    prStatusByWorktreePath: omitPaths(state.prStatusByWorktreePath),
+    processStatusByPath: omitPaths(state.processStatusByPath),
+    agentRunByWorktreePath: omitPaths(state.agentRunByWorktreePath),
+  };
+}
 const AGENT_SESSION_ID_PATTERN = /^[\w-]+$/;
 const AGENT_RESUME_COMMANDS: Record<AIAgent, (sessionId?: string) => string> = {
   claude: (sessionId) => (sessionId ? `claude --resume ${sessionId}` : 'claude --continue'),
@@ -784,6 +821,15 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   removeRepository: (path: string) => {
     sidebarGroupsRevision += 1;
+    const removedWorktreePaths = get()
+      .repositories.find((r) => r.info.path === path)
+      ?.worktrees.map((wt) => wt.path) ?? [];
+    for (const worktreePath of removedWorktreePaths) {
+      delete restorableTerminalSessions[worktreePath];
+      void invoke('close_terminals_for_worktree', { worktreePath }).catch((e) =>
+        console.error('Failed to close terminals for removed repository:', e),
+      );
+    }
     set((state) => {
       const newRepos = state.repositories.filter((r) => r.info.path !== path);
       const { [path]: _removedOrder, ...remainingWorktreeOrders } = state.worktreeOrdersByRepo;
@@ -793,6 +839,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       saveSidebarGroupsByRepo(remainingSidebarGroups);
       saveRepoAvatarCacheEntry(path, null);
       return {
+        ...withoutWorktreeRuntimeState(state, removedWorktreePaths),
         repositories: newRepos,
         worktreeOrdersByRepo: remainingWorktreeOrders,
         sidebarGroupsByRepo: remainingSidebarGroups,
@@ -1130,8 +1177,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
         terminalRestoresByWorktreePath.set(worktree.path, restore);
       }
       const restored = await restore;
-      if (get().deletingWorktreePaths.has(worktree.path)) {
-        // The worktree was deleted mid-restore: its spawns finished after the delete closed terminals.
+      const worktreeStillExists = get().repositories.some((repository) =>
+        repository.worktrees.some((candidate) => candidate.path === worktree.path)
+      );
+      if (!worktreeStillExists || get().deletingWorktreePaths.has(worktree.path)) {
+        // The worktree (or its repository) was removed mid-restore: its spawns finished after the close.
         await invoke('close_terminals_for_worktree', { worktreePath: worktree.path }).catch((e) =>
           console.error('Failed to close terminals restored for deleted worktree:', e),
         );
@@ -1596,7 +1646,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       set((s) => {
         const nextDeleting = new Set(s.deletingWorktreePaths);
         nextDeleting.delete(worktree.path);
-        return { deletingWorktreePaths: nextDeleting };
+        return { ...withoutWorktreeRuntimeState(s, [worktree.path]), deletingWorktreePaths: nextDeleting };
       });
 
       toast.success(`Worktree "${worktreeName}" deleted`);
@@ -1686,14 +1736,20 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setPRDataCache: (repoPath: string, prNumber: number, data: { checksResult?: PRChecksResult | null; prDetails?: PRDetailedInfo | null }) => {
     const cacheKey = `${repoPath}:${prNumber}`;
     set((state) => {
+      const now = Date.now();
       const existing = state.prDataCache[cacheKey] || { checksResult: null, prDetails: null, lastUpdated: 0 };
+      // Entries are only checked for staleness on read, so evict expired and excess ones on write.
+      const fresh = Object.entries(state.prDataCache)
+        .filter(([key, entry]) => key !== cacheKey && now - entry.lastUpdated <= PR_DATA_CACHE_TTL_MS)
+        .sort(([, a], [, b]) => b.lastUpdated - a.lastUpdated)
+        .slice(0, PR_DATA_CACHE_MAX_ENTRIES - 1);
       return {
         prDataCache: {
-          ...state.prDataCache,
+          ...Object.fromEntries(fresh),
           [cacheKey]: {
             checksResult: data.checksResult !== undefined ? data.checksResult : existing.checksResult,
             prDetails: data.prDetails !== undefined ? data.prDetails : existing.prDetails,
-            lastUpdated: Date.now(),
+            lastUpdated: now,
           },
         },
       };
@@ -1705,8 +1761,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const cached = get().prDataCache[cacheKey];
     if (!cached) return null;
     
-    const CACHE_TTL_MS = 5 * 60 * 1000;
-    if (Date.now() - cached.lastUpdated > CACHE_TTL_MS) return null;
+    if (Date.now() - cached.lastUpdated > PR_DATA_CACHE_TTL_MS) return null;
     
     return cached;
   },
@@ -1769,13 +1824,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
       });
 
       set((current) => {
+        // Worktrees removed while the scan was in flight must not be written back.
+        const livePaths = new Set(current.repositories.flatMap((repo) => repo.worktrees.map((wt) => wt.path)));
+        const polledPaths = worktreePaths.filter((path) => livePaths.has(path));
         const nextProcessStatus: Record<string, ProcessStatus> = {};
-        for (const path of worktreePaths) {
+        for (const path of polledPaths) {
           nextProcessStatus[path] = statuses[path] ?? 'none';
         }
 
         const nextAgentRun: Record<string, AgentRunState | undefined> = {};
-        for (const path of worktreePaths) {
+        for (const path of polledPaths) {
           const reconciled = reconcileAgentRunState(
             path,
             nextProcessStatus[path],

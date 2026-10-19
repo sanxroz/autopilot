@@ -29,6 +29,7 @@ import {
   subscribeToGitFileDiffInvalidation,
 } from "../lib/git-file-diff-cache";
 import type { FileDiffData } from "../types";
+import { DiffProviders } from "./DiffProviders";
 
 function getFileName(path: string): string {
   const parts = path.split("/");
@@ -307,6 +308,7 @@ export function GitFileDiffOverlay() {
   if (!preview) return null;
 
   return (
+    <DiffProviders>
     <div
       className={cn(
         "absolute inset-0 z-20 flex flex-col bg-primary diff-overlay",
@@ -451,5 +453,6 @@ export function GitFileDiffOverlay() {
 
       </div>
     </div>
+    </DiffProviders>
   );
 }
