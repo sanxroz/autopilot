@@ -132,6 +132,8 @@ interface PooledTerminal {
   dimensions: TerminalDimensions | null;
   mounted: boolean;
   closed: boolean;
+  /** Serializes backend resizes for this session across every mount that shares the entry. */
+  resizeQueue: Promise<void>;
   readonly unlistenClosed: Promise<() => void>;
 }
 
@@ -181,6 +183,7 @@ function createPooledTerminal(terminalId: string): PooledTerminal {
     dimensions: null,
     mounted: false,
     closed: false,
+    resizeQueue: Promise.resolve(),
     unlistenClosed: listen<void>(`terminal-closed-${terminalId}`, () => {
       entry.closed = true;
       terminalStateCache.delete(terminalId);
@@ -301,7 +304,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
   const terminalDimensionsRef = useRef<TerminalDimensions | null>(null);
   const themeFrameRef = useRef<number | null>(null);
   const resizeFrameRef = useRef<number | null>(null);
-  const resizeQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pooledEntryRef = useRef<PooledTerminal | null>(null);
   const theme = useTheme();
 
   useImperativeHandle(ref, () => ({
@@ -337,8 +340,10 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
 
   // Serializes backend resizes so a redraw can't interleave with a normal resize.
   const enqueueResize = useCallback((operation: () => Promise<void>) => {
-    const queued = resizeQueueRef.current.then(operation);
-    resizeQueueRef.current = queued.catch(() => {});
+    const entry = pooledEntryRef.current;
+    if (!entry) return operation();
+    const queued = entry.resizeQueue.then(operation);
+    entry.resizeQueue = queued.catch(() => {});
     return queued;
   }, []);
 
@@ -368,6 +373,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     const entry = acquirePooledTerminal(terminalId, containerRef.current);
     const { term } = entry;
     terminalRef.current = term;
+    pooledEntryRef.current = entry;
     fitAddonRef.current = entry.fitAddon;
     searchAddonRef.current = entry.searchAddon;
     terminalDimensionsRef.current = entry.dimensions;
