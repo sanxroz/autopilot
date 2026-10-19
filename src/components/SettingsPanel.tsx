@@ -419,7 +419,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
           <div className="flex-1 overflow-y-auto px-6 py-5">
             {activeSection === "account" ? (
-              <AccountSection githubSettings={githubSettings} />
+              <AccountSection githubSettings={githubSettings} repositories={repositories} />
             ) : null}
             {activeSection === "appearance" ? (
               <AppearanceSection />
@@ -754,12 +754,15 @@ function KeyboardShortcutsSection() {
 
 function AccountSection({
   githubSettings,
+  repositories,
 }: {
   githubSettings: { ghCliAvailable: boolean; ghAuthUser: string | null };
+  repositories: readonly Repository[];
 }) {
   const user = githubSettings.ghCliAvailable ? githubSettings.ghAuthUser : null;
 
   return (
+    <div className="space-y-6">
     <SettingsGroup title="GitHub">
       {user ? (
         <SettingsRow>
@@ -809,6 +812,154 @@ function AccountSection({
           ) : null}
         </SettingsRow>
       )}
+    </SettingsGroup>
+    {user ? <GithubAccountsGroup repositories={repositories} /> : null}
+    </div>
+  );
+}
+
+interface GithubAccountsConfig {
+  default: string | null;
+  owners: Record<string, string>;
+  identities: Record<string, { name: string; email: string }>;
+}
+
+const NO_ACCOUNT = "";
+const inputClass =
+  "h-8 min-w-0 flex-1 rounded-md border border-border bg-secondary px-2.5 text-[13px] text-primary outline-none placeholder:text-tertiary focus:ring-2 focus:ring-accent-primary";
+
+function GithubAccountsGroup({ repositories }: { repositories: readonly Repository[] }) {
+  const [accounts, setAccounts] = useState<string[]>([]);
+  const [config, setConfig] = useState<GithubAccountsConfig | null>(null);
+  const [owners, setOwners] = useState<(string | null)[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    void Promise.all([
+      invoke<string[]>("list_gh_accounts"),
+      invoke<GithubAccountsConfig>("get_github_accounts"),
+    ])
+      .then(([logins, saved]) => {
+        setAccounts(logins);
+        setConfig(saved);
+      })
+      .catch((e) => setError(String(e)));
+  }, []);
+
+  useEffect(() => {
+    void invoke<(string | null)[]>("get_repo_owners", {
+      repoPaths: repositories.map((repository) => repository.info.path),
+    })
+      .then(setOwners)
+      .catch((e) => setError(String(e)));
+  }, [repositories]);
+
+  if (error) return <p className="text-xs text-semantic-error">{error}</p>;
+  if (!config || accounts.length === 0) return null;
+
+  const save = (next: GithubAccountsConfig) => {
+    setConfig(next);
+    invoke("set_github_accounts", { config: next }).catch((e) => setError(String(e)));
+  };
+  const accountOptions = accounts.map((login) => ({ value: login, label: `@${login}` }));
+  const setOwnerAccount = (owner: string, account: string) => {
+    const next = { ...config.owners };
+    if (account) next[owner] = account;
+    else delete next[owner];
+    save({ ...config, owners: next });
+  };
+  const setIdentity = (login: string, name: string, email: string) => {
+    const identities = { ...config.identities };
+    if (name && email) identities[login] = { name, email };
+    else delete identities[login];
+    save({ ...config, identities });
+  };
+  const defaultOption = {
+    value: NO_ACCOUNT,
+    label: config.default ? `@${config.default}` : "gh active account",
+    detail: "default",
+  };
+
+  return (
+    <SettingsGroup
+      title="Project accounts"
+      description="Choose which account gh and git use for each project. A choice applies to every project from the same owner."
+    >
+      <SettingsRow>
+        <SettingsLabel title="Default account" description="Used by projects without their own account." />
+        <SettingsSelect
+          label="Default account"
+          value={config.default ?? NO_ACCOUNT}
+          options={[{ value: NO_ACCOUNT, label: "gh active account" }, ...accountOptions]}
+          onChange={(value) => save({ ...config, default: value || null })}
+        />
+      </SettingsRow>
+      {repositories.map((repository, index) => {
+        const owner = owners[index];
+        return (
+          <SettingsRow key={repository.info.path}>
+            <div className="flex min-w-0 items-center gap-3">
+              {owner ? (
+                <img
+                  src={`https://github.com/${owner}.png?size=48`}
+                  alt=""
+                  className="h-6 w-6 shrink-0 rounded-full bg-secondary"
+                />
+              ) : (
+                <div aria-hidden="true" className="h-6 w-6 shrink-0 rounded-full bg-secondary" />
+              )}
+              <SettingsLabel
+                title={repository.info.name}
+                description={owner ?? "No GitHub remote"}
+              />
+            </div>
+            <SettingsSelect
+              label={`Account for ${repository.info.name}`}
+              disabled={!owner}
+              value={(owner && config.owners[owner]) || NO_ACCOUNT}
+              options={[defaultOption, ...accountOptions.filter((option) => option.value !== config.default)]}
+              onChange={(value) => owner && setOwnerAccount(owner, value)}
+            />
+          </SettingsRow>
+        );
+      })}
+      <details className="group py-2.5">
+        <summary className="flex h-8 cursor-pointer list-none items-center gap-1.5 rounded-md text-xs text-secondary transition-colors hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent-primary [&::-webkit-details-marker]:hidden">
+          <ChevronDown className="h-3.5 w-3.5 -rotate-90 transition-transform duration-150 ease-out group-open:rotate-0 motion-reduce:transition-none" />
+          Commit author in terminals (optional)
+        </summary>
+        <div className="space-y-2 pt-1">
+          {accounts.map((login) => (
+            <div
+              key={login}
+              className="flex items-center gap-2"
+              onBlur={(event) => {
+                const [name, email] = event.currentTarget.querySelectorAll("input");
+                setIdentity(login, name.value.trim(), email.value.trim());
+              }}
+            >
+              <span className="w-36 shrink-0 truncate text-[13px] text-primary">@{login}</span>
+              <input
+                defaultValue={config.identities[login]?.name ?? ""}
+                aria-label={`Git name for ${login}`}
+                placeholder="Name"
+                autoComplete="off"
+                className={inputClass}
+              />
+              <input
+                defaultValue={config.identities[login]?.email ?? ""}
+                aria-label={`Git email for ${login}`}
+                placeholder="Email"
+                autoComplete="off"
+                className={inputClass}
+              />
+            </div>
+          ))}
+          <p className="text-xs text-tertiary">
+            Needs both fields. Terminals get a project's GH_TOKEN only when the project has its own account, not the default.
+          </p>
+        </div>
+      </details>
     </SettingsGroup>
   );
 }

@@ -1,4 +1,5 @@
 use super::cli_tools::find_cli_tool;
+use super::github_accounts::GhAccountDir;
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 
@@ -249,7 +250,7 @@ pub async fn get_pr_checks(repo_path: String, pr_number: u64) -> Result<PRChecks
             "--json",
             "bucket,completedAt,description,event,link,name,startedAt,state,workflow",
         ])
-        .current_dir(&repo_path)
+        .gh_dir(&repo_path)
         .output()
         .map_err(|error| format!("Failed to run gh command: {error}"))?;
 
@@ -328,7 +329,7 @@ pub async fn get_pr_check_detail(
             "--json",
             "jobs",
         ])
-        .current_dir(&repo_path)
+        .gh_dir(&repo_path)
         .output()
         .map_err(|error| format!("Failed to run gh command: {error}"))?;
 
@@ -370,7 +371,7 @@ pub async fn get_pr_check_detail(
     let failed_log_excerpt = if has_failed_step {
         let log_output = Command::new(&gh_path)
             .args(["run", "view", "--job", &job_id.to_string(), "--log-failed"])
-            .current_dir(&repo_path)
+            .gh_dir(&repo_path)
             .output()
             .map_err(|error| format!("Failed to run gh command: {error}"))?;
 

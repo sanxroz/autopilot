@@ -1,4 +1,5 @@
 use super::cli_tools::find_cli_tool;
+use super::github_accounts::GhAccountDir;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -332,7 +333,7 @@ pub async fn get_pr_for_branch(
             "--json",
             PR_JSON_FIELDS,
         ])
-        .current_dir(&repo_path)
+        .gh_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
 
@@ -396,7 +397,7 @@ struct PRStatusCandidate {
     head_oid: Option<String>,
 }
 
-fn parse_github_owner_repo(repo_path: &str) -> Option<(String, String)> {
+pub(crate) fn parse_github_owner_repo(repo_path: &str) -> Option<(String, String)> {
     let output = Command::new("git")
         .args(["remote", "get-url", "origin"])
         .current_dir(repo_path)
@@ -613,7 +614,7 @@ fn run_graphql_query(
 ) -> Result<serde_json::Value, GraphqlFetchError> {
     let output = Command::new(gh_path)
         .args(["api", "graphql", "-f", &format!("query={query}")])
-        .current_dir(repo_path)
+        .gh_dir(repo_path)
         .output()
         .map_err(|error| {
             eprintln!("Failed to execute GraphQL query in {repo_path}: {error}");
@@ -1013,7 +1014,7 @@ fn fetch_prs_rest_fallback(
                 "--json",
                 &format!("{},commits", PR_JSON_FIELDS),
             ])
-            .current_dir(repo_path)
+            .gh_dir(repo_path)
             .output();
 
         match output {
@@ -1089,7 +1090,7 @@ fn fetch_prs_rest_fallback(
                 "--json",
                 &format!("{},commits", PR_JSON_FIELDS),
             ])
-            .current_dir(repo_path)
+            .gh_dir(repo_path)
             .output();
 
         match output {
@@ -1188,7 +1189,7 @@ pub async fn get_all_open_prs_for_repos(
                 "--json",
                 PR_JSON_FIELDS,
             ])
-            .current_dir(&repo.repo_path)
+            .gh_dir(&repo.repo_path)
             .output();
 
         let statuses = match output {
@@ -1235,7 +1236,7 @@ pub async fn get_pr_status(repo_path: String, pr_number: u64) -> Result<PRStatus
 
     let output = Command::new(&gh_path)
         .args(["pr", "view", &pr_ref, "--json", PR_JSON_FIELDS])
-        .current_dir(&repo_path)
+        .gh_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
 
@@ -1303,7 +1304,7 @@ fn get_latest_pr_commit_sha(
             "-q",
             ".commits[-1].oid",
         ])
-        .current_dir(repo_path)
+        .gh_dir(repo_path)
         .output()
         .map_err(|e| format!("Failed to get latest PR commit SHA: {}", e))?;
 
@@ -1344,7 +1345,7 @@ fn run_gh_api_json_post<T: Serialize>(
     let output = Command::new(gh_path)
         .args(["api", endpoint, "--method", "POST", "--input"])
         .arg(&payload_path)
-        .current_dir(repo_path)
+        .gh_dir(repo_path)
         .output();
 
     let _ = fs::remove_file(&payload_path);
@@ -1370,7 +1371,7 @@ pub async fn approve_pr(repo_path: String, pr_number: u64) -> Result<bool, Strin
     let gh_path = find_cli_tool("gh")?;
     let output = Command::new(&gh_path)
         .args(["pr", "review", &pr_number.to_string(), "--approve"])
-        .current_dir(&repo_path)
+        .gh_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
 
@@ -1398,7 +1399,7 @@ pub async fn request_changes_pr(
             "--body",
             &body,
         ])
-        .current_dir(&repo_path)
+        .gh_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
 
@@ -1419,7 +1420,7 @@ pub async fn comment_on_pr(
     let gh_path = find_cli_tool("gh")?;
     let output = Command::new(&gh_path)
         .args(["pr", "comment", &pr_number.to_string(), "--body", &body])
-        .current_dir(&repo_path)
+        .gh_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
 
@@ -1529,7 +1530,7 @@ pub async fn close_pr(repo_path: String, pr_number: u64) -> Result<bool, String>
     let gh_path = find_cli_tool("gh")?;
     let output = Command::new(&gh_path)
         .args(["pr", "close", &pr_number.to_string()])
-        .current_dir(&repo_path)
+        .gh_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
 
@@ -1556,7 +1557,7 @@ pub async fn rerequest_pr_review(
             "--add-reviewer",
             &reviewer,
         ])
-        .current_dir(&repo_path)
+        .gh_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
 
@@ -1583,7 +1584,7 @@ pub async fn remove_pr_reviewer(
             "--remove-reviewer",
             &reviewer,
         ])
-        .current_dir(&repo_path)
+        .gh_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
 
@@ -1672,7 +1673,7 @@ pub async fn get_pr_reviewer_candidates(
             "--jq",
             ".[] | [\"user\", .login, .login, .avatar_url] | @tsv",
         ])
-        .current_dir(&repo_path)
+        .gh_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to list repository collaborators: {}", e))?;
 
@@ -1707,7 +1708,7 @@ pub async fn get_pr_reviewer_candidates(
             "--jq",
             &teams_jq,
         ])
-        .current_dir(&repo_path)
+        .gh_dir(&repo_path)
         .output();
     let mut teams_unavailable = false;
     match teams_output {
@@ -1747,7 +1748,7 @@ pub async fn get_repo_from_remote(repo_path: String) -> Result<Option<String>, S
             "-q",
             ".nameWithOwner",
         ])
-        .current_dir(&repo_path)
+        .gh_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
 
@@ -1870,7 +1871,7 @@ async fn fetch_reviews_rest_api(
             &format!("repos/{{owner}}/{{repo}}/pulls/{}/reviews", pr_number),
             "--paginate",
         ])
-        .current_dir(repo_path)
+        .gh_dir(repo_path)
         .output()
         .map_err(|e| format!("Failed to fetch reviews: {}", e))?;
 
@@ -1909,7 +1910,7 @@ async fn fetch_review_comments_rest_api(
             &format!("repos/{{owner}}/{{repo}}/pulls/{}/comments", pr_number),
             "--paginate",
         ])
-        .current_dir(repo_path)
+        .gh_dir(repo_path)
         .output()
         .map_err(|e| format!("Failed to fetch review comments: {}", e))?;
 
@@ -2032,7 +2033,7 @@ async fn fetch_review_threads_graphql(
 
     let output = Command::new(&gh_path)
         .args(["api", "graphql", "-f", &format!("query={}", query)])
-        .current_dir(repo_path)
+        .gh_dir(repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh graphql: {}", e))?;
 
@@ -2095,7 +2096,7 @@ pub async fn get_pr_details(repo_path: String, pr_number: u64) -> Result<PRDetai
             "--json",
             "mergeStateStatus,mergeable,body,comments,reviews,reviewDecision",
         ])
-        .current_dir(&repo_path)
+        .gh_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
 
@@ -2245,7 +2246,7 @@ pub async fn get_pr_files(repo_path: String, pr_number: u64) -> Result<Vec<PRFil
 
     let output = Command::new(&gh_path)
         .args(["pr", "view", &pr_ref, "--json", "files"])
-        .current_dir(&repo_path)
+        .gh_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
 
@@ -2312,7 +2313,7 @@ pub async fn get_pr_commits(repo_path: String, pr_number: u64) -> Result<Vec<PRC
 
     let output = Command::new(&gh_path)
         .args(["pr", "view", &pr_ref, "--json", "commits"])
-        .current_dir(&repo_path)
+        .gh_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
 
@@ -2359,7 +2360,7 @@ pub async fn get_pr_file_diff(repo_path: String, pr_number: u64) -> Result<Strin
 
     let output = Command::new(&gh_path)
         .args(["pr", "diff", &pr_ref])
-        .current_dir(&repo_path)
+        .gh_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
 
@@ -2404,7 +2405,7 @@ pub async fn create_pr(
     let gh_path = find_cli_tool("gh")?;
     let output = Command::new(&gh_path)
         .args(&args)
-        .current_dir(&repo_path)
+        .gh_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
 
@@ -2505,7 +2506,7 @@ fn get_default_merge_strategy(gh_path: &str, repo_path: &str) -> Result<MergeStr
             "--json",
             "mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
         ])
-        .current_dir(repo_path)
+        .gh_dir(repo_path)
         .output()
         .map_err(|e| format!("Failed to query repo settings: {}", e))?;
 
@@ -2543,7 +2544,7 @@ pub async fn merge_pr(
 
     let output = Command::new(&gh_path)
         .args(["pr", "merge", &pr_number.to_string(), strategy.as_flag()])
-        .current_dir(&repo_path)
+        .gh_dir(&repo_path)
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
 
@@ -2576,6 +2577,7 @@ pub async fn get_assigned_issues() -> Result<Vec<GithubIssue>, String> {
             "--json",
             "number,title,url,state,repository,createdAt,updatedAt,author,labels",
         ])
+        .gh_default()
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
 
@@ -2617,6 +2619,7 @@ pub async fn get_notifications() -> Result<Vec<GithubNotification>, String> {
     let gh_path = find_cli_tool("gh")?;
     let output = Command::new(&gh_path)
         .args(["api", "notifications"])
+        .gh_default()
         .output()
         .map_err(|e| format!("Failed to run gh command: {}", e))?;
 
