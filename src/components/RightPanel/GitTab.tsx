@@ -61,6 +61,9 @@ function getFileDirectory(path: string): string {
   return parts.slice(0, -1).join("/");
 }
 
+const GIT_STATUS_CACHE_LIMIT = 20;
+const gitStatusCache = new Map<string, GitStatus>();
+
 export function GitTab({ worktreePath }: GitTabProps) {
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -109,6 +112,11 @@ export function GitTab({ worktreePath }: GitTabProps) {
         latestWorktreePathRef.current !== requestedWorktreePath
       ) {
         return;
+      }
+      gitStatusCache.delete(requestedWorktreePath);
+      gitStatusCache.set(requestedWorktreePath, status);
+      if (gitStatusCache.size > GIT_STATUS_CACHE_LIMIT) {
+        gitStatusCache.delete(gitStatusCache.keys().next().value!);
       }
       setGitStatus(status);
     } catch (e) {
@@ -159,6 +167,8 @@ export function GitTab({ worktreePath }: GitTabProps) {
   }, [refreshStatus]);
 
   useEffect(() => {
+    // Show the last known status instantly, then revalidate in the background.
+    setGitStatus((worktreePath && gitStatusCache.get(worktreePath)) || null);
     void refreshStatus();
   }, [refreshStatus, worktreePath]);
 
