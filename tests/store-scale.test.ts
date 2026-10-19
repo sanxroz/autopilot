@@ -2,7 +2,7 @@ import { expect, mock, test } from "bun:test";
 import * as tauriCore from "@tauri-apps/api/core";
 import type { Repository, WorktreeInfo } from "../src/types";
 
-const closeCalls: string[] = [];
+let closeCalls: string[] = [];
 
 mock.module("@tauri-apps/api/core", () => ({
   ...tauriCore,
@@ -47,6 +47,8 @@ function seed(repos: Repository[]) {
   const terminalsByWorktree: Record<string, { tabs: never[] | unknown[]; activeTabId: string | null }> = {};
   const terminalAgentById: Record<string, { agent: "claude" }> = {};
   const processStatusByPath: Record<string, "agent_running"> = {};
+  const prStatusByWorktreePath: Record<string, unknown> = {};
+  const agentRunByWorktreePath: Record<string, unknown> = {};
   for (const repo of repos) {
     for (const wt of repo.worktrees) {
       const terminals = Array.from({ length: TERMINAL_PER_TAB() }, (_, t) => {
@@ -56,10 +58,19 @@ function seed(repos: Repository[]) {
       });
       terminalsByWorktree[wt.path] = { tabs: [{ id: `${wt.path}-tab`, terminals, activeTerminalId: terminals[0].id }], activeTabId: `${wt.path}-tab` };
       processStatusByPath[wt.path] = "agent_running";
+      prStatusByWorktreePath[wt.path] = {};
+      agentRunByWorktreePath[wt.path] = {};
     }
   }
   // SAFETY: the stress fixtures mirror the store's record shapes; only the keys matter here.
-  useAppStore.setState({ repositories: repos, terminalsByWorktree, terminalAgentById, processStatusByPath } as never);
+  useAppStore.setState({
+    repositories: repos,
+    terminalsByWorktree,
+    terminalAgentById,
+    processStatusByPath,
+    prStatusByWorktreePath,
+    agentRunByWorktreePath,
+  } as never);
 }
 
 function TERMINAL_PER_TAB() {
@@ -67,7 +78,7 @@ function TERMINAL_PER_TAB() {
 }
 
 test("removing repositories frees every per-worktree entry and closes every terminal", () => {
-  closeCalls.length = 0;
+  closeCalls = [];
   const repos = Array.from({ length: REPOS }, (_, i) => makeRepo(i));
   seed(repos);
   const total = REPOS * WORKTREES_PER_REPO;
@@ -80,7 +91,30 @@ test("removing repositories frees every per-worktree entry and closes every term
   expect(Object.keys(state.terminalsByWorktree)).toHaveLength(0);
   expect(Object.keys(state.terminalAgentById)).toHaveLength(0);
   expect(Object.keys(state.processStatusByPath)).toHaveLength(0);
+  expect(Object.keys(state.prStatusByWorktreePath)).toHaveLength(0);
+  expect(Object.keys(state.agentRunByWorktreePath)).toHaveLength(0);
   expect(closeCalls).toHaveLength(total);
+});
+
+test("removing the selected repository clears the selected workspace and its terminals", () => {
+  const repos = [makeRepo(0), makeRepo(1)];
+  seed(repos);
+  const selected = repos[0].worktrees[0];
+  // SAFETY: partial fixtures; only the selection and current-terminal fields are read here.
+  useAppStore.setState({
+    selectedWorktree: selected,
+    currentTerminalTabs: [{ id: "t", terminals: [], activeTerminalId: "t" }],
+    currentTerminals: [{ id: "t", worktreePath: selected.path, worktreeName: selected.name }],
+  } as never);
+
+  useAppStore.getState().removeRepository(repos[1].info.path);
+  expect(useAppStore.getState().selectedWorktree).toBe(selected);
+
+  useAppStore.getState().removeRepository(repos[0].info.path);
+  const state = useAppStore.getState();
+  expect(state.selectedWorktree).toBeNull();
+  expect(state.currentTerminalTabs).toHaveLength(0);
+  expect(state.currentTerminals).toHaveLength(0);
 });
 
 test("PR data cache stays bounded under thousands of writes", () => {
@@ -95,6 +129,7 @@ test("add/remove churn does not grow the heap", async () => {
     const repos = Array.from({ length: REPOS }, (_, i) => makeRepo(i));
     seed(repos);
     for (const repo of repos) useAppStore.getState().removeRepository(repo.info.path);
+    closeCalls = []; // the mock's own call log must not count as heap growth
     // Persistence writes are queued asynchronously; let them drain like they do between real user actions.
     await new Promise((resolve) => setTimeout(resolve, 0));
   };

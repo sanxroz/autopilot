@@ -42,14 +42,6 @@ function isMarkdownFile(filePath: string): boolean {
 }
 
 export function GitFileDiffOverlay() {
-  return (
-    <DiffProviders>
-      <GitFileDiffOverlayContent />
-    </DiffProviders>
-  );
-}
-
-function GitFileDiffOverlayContent() {
   const themeMode = useThemeMode();
   const preview = useAppStore((state) => state.gitFileDiffPreview);
   const setPreview = useAppStore((state) => state.setGitFileDiffPreview);
@@ -316,6 +308,7 @@ function GitFileDiffOverlayContent() {
   if (!preview) return null;
 
   return (
+    <DiffProviders>
     <div
       className={cn(
         "absolute inset-0 z-20 flex flex-col bg-primary diff-overlay",
@@ -460,5 +453,6 @@ function GitFileDiffOverlayContent() {
 
       </div>
     </div>
+    </DiffProviders>
   );
 }

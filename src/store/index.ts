@@ -202,7 +202,15 @@ function withoutWorktreeRuntimeState(state: AppStore, worktreePaths: readonly st
     }
     return next;
   };
+  const selectedRemoved = state.selectedWorktree !== null && paths.has(state.selectedWorktree.path);
   return {
+    ...(selectedRemoved && {
+      selectedWorktree: null,
+      currentTerminalTabs: [],
+      currentActiveTerminalTabId: null,
+      currentTerminals: [],
+      currentActiveTerminalId: null,
+    }),
     terminalsByWorktree: omitPaths(state.terminalsByWorktree),
     terminalAgentById: Object.fromEntries(
       Object.entries(state.terminalAgentById).filter(([id]) => !terminalIds.has(id)),
@@ -1169,8 +1177,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
         terminalRestoresByWorktreePath.set(worktree.path, restore);
       }
       const restored = await restore;
-      if (get().deletingWorktreePaths.has(worktree.path)) {
-        // The worktree was deleted mid-restore: its spawns finished after the delete closed terminals.
+      const worktreeStillExists = get().repositories.some((repository) =>
+        repository.worktrees.some((candidate) => candidate.path === worktree.path)
+      );
+      if (!worktreeStillExists || get().deletingWorktreePaths.has(worktree.path)) {
+        // The worktree (or its repository) was removed mid-restore: its spawns finished after the close.
         await invoke('close_terminals_for_worktree', { worktreePath: worktree.path }).catch((e) =>
           console.error('Failed to close terminals restored for deleted worktree:', e),
         );
@@ -1813,13 +1824,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
       });
 
       set((current) => {
+        // Worktrees removed while the scan was in flight must not be written back.
+        const livePaths = new Set(current.repositories.flatMap((repo) => repo.worktrees.map((wt) => wt.path)));
+        const polledPaths = worktreePaths.filter((path) => livePaths.has(path));
         const nextProcessStatus: Record<string, ProcessStatus> = {};
-        for (const path of worktreePaths) {
+        for (const path of polledPaths) {
           nextProcessStatus[path] = statuses[path] ?? 'none';
         }
 
         const nextAgentRun: Record<string, AgentRunState | undefined> = {};
-        for (const path of worktreePaths) {
+        for (const path of polledPaths) {
           const reconciled = reconcileAgentRunState(
             path,
             nextProcessStatus[path],

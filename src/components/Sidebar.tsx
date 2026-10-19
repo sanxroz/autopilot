@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback, useEffect, useRef } from "react";
+import { useMemo, useState, useCallback, useEffect, useLayoutEffect, useRef } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -109,6 +109,12 @@ export function Sidebar({
     const actions = worktreeActionsRef.current;
     const worktree = actions?.repositories.flatMap((repo) => repo.worktrees).find((wt) => wt.path === path);
     if (actions && worktree) void actions.select(worktree);
+  }, []);
+  // Memoized rows only re-render when this changes, so tick it to keep relative times fresh.
+  const [nowMinute, setNowMinute] = useState(() => Math.floor(Date.now() / 60000));
+  useEffect(() => {
+    const id = setInterval(() => setNowMinute(Math.floor(Date.now() / 60000)), 60000);
+    return () => clearInterval(id);
   }, []);
   const requestDeleteWorktree = useCallback((repoPath: string, worktreeName: string) => {
     worktreeActionsRef.current?.remove(repoPath, worktreeName);
@@ -597,8 +603,9 @@ export function Sidebar({
     setPendingWorkspaceDeletion({ repoPath, worktreeName });
   };
 
-  worktreeActionsRef.current = { repositories, select: handleWorktreeClick, remove: handleDeleteWorktree };
-  const nowMinute = Math.floor(Date.now() / 60000);
+  useLayoutEffect(() => {
+    worktreeActionsRef.current = { repositories, select: handleWorktreeClick, remove: handleDeleteWorktree };
+  });
 
   const closeDeleteWorkspaceDialog = () => {
     setPendingWorkspaceDeletion(null);
