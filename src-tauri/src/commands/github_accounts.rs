@@ -12,6 +12,8 @@ use std::time::{Instant, SystemTime};
 
 const TOKEN_TTL_SECS: u64 = 300;
 const FAILURE_TTL_SECS: u64 = 10;
+/// `gh` ignores an empty `GH_TOKEN`, so an unavailable mapped account gets a token it rejects.
+const UNAVAILABLE_TOKEN: &str = "autopilot-github-account-unavailable";
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct GitIdentity {
@@ -35,14 +37,28 @@ pub struct GithubAccountsConfig {
 
 #[derive(Clone)]
 struct Resolved {
+    /// Empty when the explicitly mapped account has no usable token.
     token: String,
     /// The owner is mapped to this account, as opposed to falling back to `default`.
     explicit: bool,
     identity: Option<GitIdentity>,
 }
 
+impl Resolved {
+    fn gh_token(&self) -> &str {
+        if self.token.is_empty() {
+            UNAVAILABLE_TOKEN
+        } else {
+            &self.token
+        }
+    }
+}
+
 #[derive(Default)]
 struct Cache {
+    /// Bumped whenever the entries are cleared, so a lookup that started before
+    /// the clear cannot cache its stale result afterwards.
+    generation: u64,
     config_mtime: Option<SystemTime>,
     entries: HashMap<String, (Instant, Option<Resolved>)>,
 }
@@ -78,17 +94,28 @@ fn resolve_uncached(dir: &str) -> Option<Resolved> {
             None => (config.default.clone()?, false),
         }
     };
-    let gh = find_cli_tool("gh").ok()?;
-    let output = Command::new(gh)
-        .args(["auth", "token", "--user", &account])
-        .output()
-        .ok()?;
-    if !output.status.success() {
+    let token = find_cli_tool("gh")
+        .ok()
+        .and_then(|gh| {
+            Command::new(gh)
+                .args(["auth", "token", "--user", &account])
+                .output()
+                .ok()
+        })
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|token| token.trim().to_string())
+        .unwrap_or_default();
+    if token.is_empty() {
         eprintln!("[autopilot] warning: no gh token for account {account}");
-        return None;
+        // A mapped account must not silently fall back to another login.
+        return explicit.then(|| Resolved {
+            token,
+            explicit,
+            identity: None,
+        });
     }
-    let token = String::from_utf8(output.stdout).ok()?.trim().to_string();
-    (!token.is_empty()).then(|| Resolved {
+    Some(Resolved {
         token,
         explicit,
         identity: config.identities.get(&account).cloned(),
@@ -99,14 +126,15 @@ fn resolve(dir: &str) -> Option<Resolved> {
     let mtime = config_path()
         .and_then(|p| std::fs::metadata(p).ok())
         .and_then(|m| m.modified().ok());
-    {
+    let generation = {
         let mut cache = cache().lock();
         if cache.config_mtime != mtime {
             cache.entries.clear();
+            cache.generation += 1;
             cache.config_mtime = mtime;
         }
         if let Some((at, hit)) = cache.entries.get(dir) {
-            let ttl = if hit.is_some() {
+            let ttl = if hit.as_ref().is_some_and(|r| !r.token.is_empty()) {
                 TOKEN_TTL_SECS
             } else {
                 FAILURE_TTL_SECS
@@ -115,12 +143,15 @@ fn resolve(dir: &str) -> Option<Resolved> {
                 return hit.clone();
             }
         }
-    }
+        cache.generation
+    };
     let resolved = resolve_uncached(dir);
-    cache()
-        .lock()
-        .entries
-        .insert(dir.to_string(), (Instant::now(), resolved.clone()));
+    let mut cache = cache().lock();
+    if cache.generation == generation {
+        cache
+            .entries
+            .insert(dir.to_string(), (Instant::now(), resolved.clone()));
+    }
     resolved
 }
 
@@ -133,7 +164,7 @@ pub fn account_env(dir: &str) -> Vec<(&'static str, String)> {
     };
     let mut env = Vec::new();
     if resolved.explicit {
-        env.push(("GH_TOKEN", resolved.token));
+        env.push(("GH_TOKEN", resolved.gh_token().to_string()));
     }
     if let Some(id) = resolved.identity {
         env.push(("GIT_AUTHOR_NAME", id.name.clone()));
@@ -155,14 +186,14 @@ impl GhAccountDir for Command {
     fn gh_dir(&mut self, dir: impl AsRef<Path>) -> &mut Self {
         let dir = dir.as_ref();
         if let Some(resolved) = resolve(&dir.to_string_lossy()) {
-            self.env("GH_TOKEN", resolved.token);
+            self.env("GH_TOKEN", resolved.gh_token());
         }
         self.current_dir(dir)
     }
 
     fn gh_default(&mut self) -> &mut Self {
         if let Some(resolved) = resolve("") {
-            self.env("GH_TOKEN", resolved.token);
+            self.env("GH_TOKEN", resolved.gh_token());
         }
         self
     }
@@ -180,8 +211,13 @@ pub fn set_github_accounts(config: GithubAccountsConfig) -> Result<(), String> {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let json = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
-    std::fs::write(path, json).map_err(|e| e.to_string())?;
-    cache().lock().entries.clear();
+    // Rename into place so concurrent readers never see a half-written file.
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
+    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    let mut cache = cache().lock();
+    cache.entries.clear();
+    cache.generation += 1;
     Ok(())
 }
 
@@ -225,6 +261,16 @@ mod tests {
             serde_json::from_str(r#"{"owners":{"north-code":"santiago-cohere"}}"#).unwrap();
         assert_eq!(c.owners["north-code"], "santiago-cohere");
         assert!(c.default.is_none());
+    }
+
+    #[test]
+    fn unavailable_mapped_account_gets_a_rejected_token() {
+        let r = Resolved {
+            token: String::new(),
+            explicit: true,
+            identity: None,
+        };
+        assert_eq!(r.gh_token(), UNAVAILABLE_TOKEN);
     }
 
     fn login_for(dir: Option<&str>) -> String {

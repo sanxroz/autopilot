@@ -883,7 +883,7 @@ function GithubAccountsGroup({ repositories }: { repositories: readonly Reposito
   return (
     <SettingsGroup
       title="Project accounts"
-      description="Choose which account gh and git use for each project. A choice applies to every project from the same owner."
+      description="Choose which account gh uses for each project. A choice applies to every project from the same owner."
     >
       <SettingsRow>
         <SettingsLabel title="Default account" description="Used by projects without their own account." />
@@ -917,7 +917,7 @@ function GithubAccountsGroup({ repositories }: { repositories: readonly Reposito
               label={`Account for ${repository.info.name}`}
               disabled={!owner}
               value={(owner && config.owners[owner]) || NO_ACCOUNT}
-              options={[defaultOption, ...accountOptions.filter((option) => option.value !== config.default)]}
+              options={[defaultOption, ...accountOptions]}
               onChange={(value) => owner && setOwnerAccount(owner, value)}
             />
           </SettingsRow>
@@ -933,7 +933,7 @@ function GithubAccountsGroup({ repositories }: { repositories: readonly Reposito
             <div
               key={login}
               className="flex items-center gap-2"
-              onBlur={(event) => {
+              onChange={(event) => {
                 const [name, email] = event.currentTarget.querySelectorAll("input");
                 setIdentity(login, name.value.trim(), email.value.trim());
               }}
