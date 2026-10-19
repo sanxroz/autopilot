@@ -132,6 +132,8 @@ interface PooledTerminal {
   dimensions: TerminalDimensions | null;
   mounted: boolean;
   closed: boolean;
+  /** Serializes backend resizes for this session across every mount that shares the entry. */
+  resizeQueue: Promise<void>;
   readonly unlistenClosed: Promise<() => void>;
 }
 
@@ -181,6 +183,7 @@ function createPooledTerminal(terminalId: string): PooledTerminal {
     dimensions: null,
     mounted: false,
     closed: false,
+    resizeQueue: Promise.resolve(),
     unlistenClosed: listen<void>(`terminal-closed-${terminalId}`, () => {
       entry.closed = true;
       terminalStateCache.delete(terminalId);
@@ -301,6 +304,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
   const terminalDimensionsRef = useRef<TerminalDimensions | null>(null);
   const themeFrameRef = useRef<number | null>(null);
   const resizeFrameRef = useRef<number | null>(null);
+  const pooledEntryRef = useRef<PooledTerminal | null>(null);
   const theme = useTheme();
 
   useImperativeHandle(ref, () => ({
@@ -334,7 +338,16 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     }
   }, []);
 
-  const resizeTerminal = useCallback(async () => {
+  // Serializes backend resizes so a redraw can't interleave with a normal resize.
+  const enqueueResize = useCallback((operation: () => Promise<void>) => {
+    const entry = pooledEntryRef.current;
+    if (!entry) return operation();
+    const queued = entry.resizeQueue.then(operation);
+    entry.resizeQueue = queued.catch(() => {});
+    return queued;
+  }, []);
+
+  const resizeTerminal = useCallback(() => enqueueResize(async () => {
     if (!fitAddonRef.current) return;
     const dimensions = fitAddonRef.current.proposeDimensions();
     if (!dimensions) return;
@@ -352,7 +365,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     } catch (error) {
       console.error("Terminal resize failed:", error);
     }
-  }, [terminalId]);
+  }), [enqueueResize, terminalId]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -360,6 +373,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     const entry = acquirePooledTerminal(terminalId, containerRef.current);
     const { term } = entry;
     terminalRef.current = term;
+    pooledEntryRef.current = entry;
     fitAddonRef.current = entry.fitAddon;
     searchAddonRef.current = entry.searchAddon;
     terminalDimensionsRef.current = entry.dimensions;
@@ -372,6 +386,8 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
     const replayEvents: TerminalOutput[] = [];
     const outputQueue: TerminalOutput[] = [];
     let isWritingOutput = false;
+    // The replay buffer dropped output we never saw, so the tail alone can't repaint the screen.
+    let needsAppRedraw = false;
 
     const writeOutput = (data: string, sequence: number, onWritten?: () => void) => {
       entry.writtenSequence = Math.max(entry.writtenSequence, sequence);
@@ -409,6 +425,24 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
 
     const finishReplay = () => {
       replayLoaded = true;
+      if (needsAppRedraw) {
+        // A size change makes the running app (Claude Code, opencode, ...) repaint its whole UI.
+        void enqueueResize(async () => {
+          const { cols, rows } = fitAddonRef.current?.proposeDimensions() ?? term;
+          try {
+            await invoke("resize_terminal", { terminalId, cols: Math.max(1, cols - 1), rows });
+          } catch (error) {
+            console.error(error);
+          }
+          try {
+            await invoke("resize_terminal", { terminalId, cols, rows });
+            terminalDimensionsRef.current = { cols, rows };
+          } catch (error) {
+            console.error(error);
+            terminalDimensionsRef.current = null;
+          }
+        });
+      }
       for (const output of replayEvents) {
         appendOutput(output);
       }
@@ -463,7 +497,8 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
           if (snapshot.truncated) {
             terminalStateCache.delete(terminalId);
             entry.restoreState = undefined;
-            if (!restoreState) term.reset();
+            needsAppRedraw = true;
+            term.reset();
             snapshot = await invoke<TerminalOutputSnapshot>(
               "get_terminal_output",
               { terminalId, afterSequence: null },
@@ -536,7 +571,7 @@ export const Terminal = forwardRef<TerminalHandle, Props>(function Terminal({ te
       searchAddonRef.current = null;
       terminalDimensionsRef.current = null;
     };
-  }, [terminalId, resizeTerminal, fit]);
+  }, [terminalId, resizeTerminal, enqueueResize, fit]);
 
   useEffect(() => {
     if (isActive && terminalRef.current) {
