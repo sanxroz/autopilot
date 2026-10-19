@@ -61,6 +61,8 @@ function getFileDirectory(path: string): string {
   return parts.slice(0, -1).join("/");
 }
 
+const gitStatusCache = new Map<string, GitStatus>();
+
 export function GitTab({ worktreePath }: GitTabProps) {
   const [gitStatus, setGitStatus] = useState<GitStatus | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -110,6 +112,7 @@ export function GitTab({ worktreePath }: GitTabProps) {
       ) {
         return;
       }
+      gitStatusCache.set(requestedWorktreePath, status);
       setGitStatus(status);
     } catch (e) {
       if (
@@ -159,6 +162,8 @@ export function GitTab({ worktreePath }: GitTabProps) {
   }, [refreshStatus]);
 
   useEffect(() => {
+    // Show the last known status instantly, then revalidate in the background.
+    setGitStatus((worktreePath && gitStatusCache.get(worktreePath)) || null);
     void refreshStatus();
   }, [refreshStatus, worktreePath]);
 
