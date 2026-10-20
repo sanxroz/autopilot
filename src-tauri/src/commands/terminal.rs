@@ -921,51 +921,95 @@ export default function (pi: any) {
 
     let opencode_plugin = r#"import { spawn } from "node:child_process";
 
-export const AutopilotLifecyclePlugin = async () => {
-  const notifyScript = process.env.AUTOPILOT_NOTIFY_SCRIPT;
-  if (!notifyScript || !process.env.AUTOPILOT_TERMINAL_ID) return {};
-  let state: "idle" | "busy" = "idle";
-  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+// Shared by every plugin instance: OpenCode v2 may call setup() several times per process.
+const notifyScript = process.env.AUTOPILOT_NOTIFY_SCRIPT;
+const enabled = Boolean(notifyScript && process.env.AUTOPILOT_TERMINAL_ID);
+const running = new Set<string>();
+const seen = new Set<string>();
+let state: "idle" | "busy" = "idle";
+let primary: string | undefined;
+let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
-  const fire = (hook_event_name: string) => {
-    try {
-      const child = spawn(notifyScript, [], {
-        stdio: ["pipe", "ignore", "ignore"],
-        detached: true,
-        env: process.env,
-      });
-      child.on("error", () => {});
-      child.stdin?.on("error", () => {});
-      child.stdin?.end(JSON.stringify({ hook_event_name }));
-      child.unref();
-    } catch {}
-  };
-
-  return {
-    event: async ({ event }: { event: any }) => {
-      if (event.type !== "session.status") return;
-      if (event.properties.status.type === "busy") {
-        if (idleTimer) clearTimeout(idleTimer);
-        idleTimer = undefined;
-        if (state === "idle") {
-          state = "busy";
-          fire("Start");
-        }
-      }
-      if (event.properties.status.type === "idle" && state === "busy" && !idleTimer) {
-        idleTimer = setTimeout(() => {
-          idleTimer = undefined;
-          if (state === "busy") {
-            state = "idle";
-            fire("Stop");
-          }
-        }, 500);
-      }
-    },
-  };
+const fire = (hook_event_name: string, session_id?: string) => {
+  try {
+    const child = spawn(notifyScript!, [], {
+      stdio: ["pipe", "ignore", "ignore"],
+      detached: true,
+      env: process.env,
+    });
+    child.on("error", () => {});
+    child.stdin?.on("error", () => {});
+    child.stdin?.end(JSON.stringify({ hook_event_name, session_id }));
+    child.unref();
+  } catch {}
 };
 
-export default AutopilotLifecyclePlugin;
+const busy = (id: string) => {
+  running.add(id);
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = undefined;
+  if (state === "idle") {
+    state = "busy";
+    primary = id;
+    fire("Start", id);
+  }
+};
+
+const idle = (id: string) => {
+  running.delete(id);
+  if (running.size > 0 || state !== "busy" || idleTimer) return;
+  idleTimer = setTimeout(() => {
+    idleTimer = undefined;
+    if (state === "busy" && running.size === 0) {
+      state = "idle";
+      fire("Stop", primary);
+    }
+  }, 500);
+};
+
+export default {
+  id: "autopilot-lifecycle",
+  // OpenCode v2
+  async setup(ctx: any) {
+    if (!enabled) return;
+    const controller = new AbortController();
+    (async () => {
+      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+        const id = event.data?.sessionID ?? "unknown";
+        if (event.type === "session.execution.started") {
+          if (seen.has(event.id)) continue;
+          seen.add(event.id);
+          busy(id);
+        } else if (/^session\.execution\.(succeeded|failed|interrupted)$/.test(event.type)) {
+          if (seen.has(event.id)) continue;
+          seen.add(event.id);
+          idle(id);
+        }
+      }
+    })().catch(() => {});
+    return () => {
+      controller.abort();
+      if (idleTimer && state === "busy" && running.size === 0) {
+        clearTimeout(idleTimer);
+        idleTimer = undefined;
+        state = "idle";
+        fire("Stop", primary);
+      }
+    };
+  },
+  // OpenCode v1
+  async server() {
+    if (!enabled) return {};
+    return {
+      event: async ({ event }: { event: any }) => {
+        if (event.type !== "session.status") return;
+        const id = event.properties.sessionID ?? "unknown";
+        if (event.properties.status.type === "busy") busy(id);
+        if (event.properties.status.type === "idle") idle(id);
+      },
+    };
+  },
+};
 "#;
 
     let mut notify_script_path = None;
@@ -3048,6 +3092,8 @@ mod tests {
         assert!(opencode_plugin.contains(r#"state = "busy";"#));
         assert!(opencode_plugin.contains(r#"state = "idle";"#));
         assert!(opencode_plugin.contains("}, 500);"));
+        assert!(opencode_plugin.contains("session.execution.started"));
+        assert!(opencode_plugin.contains("session_id"));
 
         fs::remove_dir_all(hooks_dir).unwrap();
     }
