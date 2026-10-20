@@ -945,13 +945,14 @@ const fire = (hook_event_name: string, session_id?: string) => {
 };
 
 const busy = (id: string) => {
+  // A conversation starting inside the idle grace period becomes the one to resume.
+  if (running.size === 0) primary = id || undefined;
   running.add(id);
   if (idleTimer) clearTimeout(idleTimer);
   idleTimer = undefined;
   if (state === "idle") {
     state = "busy";
-    primary = id;
-    fire("Start", id);
+    fire("Start", primary);
   }
 };
 
@@ -975,7 +976,7 @@ export default {
     const controller = new AbortController();
     (async () => {
       for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
-        const id = event.data?.sessionID ?? "unknown";
+        const id = event.data?.sessionID ?? "";
         if (event.type === "session.execution.started") {
           if (seen.has(event.id)) continue;
           seen.add(event.id);
@@ -989,8 +990,8 @@ export default {
     })().catch(() => {});
     return () => {
       controller.abort();
-      if (idleTimer && state === "busy" && running.size === 0) {
-        clearTimeout(idleTimer);
+      if (state === "busy") {
+        if (idleTimer) clearTimeout(idleTimer);
         idleTimer = undefined;
         state = "idle";
         fire("Stop", primary);
@@ -1003,7 +1004,7 @@ export default {
     return {
       event: async ({ event }: { event: any }) => {
         if (event.type !== "session.status") return;
-        const id = event.properties.sessionID ?? "unknown";
+        const id = event.properties.sessionID ?? "";
         if (event.properties.status.type === "busy") busy(id);
         if (event.properties.status.type === "idle") idle(id);
       },
@@ -3096,6 +3097,69 @@ mod tests {
         assert!(opencode_plugin.contains("session_id"));
 
         fs::remove_dir_all(hooks_dir).unwrap();
+    }
+
+    #[test]
+    fn opencode_plugin_tracks_the_latest_conversation_across_overlaps() {
+        let dir = std::env::temp_dir().join(format!("autopilot-opencode-plugin-{}", Uuid::new_v4()));
+        fs::create_dir_all(&dir).unwrap();
+        let (notify, _, _, plugin) = setup_hook_files(&dir);
+        let out = dir.join("out.log");
+        let stub = dir.join("notify-stub.sh");
+        fs::write(&stub, "#!/bin/sh\ncat >> \"$OUT\"\necho >> \"$OUT\"\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let driver = dir.join("driver.mjs");
+        // Every event is delivered twice, like OpenCode v2 does with several plugin instances.
+        fs::write(
+            &driver,
+            format!(
+                r#"import plugin from "{}";
+const ev = (id, type, sessionID) => ({{ id, type, data: {{ sessionID }} }});
+const script = [
+  ev("e1", "session.execution.started", "ses_a"),
+  ev("e2", "session.execution.succeeded", "ses_a"),
+  ev("e3", "session.execution.started", "ses_b"),
+];
+const ctx = {{ event: {{ subscribe: ({{ signal }}) => (async function* () {{
+  for (const e of script) {{ yield e; yield e; }}
+  await new Promise((r) => signal.addEventListener("abort", r));
+}})() }} }};
+const cleanup = await plugin.setup(ctx);
+await new Promise((r) => setTimeout(r, 100));
+cleanup();
+await new Promise((r) => setTimeout(r, 300));
+"#,
+                plugin.unwrap().replace('\\', "/")
+            ),
+        )
+        .unwrap();
+
+        let status = std::process::Command::new("bun")
+            .arg(&driver)
+            .env("AUTOPILOT_NOTIFY_SCRIPT", &stub)
+            .env("AUTOPILOT_TERMINAL_ID", "t1")
+            .env("OUT", &out)
+            .status();
+        let Ok(status) = status else {
+            eprintln!("bun not available; skipping OpenCode plugin behavior test");
+            return;
+        };
+        assert!(status.success());
+        let log = fs::read_to_string(&out).unwrap();
+        let events: Vec<&str> = log.lines().filter(|l| !l.is_empty()).collect();
+        assert_eq!(
+            events,
+            [
+                r#"{"hook_event_name":"Start","session_id":"ses_a"}"#,
+                r#"{"hook_event_name":"Stop","session_id":"ses_b"}"#,
+            ]
+        );
+        let _ = notify;
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[cfg(unix)]
