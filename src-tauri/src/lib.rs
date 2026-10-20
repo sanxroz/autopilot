@@ -3,7 +3,7 @@
 mod commands;
 
 use commands::{
-    editor, git, github, github_checks, process, settings_discovery, settings_lock, terminal,
+    editor, git, github, github_accounts, github_checks, process, settings_discovery, settings_lock, terminal,
     usage, watcher,
 };
 use parking_lot::Mutex;
@@ -241,6 +241,10 @@ pub fn run() {
             git::run_worktree_setup_script,
             github::check_gh_cli,
             github::check_gh_auth,
+            github_accounts::get_github_accounts,
+            github_accounts::set_github_accounts,
+            github_accounts::list_gh_accounts,
+            github_accounts::get_repo_owners,
             github::get_pr_for_branch,
             github::get_all_prs_for_repos,
             github::get_all_open_prs_for_repos,
