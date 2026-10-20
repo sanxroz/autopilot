@@ -75,10 +75,20 @@ fn config_path() -> Option<PathBuf> {
 }
 
 fn load_config() -> GithubAccountsConfig {
-    config_path()
+    let mut config: GithubAccountsConfig = config_path()
         .and_then(|p| std::fs::read_to_string(p).ok())
         .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    lowercase_owners(&mut config);
+    config
+}
+
+/// Owner names are case-insensitive; lookups use lowercase keys.
+fn lowercase_owners(config: &mut GithubAccountsConfig) {
+    config.owners = std::mem::take(&mut config.owners)
+        .into_iter()
+        .map(|(owner, account)| (owner.to_ascii_lowercase(), account))
+        .collect();
 }
 
 fn resolve_uncached(dir: &str) -> Option<Resolved> {
@@ -271,6 +281,14 @@ mod tests {
             serde_json::from_str(r#"{"owners":{"north-code":"santiago-cohere"}}"#).unwrap();
         assert_eq!(c.owners["north-code"], "santiago-cohere");
         assert!(c.default.is_none());
+    }
+
+    #[test]
+    fn owner_keys_are_lowercased() {
+        let mut c: GithubAccountsConfig =
+            serde_json::from_str(r#"{"owners":{"Acme":"alice"}}"#).unwrap();
+        lowercase_owners(&mut c);
+        assert_eq!(c.owners["acme"], "alice");
     }
 
     #[test]
