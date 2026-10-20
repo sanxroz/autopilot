@@ -427,9 +427,16 @@ fn parse_github_url(url: &str) -> Option<(String, String)> {
     if !host.eq_ignore_ascii_case("github.com") {
         return None;
     }
-    let path_part = rest["github.com".len()..]
-        .strip_prefix(':')
-        .or_else(|| rest["github.com".len()..].strip_prefix('/'))?;
+    let tail = &rest["github.com".len()..];
+    let path_part = if url.contains("://") {
+        // A URL may carry a port (https://github.com:443/o/r).
+        let tail = tail
+            .strip_prefix(':')
+            .map_or(tail, |p| p.trim_start_matches(|c: char| c.is_ascii_digit()));
+        tail.strip_prefix('/')?
+    } else {
+        tail.strip_prefix(':').or_else(|| tail.strip_prefix('/'))?
+    };
 
     let path_part = path_part.trim_end_matches(".git").trim_end_matches('/');
     let parts: Vec<&str> = path_part.splitn(3, '/').collect();
@@ -2677,6 +2684,8 @@ mod tests {
             "https://github.com/o/r/",
             "ssh://git@github.com/o/r.git",
             "https://user:tok@github.com/o/r",
+            "https://github.com:443/o/r.git",
+            "ssh://git@github.com:22/o/r.git",
         ] {
             assert_eq!(parse_github_url(url), ok, "{url}");
         }

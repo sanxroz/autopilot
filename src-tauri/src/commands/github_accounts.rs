@@ -89,7 +89,7 @@ fn resolve_uncached(dir: &str) -> Option<Resolved> {
         (config.default.clone()?, false)
     } else {
         let (owner, _) = parse_github_owner_repo(dir)?;
-        match config.owners.get(&owner) {
+        match config.owners.get(&owner.to_ascii_lowercase()) {
             Some(account) => (account.clone(), true),
             None => (config.default.clone()?, false),
         }
@@ -98,7 +98,14 @@ fn resolve_uncached(dir: &str) -> Option<Resolved> {
         .ok()
         .and_then(|gh| {
             Command::new(gh)
-                .args(["auth", "token", "--user", &account])
+                .args([
+                    "auth",
+                    "token",
+                    "--hostname",
+                    "github.com",
+                    "--user",
+                    &account,
+                ])
                 .output()
                 .ok()
         })
@@ -212,21 +219,24 @@ pub fn set_github_accounts(config: GithubAccountsConfig) -> Result<(), String> {
     }
     let json = serde_json::to_string_pretty(&config).map_err(|e| e.to_string())?;
     // Rename into place so concurrent readers never see a half-written file.
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+    // The temp file is unique so overlapping saves can't clobber each other.
+    let parent = path.parent().ok_or("Configuration path has no parent")?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    std::io::Write::write_all(&mut tmp, json.as_bytes()).map_err(|e| e.to_string())?;
+    tmp.persist(&path).map_err(|e| e.error.to_string())?;
     let mut cache = cache().lock();
     cache.entries.clear();
     cache.generation += 1;
     Ok(())
 }
 
-/// GitHub owner of each repo's `origin`, in the order given.
+/// GitHub owner of each repo's `origin`, in the order given. Lowercased: owner
+/// names are case-insensitive and are the keys of `owners`.
 #[tauri::command(async)]
 pub fn get_repo_owners(repo_paths: Vec<String>) -> Vec<Option<String>> {
     repo_paths
         .iter()
-        .map(|path| parse_github_owner_repo(path).map(|(owner, _)| owner))
+        .map(|path| parse_github_owner_repo(path).map(|(owner, _)| owner.to_ascii_lowercase()))
         .collect()
 }
 

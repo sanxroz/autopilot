@@ -896,6 +896,7 @@ function GithubAccountsGroup({ repositories }: { repositories: readonly Reposito
       </SettingsRow>
       {repositories.map((repository, index) => {
         const owner = owners[index];
+        const saved = owner ? config.owners[owner] : undefined;
         return (
           <SettingsRow key={repository.info.path}>
             <div className="flex min-w-0 items-center gap-3">
@@ -916,8 +917,14 @@ function GithubAccountsGroup({ repositories }: { repositories: readonly Reposito
             <SettingsSelect
               label={`Account for ${repository.info.name}`}
               disabled={!owner}
-              value={(owner && config.owners[owner]) || NO_ACCOUNT}
-              options={[defaultOption, ...accountOptions]}
+              value={saved || NO_ACCOUNT}
+              options={[
+                defaultOption,
+                ...accountOptions,
+                ...(saved && !accounts.includes(saved)
+                  ? [{ value: saved, label: `@${saved}`, detail: "unavailable" }]
+                  : []),
+              ]}
               onChange={(value) => owner && setOwnerAccount(owner, value)}
             />
           </SettingsRow>
