@@ -926,6 +926,7 @@ const notifyScript = process.env.AUTOPILOT_NOTIFY_SCRIPT;
 const enabled = Boolean(notifyScript && process.env.AUTOPILOT_TERMINAL_ID);
 const running = new Set<string>();
 const seen = new Set<string>();
+let instances = 0;
 let state: "idle" | "busy" = "idle";
 let primary: string | undefined;
 let idleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -973,6 +974,7 @@ export default {
   // OpenCode v2
   async setup(ctx: any) {
     if (!enabled) return;
+    instances++;
     const controller = new AbortController();
     (async () => {
       for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
@@ -990,6 +992,8 @@ export default {
     })().catch(() => {});
     return () => {
       controller.abort();
+      if (--instances > 0) return;
+      running.clear();
       if (state === "busy") {
         if (idleTimer) clearTimeout(idleTimer);
         idleTimer = undefined;
@@ -3128,9 +3132,13 @@ const ctx = {{ event: {{ subscribe: ({{ signal }}) => (async function* () {{
   for (const e of script) {{ yield e; yield e; }}
   await new Promise((r) => signal.addEventListener("abort", r));
 }})() }} }};
-const cleanup = await plugin.setup(ctx);
+const first = await plugin.setup(ctx);
+const second = await plugin.setup(ctx);
 await new Promise((r) => setTimeout(r, 100));
-cleanup();
+first();
+await new Promise((r) => setTimeout(r, 100));
+if ((await import("node:fs")).readFileSync(process.env.OUT, "utf8").includes("Stop")) process.exit(3);
+second();
 await new Promise((r) => setTimeout(r, 300));
 "#,
                 plugin.unwrap().replace('\\', "/")
