@@ -224,7 +224,7 @@ const AGENT_SESSION_ID_PATTERN = /^[\w-]+$/;
 const AGENT_RESUME_COMMANDS: Record<AIAgent, (sessionId?: string) => string> = {
   claude: (sessionId) => (sessionId ? `claude --resume ${sessionId}` : 'claude --continue'),
   codex: (sessionId) => (sessionId ? `codex resume ${sessionId}` : 'codex resume --last'),
-  opencode: () => 'opencode --continue',
+  opencode: (sessionId) => (sessionId ? `opencode --session ${sessionId}` : 'opencode --continue'),
   droid: () => 'droid --resume --last',
   amp: () => 'amp threads continue --last',
   pi: () => 'pi --continue',
