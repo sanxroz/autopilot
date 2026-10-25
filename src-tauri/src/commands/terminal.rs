@@ -1545,6 +1545,9 @@ pub fn spawn_terminal(
         CommandBuilder::new(&shell)
     };
     cmd.cwd(&cwd);
+    for (key, value) in super::github_accounts::account_env(&cwd) {
+        cmd.env(key, value);
+    }
 
     if !cfg!(target_os = "windows") {
         cmd.env("TERM", "xterm-256color");
@@ -2376,6 +2379,9 @@ pub fn spawn_terminal_with_command(
     }
 
     cmd.cwd(&cwd);
+    for (key, value) in super::github_accounts::account_env(&cwd) {
+        cmd.env(key, value);
+    }
 
     if !cfg!(target_os = "windows") {
         cmd.env("TERM", "xterm-256color");
