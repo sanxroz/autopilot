@@ -3122,6 +3122,14 @@ mod tests {
             &driver,
             format!(
                 r#"import plugin from "{}";
+import {{ existsSync, readFileSync }} from "node:fs";
+const waitForNotification = async (event) => {{
+  const deadline = Date.now() + 5000;
+  while (!existsSync(process.env.OUT) || !readFileSync(process.env.OUT, "utf8").includes(event)) {{
+    if (Date.now() >= deadline) throw new Error(`Timed out waiting for ${{event}} notification`);
+    await new Promise((r) => setTimeout(r, 25));
+  }}
+}};
 const ev = (id, type, sessionID) => ({{ id, type, data: {{ sessionID }} }});
 const script = [
   ev("e1", "session.execution.started", "ses_a"),
@@ -3134,12 +3142,12 @@ const ctx = {{ event: {{ subscribe: ({{ signal }}) => (async function* () {{
 }})() }} }};
 const first = await plugin.setup(ctx);
 const second = await plugin.setup(ctx);
-await new Promise((r) => setTimeout(r, 100));
+await waitForNotification("Start");
 first();
 await new Promise((r) => setTimeout(r, 100));
-if ((await import("node:fs")).readFileSync(process.env.OUT, "utf8").includes("Stop")) process.exit(3);
+if (readFileSync(process.env.OUT, "utf8").includes("Stop")) process.exit(3);
 second();
-await new Promise((r) => setTimeout(r, 300));
+await waitForNotification("Stop");
 "#,
                 plugin.unwrap().replace('\\', "/")
             ),
